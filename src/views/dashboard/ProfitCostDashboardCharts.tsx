@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
+import { useTheme } from '@mui/material/styles'
+import useMediaQuery from '@mui/material/useMediaQuery'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -9,6 +11,9 @@ import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
+import Accordion from '@mui/material/Accordion'
+import AccordionSummary from '@mui/material/AccordionSummary'
+import AccordionDetails from '@mui/material/AccordionDetails'
 import MenuItem from '@mui/material/MenuItem'
 import type { ApexOptions } from 'apexcharts'
 import CustomTextField from '@core/components/mui/TextField'
@@ -21,6 +26,8 @@ import { distributorsService } from '@/services/distributors.service'
 import { usersService } from '@/services/users.service'
 import { mapSummaryFinancial, mapTrendsFinancial } from '@/utils/financialMapper'
 import Link from 'next/link'
+import ResponsiveChartWrapper from './ResponsiveChartWrapper'
+import { useExpandedOnDesktop } from '@/hooks/useExpandedOnDesktop'
 
 const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false })
 
@@ -30,11 +37,19 @@ const defaultRange = () => {
   return { startDate: formatYyyyMmDd(start), endDate: formatYyyyMmDd(end) }
 }
 
+const truncName = (s: string, max: number) => {
+  const t = (s || '—').trim()
+  return t.length <= max ? t : `${t.slice(0, max - 1)}…`
+}
+
 type ProfitCostDashboardChartsProps = {
   deferFetch?: boolean
 }
 
 const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardChartsProps) => {
+  const theme = useTheme()
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'), { noSsr: true })
+  const { expanded: analyticsAccordionExpanded, onChange: onAnalyticsAccordionChange } = useExpandedOnDesktop()
   const [startDate, setStartDate] = useState(() => defaultRange().startDate)
   const [endDate, setEndDate] = useState(() => defaultRange().endDate)
   const [productId, setProductId] = useState('')
@@ -130,18 +145,26 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
       chart: { toolbar: { show: false }, zoom: { enabled: false } },
       stroke: { curve: 'smooth', width: 2 },
       dataLabels: { enabled: false },
-      xaxis: { categories: cats },
+      xaxis: { categories: cats, labels: { style: { fontSize: isCompact ? '11px' : '12px' } } },
       yaxis: {
         labels: {
           formatter: (val: number) =>
             `₨ ${(val || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`
         }
       },
-      legend: { position: 'top' },
+      legend: {
+        position: isCompact ? 'bottom' : 'top',
+        fontSize: isCompact ? '12px' : '14px',
+        itemMargin: { horizontal: 8, vertical: isCompact ? 4 : 0 }
+      },
       colors: ['var(--mui-palette-primary-main)', 'var(--mui-palette-warning-main)', 'var(--mui-palette-success-main)'],
-      grid: { strokeDashArray: 4, borderColor: 'var(--mui-palette-divider)' }
+      grid: {
+        strokeDashArray: 4,
+        borderColor: 'var(--mui-palette-divider)',
+        padding: isCompact ? { top: 4, right: 4, bottom: 0, left: 4 } : { top: 8, right: 8, bottom: 0, left: 8 }
+      }
     }
-  }, [trends])
+  }, [trends, isCompact])
 
   const lineSeries = useMemo(() => {
     const s = trends?.series || []
@@ -158,8 +181,9 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
     return {
       labels: ['Product COGS', 'Shipping', 'Payroll', 'Doctor activities', 'Other expenses'],
       chart: { sparkline: { enabled: false } },
-      legend: { position: 'bottom' },
-      dataLabels: { enabled: true },
+      plotOptions: { pie: { donut: { size: isCompact ? '58%' : '65%' } } },
+      legend: { position: 'bottom', fontSize: isCompact ? '11px' : '12px' },
+      dataLabels: { enabled: !isCompact, style: { fontSize: isCompact ? '10px' : '11px' } },
       colors: [
         'var(--mui-palette-primary-main)',
         'var(--mui-palette-info-main)',
@@ -168,7 +192,7 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
         'var(--mui-palette-error-main)'
       ]
     }
-  }, [summary])
+  }, [summary, isCompact])
 
   const donutSeries = useMemo(() => {
     const b = summary?.breakdown
@@ -176,15 +200,65 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
     return [b.productCost, b.shippingCost, b.payrollCost, b.doctorActivityCost, b.otherExpenses]
   }, [summary])
 
+  const productRevenueRows = useMemo(() => {
+    const n = isCompact ? 6 : 12
+    return (revBreakdown?.byProduct || []).slice(0, n)
+  }, [revBreakdown, isCompact])
+
+  const topProductsBarHeight = useMemo(() => {
+    const c = productRevenueRows.length || 1
+    if (isCompact) {
+      return Math.max(320, Math.min(560, 56 + c * 54))
+    }
+    return 380
+  }, [productRevenueRows.length, isCompact])
+
   const barOptions: ApexOptions = useMemo(() => {
-    const rows = (revBreakdown?.byProduct || []).slice(0, 12)
+    const rows = productRevenueRows
+    const nameMax = isCompact ? 16 : 40
+    const cats = rows.map((r: any) => truncName(r.productName || '—', nameMax))
+    const grid = {
+      strokeDashArray: 4,
+      borderColor: 'var(--mui-palette-divider)',
+      padding: isCompact
+        ? { top: 4, right: 4, bottom: 0, left: 2 }
+        : { top: 8, right: 12, bottom: 8, left: 12 }
+    } as const
+
+    if (isCompact) {
+      return {
+        chart: { parentHeightOffset: 0, toolbar: { show: false } },
+        colors: ['var(--mui-palette-primary-main)'],
+        grid,
+        dataLabels: { enabled: false },
+        plotOptions: { bar: { horizontal: true, borderRadius: 6, barHeight: '78%' } },
+        xaxis: {
+          categories: cats,
+          labels: {
+            style: { fontSize: '10px' },
+            maxWidth: 100,
+            trim: true,
+            hideOverlappingLabels: true
+          }
+        },
+        yaxis: {
+          labels: {
+            maxWidth: 70,
+            style: { fontSize: '9px' },
+            formatter: (val: number) =>
+              `₨ ${(val || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`
+          }
+        }
+      } as ApexOptions
+    }
+
     return {
       chart: { toolbar: { show: false } },
       plotOptions: { bar: { borderRadius: 4, columnWidth: '55%' } },
       dataLabels: { enabled: false },
       xaxis: {
-        categories: rows.map((r: any) => r.productName || '—'),
-        labels: { rotate: -35, style: { fontSize: '11px' } }
+        categories: cats,
+        labels: { rotate: -30, style: { fontSize: '11px' } }
       },
       yaxis: {
         labels: {
@@ -193,33 +267,38 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
         }
       },
       colors: ['var(--mui-palette-primary-main)'],
-      grid: { strokeDashArray: 4, borderColor: 'var(--mui-palette-divider)' }
-    }
-  }, [revBreakdown])
+      grid
+    } as ApexOptions
+  }, [productRevenueRows, isCompact])
 
   const barSeries = useMemo(() => {
-    const rows = (revBreakdown?.byProduct || []).slice(0, 12)
+    const rows = productRevenueRows
     return [{ name: 'Revenue', data: rows.map((r: any) => r.revenue) }]
-  }, [revBreakdown])
+  }, [productRevenueRows])
 
   const formatPKR = (v: number) =>
     `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  const lineChartHeight = isCompact ? 300 : 360
+  const donutChartHeight = isCompact ? 300 : 360
+  /** Slightly shorter in the aside column so the row fits typical viewports. */
+  const donutAsideHeight = isCompact ? donutChartHeight : 340
 
   const marginPct = summary?.profitMarginPercent
 
   return (
     <Grid size={{ xs: 12 }}>
-      <Card>
+      <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
         <CardHeader
-          title='Profit & cost (charts)'
-          subheader='Filters apply to the charts below. Open Reports for full tables and cash detail.'
+          title='Revenue vs cost vs profit'
+          subheader='Primary executive trend view. Filters apply across analytics.'
           action={
             <Button component={Link} href='/reports' size='small' variant='tonal'>
               Full reports
             </Button>
           }
         />
-        <CardContent className='flex flex-col gap-6'>
+        <CardContent className='flex flex-col gap-5'>
           <div>
             <Typography variant='subtitle2' color='text.secondary' className='mbe-2'>
               Filters
@@ -307,7 +386,7 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
             </Typography>
           </div>
 
-          <Grid container spacing={4}>
+          <Grid container spacing={3}>
             {summaryLoading
               ? (['Revenue', 'Total cost', 'Net profit', 'Margin'] as const).map(label => (
                   <Grid key={label} size={{ xs: 6, sm: 3 }}>
@@ -349,50 +428,95 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
                 ))}
           </Grid>
 
-          <Grid container spacing={4}>
-            <Grid size={{ xs: 12, lg: 8 }}>
-              <Card variant='outlined'>
+          <Grid container spacing={3}>
+            <Grid size={{ xs: 12, md: 8 }}>
+              <Card variant='outlined' className='h-full'>
                 <CardHeader title='Revenue vs cost vs profit' subheader='By month (trends)' />
                 <CardContent>
                   {trendsLoading ? (
-                    <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
+                    <Skeleton variant='rounded' width='100%' height={lineChartHeight} animation='wave' />
                   ) : trends?.series?.length ? (
-                    <AppReactApexCharts type='line' height={360} options={lineOptions} series={lineSeries} />
+                    <ResponsiveChartWrapper minHeight={lineChartHeight}>
+                      <AppReactApexCharts
+                        type='line'
+                        height={lineChartHeight}
+                        options={lineOptions}
+                        series={lineSeries}
+                      />
+                    </ResponsiveChartWrapper>
                   ) : (
                     <Typography color='text.secondary'>No trend data for this range.</Typography>
                   )}
                 </CardContent>
               </Card>
             </Grid>
-            <Grid size={{ xs: 12, lg: 4 }}>
-              <Card variant='outlined'>
-                <CardHeader title='Cost breakdown' />
-                <CardContent>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <Card variant='outlined' className='h-full'>
+                <CardHeader title='Cost breakdown' subheader='Expenses in range' />
+                <CardContent
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    minHeight: { md: lineChartHeight }
+                  }}
+                >
                   {summaryLoading ? (
-                    <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
+                    <Skeleton variant='rounded' width='100%' height={donutAsideHeight} animation='wave' />
                   ) : donutSeries.some((x: number) => x > 0) ? (
-                    <AppReactApexCharts type='donut' height={360} options={donutOptions} series={donutSeries} />
+                    <ResponsiveChartWrapper minHeight={donutAsideHeight}>
+                      <AppReactApexCharts
+                        type='donut'
+                        height={donutAsideHeight}
+                        options={donutOptions}
+                        series={donutSeries}
+                      />
+                    </ResponsiveChartWrapper>
                   ) : (
                     <Typography color='text.secondary'>No costs in range.</Typography>
                   )}
                 </CardContent>
               </Card>
             </Grid>
-            <Grid size={{ xs: 12 }}>
-              <Card variant='outlined'>
-                <CardHeader title='Top products by revenue (delivery lines)' />
-                <CardContent>
-                  {revenueLoading ? (
-                    <Skeleton variant='rounded' width='100%' height={380} animation='wave' />
-                  ) : barSeries[0]?.data?.length ? (
-                    <AppReactApexCharts type='bar' height={380} options={barOptions} series={barSeries} />
-                  ) : (
-                    <Typography color='text.secondary'>No product revenue rows.</Typography>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
           </Grid>
+
+          <Accordion
+            disableGutters
+            expanded={analyticsAccordionExpanded}
+            onChange={onAnalyticsAccordionChange}
+            sx={{ mt: 2, boxShadow: 'none', border: '1px solid var(--mui-palette-divider)', borderRadius: 3 }}
+          >
+            <AccordionSummary expandIcon={<i className='tabler-chevron-down' />}>
+              <Typography variant='subtitle1' sx={{ fontWeight: 700 }}>
+                Trends &amp; analytics
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ px: { xs: 0, sm: 0.5 }, py: 1.5, pt: 0 }}>
+              <Grid container spacing={3}>
+                <Grid size={{ xs: 12 }}>
+                  <Card variant='outlined'>
+                    <CardHeader title='Top products by revenue (delivery lines)' />
+                    <CardContent>
+                      {revenueLoading ? (
+                        <Skeleton variant='rounded' width='100%' height={topProductsBarHeight} animation='wave' />
+                      ) : barSeries[0]?.data?.length ? (
+                        <ResponsiveChartWrapper minHeight={topProductsBarHeight}>
+                          <AppReactApexCharts
+                            type='bar'
+                            height={topProductsBarHeight}
+                            options={barOptions}
+                            series={barSeries}
+                          />
+                        </ResponsiveChartWrapper>
+                      ) : (
+                        <Typography color='text.secondary'>No product revenue rows.</Typography>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
         </CardContent>
       </Card>
     </Grid>

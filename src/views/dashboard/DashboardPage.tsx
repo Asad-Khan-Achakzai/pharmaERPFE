@@ -1,14 +1,20 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react'
-import Link from 'next/link'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
-import Button from '@mui/material/Button'
+import Card from '@mui/material/Card'
+import CardContent from '@mui/material/CardContent'
+import Stack from '@mui/material/Stack'
 import Skeleton from '@mui/material/Skeleton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
+import Accordion from '@mui/material/Accordion'
+import AccordionSummary from '@mui/material/AccordionSummary'
+import AccordionDetails from '@mui/material/AccordionDetails'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
 import type { ApexOptions } from 'apexcharts'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
@@ -19,11 +25,16 @@ import { useAuth } from '@/contexts/AuthContext'
 import { isAdminLike } from '@/utils/roleHelpers'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import { isAxiosError } from 'axios'
-import DashboardKPISection from '@/views/dashboard/DashboardKPISection'
+import DashboardSnapshotKpis from '@/views/dashboard/DashboardSnapshotKpis'
+import DashboardWelcomeColumn from '@/views/dashboard/DashboardWelcomeColumn'
+import MyAttendanceCard from '@/views/dashboard/MyAttendanceCard'
 import DashboardChartsSection from '@/views/dashboard/DashboardChartsSection'
 import DashboardSupplierSection from '@/views/dashboard/DashboardSupplierSection'
 import DashboardAttendanceSection from '@/views/dashboard/DashboardAttendanceSection'
-import type { KpiItem, TodayBoard, TodayEmployee } from '@/views/dashboard/dashboard.types'
+import DashboardQuickActions, { type QuickAction } from '@/views/dashboard/DashboardQuickActions'
+import MobileCardList from '@/views/dashboard/MobileCardList'
+import SectionHeader from '@/views/dashboard/SectionHeader'
+import type { TodayBoard, TodayEmployee } from '@/views/dashboard/dashboard.types'
 
 function isAbortError(e: unknown): boolean {
   return isAxiosError(e) && e.code === 'ERR_CANCELED'
@@ -56,6 +67,8 @@ let dashboardKpiCache: any = null
 
 const DashboardPage = () => {
   const { user } = useAuth()
+  const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'))
 
   /** Stable booleans — do not depend on hasPermission() identity */
   const attendanceScope = useMemo(() => {
@@ -594,63 +607,186 @@ const DashboardPage = () => {
     return [d.Present ?? 0, d.Absent ?? 0, d['Half-Day'] ?? 0, d.Leave ?? 0]
   }, [todayBoard?.distribution])
 
-  const kpis = useMemo(
-    () =>
-      data
-        ? [
-            { title: 'Total Sales', value: formatPKR(data.totalSales), icon: 'tabler-chart-line', color: 'primary' },
-            { title: 'Gross Profit', value: formatPKR(data.grossProfit), icon: 'tabler-trending-up', color: 'success' },
-            { title: 'Total Expenses', value: formatPKR(data.totalExpenses), icon: 'tabler-receipt', color: 'warning' },
-            { title: 'Net Profit', value: formatPKR(data.netProfit), icon: 'tabler-coin', color: 'info' },
-            { title: 'Total Paid', value: formatPKR(data.totalPaid), icon: 'tabler-cash', color: 'success' },
-            { title: 'Outstanding', value: formatPKR(data.totalOutstanding), icon: 'tabler-alert-circle', color: 'error' }
-          ]
-        : [],
-    [data]
-  )
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours()
+    if (hour < 12) return 'Good morning'
+    if (hour < 18) return 'Good afternoon'
+    return 'Good evening'
+  }, [])
+
+  const businessHealthSummary = useMemo(() => {
+    if (!data) return 'Loading current business health indicators.'
+    const net = Number(data.netProfit || 0)
+    const outstanding = Number(data.totalOutstanding || 0)
+    if (net >= 0 && outstanding <= Number(data.totalSales || 0) * 0.3) {
+      return 'Profit is positive and outstanding exposure is within a stable range.'
+    }
+    if (net < 0) return 'Revenue is active, but profitability is negative and needs attention.'
+    return 'Revenue is steady while cashflow pressure remains on outstanding balances.'
+  }, [data])
+
+  const quickActions = useMemo<QuickAction[]>(() => {
+    if (!user) return []
+    const has = (permission: string) =>
+      user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' || user.permissions.includes(permission)
+    const actionCatalog: QuickAction[] = [
+      { key: 'orders', label: 'Orders', href: '/orders/list', icon: 'tabler-clipboard-list' },
+      { key: 'visits', label: 'Visits', href: '/visits/today', icon: 'tabler-map-pin' },
+      { key: 'attendance', label: 'Attendance', href: '/attendance', icon: 'tabler-calendar-check' },
+      { key: 'reports', label: 'Reports', href: '/reports', icon: 'tabler-chart-line' },
+      { key: 'inventory', label: 'Inventory', href: '/inventory', icon: 'tabler-packages' },
+      { key: 'suppliers', label: 'Suppliers', href: '/suppliers/list', icon: 'tabler-building-store' },
+      { key: 'payments', label: 'Payments', href: '/payments/list', icon: 'tabler-cash' }
+    ]
+    const permissionMap: Record<string, string> = {
+      orders: 'orders.view',
+      visits: 'weeklyPlans.markVisit',
+      attendance: 'attendance.view',
+      reports: 'reports.view',
+      inventory: 'inventory.view',
+      suppliers: 'suppliers.view',
+      payments: 'payments.view'
+    }
+    return actionCatalog.filter(a => has(permissionMap[a.key] || ''))
+  }, [user])
 
   return (
     <>
-    <Grid container spacing={6}>
-      <DashboardKPISection dashboardDataLoading={dashboardDataLoading} loadError={loadError} kpis={kpis} data={data} />
-      <DashboardAttendanceSection
-        showCompanyAttendance={showCompanyAttendance}
-        showMyAttendance={showMyAttendance}
-        meTodayLoading={meTodayLoading}
-        meToday={meToday}
-        checkingIn={checkingIn}
-        checkingOut={checkingOut}
-        handleCheckIn={handleCheckIn}
-        handleCheckOut={handleCheckOut}
-        teamAttendanceLoading={teamAttendanceLoading}
-        todayBoard={todayBoard}
-        isAdmin={isAdmin}
-        sortBy={sortBy}
-        setSortBy={setSortBy}
-        sortDir={sortDir}
-        setSortDir={setSortDir}
-        filterStatus={filterStatus}
-        setFilterStatus={setFilterStatus}
-        tableRows={tableRows}
-        adminAttendanceBusy={adminAttendanceBusy}
-        openStatusMenu={openStatusMenu}
-        donutOptions={donutOptions}
-        donutSeries={donutSeries}
-        formatPstHm={formatPstHm}
-      />
+    <Grid container spacing={4}>
+      <Grid size={{ xs: 12, md: 4 }} sx={{ alignSelf: { md: 'flex-start' } }}>
+        <Stack spacing={2.5} sx={{ width: '100%', minHeight: 0 }}>
+          <DashboardWelcomeColumn
+            greeting={greeting}
+            name={user?.name || 'Team'}
+            summary={dashboardDataLoading && !data ? 'Loading current business health…' : businessHealthSummary}
+            highlight={data && !loadError ? formatPKR(Number(data.totalSales) || 0) : undefined}
+          />
+          {showMyAttendance ? (
+            <MyAttendanceCard
+              meTodayLoading={meTodayLoading}
+              meToday={meToday}
+              checkingIn={checkingIn}
+              checkingOut={checkingOut}
+              handleCheckIn={handleCheckIn}
+              handleCheckOut={handleCheckOut}
+              formatPstHm={formatPstHm}
+            />
+          ) : null}
+        </Stack>
+      </Grid>
+      <Grid size={{ xs: 12, md: 8 }}>
+        <DashboardSnapshotKpis
+          dashboardDataLoading={dashboardDataLoading}
+          loadError={loadError}
+          data={data}
+        />
+      </Grid>
+      <DashboardQuickActions actions={quickActions} />
       <DashboardChartsSection
         canViewReports={canViewReports}
         canViewInventory={canViewInventory}
         nonCriticalReady={nonCriticalReady}
       />
-      <DashboardSupplierSection
-        canViewSuppliers={canViewSuppliers}
-        supplierPaymentsLoading={supplierPaymentsLoading}
-        recentSupplierPayments={recentSupplierPayments}
-        supplierPayablesLoading={supplierPayablesLoading}
-        topSuppliersPayable={topSuppliersPayable}
-        nonCriticalReady={nonCriticalReady}
-      />
+      {isMobile ? (
+        <Grid size={{ xs: 12 }}>
+          <Accordion defaultExpanded={false} disableGutters sx={{ borderRadius: 3, border: '1px solid var(--mui-palette-divider)' }}>
+            <AccordionSummary expandIcon={<i className='tabler-chevron-down' />}>
+              <Typography variant='subtitle1' sx={{ fontWeight: 700 }}>
+                Attendance
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ px: { xs: 1, sm: 2 }, py: 2, pt: 1 }}>
+              <DashboardAttendanceSection
+                showCompanyAttendance={showCompanyAttendance}
+                showMyAttendance={showMyAttendance}
+                meTodayLoading={meTodayLoading}
+                meToday={meToday}
+                checkingIn={checkingIn}
+                checkingOut={checkingOut}
+                handleCheckIn={handleCheckIn}
+                handleCheckOut={handleCheckOut}
+                teamAttendanceLoading={teamAttendanceLoading}
+                todayBoard={todayBoard}
+                isAdmin={isAdmin}
+                sortBy={sortBy}
+                setSortBy={setSortBy}
+                sortDir={sortDir}
+                setSortDir={setSortDir}
+                filterStatus={filterStatus}
+                setFilterStatus={setFilterStatus}
+                tableRows={tableRows}
+                adminAttendanceBusy={adminAttendanceBusy}
+                openStatusMenu={openStatusMenu}
+                donutOptions={donutOptions}
+                donutSeries={donutSeries}
+                formatPstHm={formatPstHm}
+                splitMyAttendance={showMyAttendance}
+                embedded
+              />
+            </AccordionDetails>
+          </Accordion>
+        </Grid>
+      ) : (
+        <DashboardAttendanceSection
+          showCompanyAttendance={showCompanyAttendance}
+          showMyAttendance={showMyAttendance}
+          meTodayLoading={meTodayLoading}
+          meToday={meToday}
+          checkingIn={checkingIn}
+          checkingOut={checkingOut}
+          handleCheckIn={handleCheckIn}
+          handleCheckOut={handleCheckOut}
+          teamAttendanceLoading={teamAttendanceLoading}
+          todayBoard={todayBoard}
+          isAdmin={isAdmin}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          sortDir={sortDir}
+          setSortDir={setSortDir}
+          filterStatus={filterStatus}
+          setFilterStatus={setFilterStatus}
+          tableRows={tableRows}
+          adminAttendanceBusy={adminAttendanceBusy}
+          openStatusMenu={openStatusMenu}
+          donutOptions={donutOptions}
+          donutSeries={donutSeries}
+          formatPstHm={formatPstHm}
+          splitMyAttendance={showMyAttendance}
+        />
+      )}
+      {isMobile ? (
+        <Grid size={{ xs: 12 }}>
+          <Accordion defaultExpanded={false} disableGutters sx={{ borderRadius: 3, border: '1px solid var(--mui-palette-divider)' }}>
+            <AccordionSummary expandIcon={<i className='tabler-chevron-down' />}>
+              <Typography variant='subtitle1' sx={{ fontWeight: 700 }}>
+                Suppliers & Payables
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ px: { xs: 1, sm: 2 }, py: 2, pt: 1 }}>
+              <DashboardSupplierSection
+                canViewSuppliers={canViewSuppliers}
+                supplierPaymentsLoading={supplierPaymentsLoading}
+                recentSupplierPayments={recentSupplierPayments}
+                supplierPayablesLoading={supplierPayablesLoading}
+                topSuppliersPayable={topSuppliersPayable}
+                nonCriticalReady={nonCriticalReady}
+                ordersByStatus={data?.ordersByStatus}
+                embedded
+              />
+            </AccordionDetails>
+          </Accordion>
+        </Grid>
+      ) : (
+        <DashboardSupplierSection
+          canViewSuppliers={canViewSuppliers}
+          supplierPaymentsLoading={supplierPaymentsLoading}
+          recentSupplierPayments={recentSupplierPayments}
+          supplierPayablesLoading={supplierPayablesLoading}
+          topSuppliersPayable={topSuppliersPayable}
+          nonCriticalReady={nonCriticalReady}
+          ordersByStatus={data?.ordersByStatus}
+        />
+      )}
     </Grid>
 
     <Menu

@@ -6,7 +6,10 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import classnames from 'classnames'
 import type { ApexOptions } from 'apexcharts'
+import { useTheme } from '@mui/material/styles'
+import useMediaQuery from '@mui/material/useMediaQuery'
 
+import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -22,6 +25,7 @@ import TabPanel from '@mui/lab/TabPanel'
 import CustomAvatar from '@core/components/mui/Avatar'
 import { inventoryService } from '@/services/inventory.service'
 import { showApiError } from '@/utils/apiErrors'
+import ResponsiveChartWrapper from '@/views/dashboard/ResponsiveChartWrapper'
 
 const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false })
 
@@ -42,7 +46,7 @@ type DetailRow = {
   distributorId?: { name?: string } | null
 }
 
-const truncLabel = (s: string, max = 36) => {
+const truncLabel = (s: string, max: number) => {
   const t = (s || '—').trim()
   return t.length <= max ? t : `${t.slice(0, max - 1)}…`
 }
@@ -52,6 +56,11 @@ type InventoryDashboardChartsProps = {
 }
 
 const InventoryDashboardCharts = ({ deferFetch = false }: InventoryDashboardChartsProps) => {
+  const theme = useTheme()
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'), { noSsr: true })
+  const labelMax = isCompact ? 16 : 36
+  const topN = isCompact ? 6 : TOP_N
+
   const [tab, setTab] = useState<TabId>('value')
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(true)
@@ -120,44 +129,69 @@ const InventoryDashboardCharts = ({ deferFetch = false }: InventoryDashboardChar
     }
     return [...m.entries()]
       .sort((a, b) => b[1] - a[1])
-      .slice(0, TOP_N)
-  }, [detailRows])
+      .slice(0, topN)
+  }, [detailRows, topN])
 
   const byValue = useMemo(() => {
     return [...summaryRows]
       .sort((a, b) => (b.totalValue || 0) - (a.totalValue || 0))
-      .slice(0, TOP_N)
-  }, [summaryRows])
+      .slice(0, topN)
+  }, [summaryRows, topN])
 
   const byQty = useMemo(() => {
     return [...summaryRows]
       .sort((a, b) => (b.totalQuantity || 0) - (a.totalQuantity || 0))
-      .slice(0, TOP_N)
-  }, [summaryRows])
+      .slice(0, topN)
+  }, [summaryRows, topN])
 
-  const barHeight = (count: number) => Math.max(260, Math.min(520, 48 + count * 36))
+  const barHeight = (count: number) => {
+    const n = count || 1
+    if (isCompact) {
+      return Math.max(300, Math.min(580, 56 + n * 46))
+    }
+    return Math.max(260, Math.min(520, 48 + n * 36))
+  }
 
   const valueOptions: ApexOptions = useMemo(() => {
     const rows = byValue
-    const cats = rows.map(r => truncLabel(r.productName || '—'))
+    const cats = rows.map(r => truncLabel(r.productName || '—', labelMax))
     return {
       chart: { toolbar: { show: false } },
-      plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '70%' } },
+      plotOptions: {
+        bar: { horizontal: true, borderRadius: isCompact ? 6 : 4, barHeight: isCompact ? '78%' : '70%' }
+      },
       dataLabels: { enabled: false },
       xaxis: {
         categories: cats,
-        labels: { style: { fontSize: '11px' } }
+        labels: {
+          style: { fontSize: isCompact ? '10px' : '11px' },
+          maxWidth: isCompact ? 100 : 220,
+          trim: true,
+          /**
+           * Horizontal bars: `xaxis.categories` render on the Y side in Apex. Constrain
+           * the category band so long names don’t crush the value axis on mobile.
+           */
+          hideOverlappingLabels: true
+        }
       },
       yaxis: {
         labels: {
+          maxWidth: isCompact ? 72 : 100,
+          style: { fontSize: isCompact ? '9px' : '12px' },
           formatter: (val: number) =>
             `₨ ${(val || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`
         }
       },
       colors: ['var(--mui-palette-primary-main)'],
-      grid: { strokeDashArray: 4, borderColor: 'var(--mui-palette-divider)' }
+      grid: {
+        strokeDashArray: 4,
+        borderColor: 'var(--mui-palette-divider)',
+        padding: isCompact
+          ? { top: 6, right: 4, bottom: 2, left: 2 }
+          : { top: 8, right: 12, bottom: 8, left: 8 }
+      }
     }
-  }, [byValue])
+  }, [byValue, isCompact, labelMax])
 
   const valueSeries = useMemo(
     () => [{ name: 'Stock value', data: byValue.map(r => r.totalValue || 0) }],
@@ -166,24 +200,39 @@ const InventoryDashboardCharts = ({ deferFetch = false }: InventoryDashboardChar
 
   const qtyOptions: ApexOptions = useMemo(() => {
     const rows = byQty
-    const cats = rows.map(r => truncLabel(r.productName || '—'))
+    const cats = rows.map(r => truncLabel(r.productName || '—', labelMax))
     return {
       chart: { toolbar: { show: false } },
-      plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '70%' } },
+      plotOptions: {
+        bar: { horizontal: true, borderRadius: isCompact ? 6 : 4, barHeight: isCompact ? '78%' : '70%' }
+      },
       dataLabels: { enabled: false },
       xaxis: {
         categories: cats,
-        labels: { style: { fontSize: '11px' } }
+        labels: {
+          style: { fontSize: isCompact ? '10px' : '11px' },
+          maxWidth: isCompact ? 100 : 220,
+          trim: true,
+          hideOverlappingLabels: true
+        }
       },
       yaxis: {
         labels: {
+          maxWidth: isCompact ? 72 : 100,
+          style: { fontSize: isCompact ? '9px' : '12px' },
           formatter: (val: number) => (val || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })
         }
       },
       colors: ['var(--mui-palette-info-main)'],
-      grid: { strokeDashArray: 4, borderColor: 'var(--mui-palette-divider)' }
+      grid: {
+        strokeDashArray: 4,
+        borderColor: 'var(--mui-palette-divider)',
+        padding: isCompact
+          ? { top: 6, right: 4, bottom: 2, left: 2 }
+          : { top: 8, right: 12, bottom: 8, left: 8 }
+      }
     }
-  }, [byQty])
+  }, [byQty, isCompact, labelMax])
 
   const qtySeries = useMemo(
     () => [{ name: 'Units', data: byQty.map(r => r.totalQuantity || 0) }],
@@ -191,25 +240,40 @@ const InventoryDashboardCharts = ({ deferFetch = false }: InventoryDashboardChar
   )
 
   const distOptions: ApexOptions = useMemo(() => {
-    const cats = distributorAgg.map(([name]) => truncLabel(name))
+    const cats = distributorAgg.map(([name]) => truncLabel(name, labelMax))
     return {
       chart: { toolbar: { show: false } },
-      plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '70%' } },
+      plotOptions: {
+        bar: { horizontal: true, borderRadius: isCompact ? 6 : 4, barHeight: isCompact ? '78%' : '70%' }
+      },
       dataLabels: { enabled: false },
       xaxis: {
         categories: cats,
-        labels: { style: { fontSize: '11px' } }
+        labels: {
+          style: { fontSize: isCompact ? '10px' : '11px' },
+          maxWidth: isCompact ? 100 : 220,
+          trim: true,
+          hideOverlappingLabels: true
+        }
       },
       yaxis: {
         labels: {
+          maxWidth: isCompact ? 72 : 100,
+          style: { fontSize: isCompact ? '9px' : '12px' },
           formatter: (val: number) =>
             `₨ ${(val || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`
         }
       },
       colors: ['var(--mui-palette-success-main)'],
-      grid: { strokeDashArray: 4, borderColor: 'var(--mui-palette-divider)' }
+      grid: {
+        strokeDashArray: 4,
+        borderColor: 'var(--mui-palette-divider)',
+        padding: isCompact
+          ? { top: 6, right: 4, bottom: 2, left: 2 }
+          : { top: 8, right: 12, bottom: 8, left: 8 }
+      }
     }
-  }, [distributorAgg])
+  }, [distributorAgg, isCompact, labelMax])
 
   const distSeries = useMemo(
     () => [{ name: 'Stock value', data: distributorAgg.map(([, v]) => v) }],
@@ -229,7 +293,7 @@ const InventoryDashboardCharts = ({ deferFetch = false }: InventoryDashboardChar
 
   return (
     <Grid size={{ xs: 12 }}>
-      <Card>
+      <Card variant='outlined' sx={{ boxShadow: 'none', borderColor: 'divider' }}>
         <CardHeader
           title='Inventory overview'
           subheader='Top products and distributor stock (same sources as the Inventory page).'
@@ -239,7 +303,7 @@ const InventoryDashboardCharts = ({ deferFetch = false }: InventoryDashboardChar
             </Button>
           }
         />
-        <CardContent className='flex flex-col gap-4'>
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 3, md: 4 } }}>
           {summaryLoading ? (
             <Skeleton variant='text' width='85%' height={24} animation='wave' />
           ) : (
@@ -267,6 +331,7 @@ const InventoryDashboardCharts = ({ deferFetch = false }: InventoryDashboardChar
                 aria-label='inventory chart tabs'
                 className='!border-0 mbe-4'
                 sx={{
+                  minHeight: 0,
                   '& .MuiTabs-indicator': { display: 'none !important' },
                   '& .MuiTab-root': { padding: '0 !important', border: '0 !important', minHeight: 0 }
                 }}
@@ -275,78 +340,110 @@ const InventoryDashboardCharts = ({ deferFetch = false }: InventoryDashboardChar
                   <Tab
                     key={def.id}
                     value={def.id}
-                    className='mie-4'
+                    className={isCompact ? 'mie-2' : 'mie-4'}
                     label={
-                      <div
+                      <Box
                         className={classnames(
-                          'flex flex-col items-center justify-center gap-2 is-[110px] bs-[100px] border rounded-xl',
+                          'flex flex-col items-center justify-center gap-1.5 border rounded-xl',
                           tab === def.id
                             ? 'border-solid border-[var(--mui-palette-primary-main)]'
                             : 'border-dashed'
                         )}
+                        sx={{
+                          width: { xs: 96, sm: 110 },
+                          minHeight: { xs: 86, sm: 100 },
+                          px: 0.5,
+                          py: 1
+                        }}
                       >
                         <CustomAvatar
                           variant='rounded'
                           skin='light'
-                          size={38}
+                          size={isCompact ? 34 : 38}
                           {...(tab === def.id && { color: 'primary' })}
                         >
                           <i
-                            className={classnames('text-[22px]', def.icon, {
+                            className={classnames(isCompact ? 'text-[20px]' : 'text-[22px]', def.icon, {
                               'text-textSecondary': tab !== def.id
                             })}
                           />
                         </CustomAvatar>
-                        <Typography className='font-medium text-center leading-tight' color='text.primary'>
+                        <Typography
+                          variant='caption'
+                          className='font-medium text-center leading-tight'
+                          color='text.primary'
+                          sx={{ fontSize: isCompact ? '0.7rem' : '0.8125rem' }}
+                        >
                           {def.title}
                         </Typography>
-                      </div>
+                      </Box>
                     }
                   />
                 ))}
               </TabList>
 
-              <TabPanel value='value' className='!p-0'>
+              <TabPanel value='value' className='!p-0' sx={{ pt: 0.5 }}>
                 {summaryLoading ? (
-                  <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
+                  <Skeleton
+                    variant='rounded'
+                    width='100%'
+                    height={barHeight(Math.max(byValue.length, 1))}
+                    animation='wave'
+                  />
                 ) : valueSeries[0]?.data?.some((n: number) => n > 0) ? (
-                  <AppReactApexCharts
-                    type='bar'
-                    height={barHeight(byValue.length)}
-                    width='100%'
-                    options={valueOptions}
-                    series={valueSeries}
-                  />
+                  <ResponsiveChartWrapper minHeight={barHeight(byValue.length)}>
+                    <AppReactApexCharts
+                      type='bar'
+                      height={barHeight(byValue.length)}
+                      width='100%'
+                      options={valueOptions}
+                      series={valueSeries}
+                    />
+                  </ResponsiveChartWrapper>
                 ) : (
                   <Typography color='text.secondary'>No product summary to chart.</Typography>
                 )}
               </TabPanel>
-              <TabPanel value='quantity' className='!p-0'>
+              <TabPanel value='quantity' className='!p-0' sx={{ pt: 0.5 }}>
                 {summaryLoading ? (
-                  <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
-                ) : qtySeries[0]?.data?.some((n: number) => n > 0) ? (
-                  <AppReactApexCharts
-                    type='bar'
-                    height={barHeight(byQty.length)}
+                  <Skeleton
+                    variant='rounded'
                     width='100%'
-                    options={qtyOptions}
-                    series={qtySeries}
+                    height={barHeight(Math.max(byQty.length, 1))}
+                    animation='wave'
                   />
+                ) : qtySeries[0]?.data?.some((n: number) => n > 0) ? (
+                  <ResponsiveChartWrapper minHeight={barHeight(byQty.length)}>
+                    <AppReactApexCharts
+                      type='bar'
+                      height={barHeight(byQty.length)}
+                      width='100%'
+                      options={qtyOptions}
+                      series={qtySeries}
+                    />
+                  </ResponsiveChartWrapper>
                 ) : (
                   <Typography color='text.secondary'>No product summary to chart.</Typography>
                 )}
               </TabPanel>
-              <TabPanel value='distributor' className='!p-0'>
+              <TabPanel value='distributor' className='!p-0' sx={{ pt: 0.5 }}>
                 {detailLoading ? (
-                  <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
-                ) : distSeries[0]?.data?.some((n: number) => n > 0) ? (
-                  <AppReactApexCharts
-                    type='bar'
-                    height={barHeight(distributorAgg.length)}
+                  <Skeleton
+                    variant='rounded'
                     width='100%'
-                    options={distOptions}
-                    series={distSeries}
+                    height={barHeight(Math.max(distributorAgg.length, 1))}
+                    animation='wave'
                   />
+                ) : distSeries[0]?.data?.some((n: number) => n > 0) ? (
+                  <ResponsiveChartWrapper minHeight={barHeight(distributorAgg.length)}>
+                    <AppReactApexCharts
+                      type='bar'
+                      height={barHeight(distributorAgg.length)}
+                      width='100%'
+                      options={distOptions}
+                      series={distSeries}
+                    />
+                  </ResponsiveChartWrapper>
                 ) : (
                   <Typography color='text.secondary'>No distributor-level stock rows.</Typography>
                 )}

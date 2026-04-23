@@ -4,104 +4,118 @@ import { memo } from 'react'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
-import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Skeleton from '@mui/material/Skeleton'
-import type { KpiItem } from './dashboard.types'
+import KPIGroup from './KPIGroup'
+import SectionHeader from './SectionHeader'
 
 const DashboardKPISection = memo(function DashboardKPISection({
   dashboardDataLoading,
   loadError,
-  kpis,
   data
 }: {
   dashboardDataLoading: boolean
   loadError: boolean
-  kpis: KpiItem[]
   data: any
 }) {
+  const formatPKR = (v: number) =>
+    `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  const groups = data
+    ? [
+        {
+          title: 'Revenue',
+          value: formatPKR(data.totalSales),
+          helper: 'Total sales recorded for current snapshot',
+          icon: 'tabler-chart-line',
+          tone: 'primary' as const
+        },
+        {
+          title: 'Profit',
+          value: formatPKR(data.netProfit),
+          helper: `Gross ${formatPKR(data.grossProfit)} after costs`,
+          icon: 'tabler-trending-up',
+          tone: (data.netProfit || 0) >= 0 ? ('success' as const) : ('error' as const)
+        },
+        {
+          title: 'Cashflow',
+          value: formatPKR(data.totalPaid),
+          helper: 'Collections already received',
+          icon: 'tabler-cash',
+          tone: 'info' as const
+        },
+        {
+          title: 'Payables',
+          value: formatPKR(data.totalOutstanding),
+          helper: `Expenses ${formatPKR(data.totalExpenses)}`,
+          icon: 'tabler-alert-circle',
+          tone: 'warning' as const
+        }
+      ]
+    : []
+
   return (
     <>
-      {dashboardDataLoading
-        ? Array.from({ length: 6 }).map((_, i) => (
-            <Grid key={`kpi-skel-${i}`} size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
-              <Card>
-                <CardContent className='flex flex-col items-center gap-2 p-6'>
-                  <Skeleton variant='circular' width={48} height={48} animation='wave' />
-                  <Skeleton variant='text' width='85%' height={36} animation='wave' />
-                  <Skeleton variant='text' width='65%' height={24} animation='wave' />
-                </CardContent>
-              </Card>
-            </Grid>
-          ))
-        : loadError
-          ? (
-            <Grid size={{ xs: 12 }}>
-              <Card>
-                <CardContent className='p-6'>
-                  <Typography color='error'>Summary metrics could not be loaded.</Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            )
-          : kpis.map((kpi, i) => (
-              <Grid key={i} size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
-                <Card>
-                  <CardContent className='flex flex-col items-center gap-2 p-6'>
-                    <i className={`${kpi.icon} text-3xl text-${kpi.color}`} />
-                    <Typography variant='h6' className='text-center'>
-                      {kpi.value}
-                    </Typography>
-                    <Typography variant='body2' color='text.secondary'>
-                      {kpi.title}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
-
       <Grid size={{ xs: 12 }}>
-        <Card>
-          <CardHeader title='Orders by Status' />
-          <CardContent>
+        <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
+          <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+            <SectionHeader
+              title='Executive summary'
+              subtitle='Key financial snapshot. Values come from the same dashboard data as the rest of the app.'
+            />
             {dashboardDataLoading ? (
-              <div className='flex gap-4 flex-wrap'>
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Box
-                    key={i}
-                    sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      p: 2,
-                      minWidth: 120,
-                      border: 1,
-                      borderColor: 'divider',
-                      borderRadius: 1
-                    }}
-                  >
-                    <Skeleton variant='text' width={48} height={40} animation='wave' />
-                    <Skeleton variant='text' width='75%' height={28} animation='wave' sx={{ mt: 1 }} />
-                    <Skeleton variant='text' width='60%' height={20} animation='wave' />
-                  </Box>
+              <Grid container spacing={3}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Grid key={`kpi-skel-${i}`} size={{ xs: 12, sm: 6, lg: 3 }}>
+                    <Card variant='outlined' sx={{ borderRadius: 3 }}>
+                      <CardContent sx={{ p: 2.5 }}>
+                        <Skeleton variant='rounded' width={90} height={24} animation='wave' />
+                        <Skeleton variant='text' width='70%' height={44} animation='wave' />
+                        <Skeleton variant='text' width='100%' height={22} animation='wave' />
+                      </CardContent>
+                    </Card>
+                  </Grid>
                 ))}
-              </div>
+              </Grid>
             ) : loadError || !data ? (
-              <Typography color='text.secondary' variant='body2'>
-                Order breakdown is unavailable until the dashboard loads successfully.
-              </Typography>
+              <Typography color='error'>Summary metrics could not be loaded.</Typography>
             ) : (
-              <div className='flex gap-4 flex-wrap'>
-                {Object.entries(data.ordersByStatus || {}).map(([status, count]) => (
-                  <div key={status} className='flex flex-col items-center p-4 border rounded'>
-                    <Typography variant='h5'>{count as number}</Typography>
-                    <Typography variant='body2' color='text.secondary'>
-                      {status}
-                    </Typography>
-                  </div>
-                ))}
-              </div>
+              <>
+                <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+                  <Grid container spacing={3}>
+                    {groups.map(group => (
+                      <Grid key={group.title} size={{ xs: 12, sm: 6, lg: 3 }}>
+                        <KPIGroup {...group} />
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Box>
+                <Box
+                  className='-mx-1'
+                  sx={{
+                    display: { xs: 'flex', md: 'none' },
+                    gap: 2,
+                    overflowX: 'auto',
+                    py: 0.5,
+                    px: 0.5,
+                    scrollSnapType: 'x mandatory',
+                    WebkitOverflowScrolling: 'touch',
+                    scrollbarGutter: 'stable',
+                    '& > *': {
+                      scrollSnapAlign: 'start',
+                      flex: '0 0 auto',
+                      width: { xs: 'min(100%, 300px)', sm: 280 }
+                    }
+                  }}
+                >
+                  {groups.map(group => (
+                    <Box key={group.title}>
+                      <KPIGroup {...group} />
+                    </Box>
+                  ))}
+                </Box>
+              </>
             )}
           </CardContent>
         </Card>

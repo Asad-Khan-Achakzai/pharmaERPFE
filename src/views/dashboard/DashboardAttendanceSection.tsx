@@ -22,6 +22,8 @@ import type { ApexOptions } from 'apexcharts'
 import CustomTextField from '@core/components/mui/TextField'
 import AppReactApexCharts from '@/libs/styles/AppReactApexCharts'
 import type { TodayBoard, TodayEmployee } from './dashboard.types'
+import MobileCardList from './MobileCardList'
+import MyAttendanceCard from './MyAttendanceCard'
 
 const statusDisplay = (s: string) => {
   switch (s) {
@@ -71,7 +73,9 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
   openStatusMenu,
   donutOptions,
   donutSeries,
-  formatPstHm
+  formatPstHm,
+  embedded = false,
+  splitMyAttendance = false
 }: {
   showCompanyAttendance: boolean
   showMyAttendance: boolean
@@ -96,101 +100,24 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
   donutOptions: ApexOptions
   donutSeries: number[]
   formatPstHm: (iso: string | undefined) => string | null
+  embedded?: boolean
+  /** When true, “My attendance” is rendered in the dashboard hero row; skip it here. */
+  splitMyAttendance?: boolean
 }) {
   if (!showCompanyAttendance && !showMyAttendance) return null
-  return (
-    <Grid size={{ xs: 12 }}>
-      <Grid container spacing={4}>
-        {showMyAttendance && (
+  const content = (
+    <Grid container spacing={3}>
+        {showMyAttendance && !splitMyAttendance && (
           <Grid size={{ xs: 12 }}>
-            <Card>
-              <CardHeader title='My attendance today' />
-              <CardContent className='flex flex-col gap-3 items-start'>
-                {meTodayLoading ? (
-                  <Box
-                    sx={{ width: '100%' }}
-                    aria-busy
-                    aria-label='Loading your attendance'
-                  >
-                    <Skeleton variant='rounded' width='42%' height={28} animation='wave' sx={{ mb: 1.5 }} />
-                    <Skeleton variant='text' width='55%' animation='wave' />
-                    <Skeleton variant='text' width='48%' animation='wave' sx={{ mb: 2 }} />
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      <Skeleton variant='rounded' width={100} height={32} />
-                      <Skeleton variant='rounded' width={100} height={32} />
-                    </Box>
-                  </Box>
-                ) : (
-                  <>
-                    <Typography component='div' variant='body2' className='flex items-center gap-2 flex-wrap'>
-                      <span>Status:</span>
-                      <Chip
-                        size='small'
-                        label={
-                          meToday?.uiStatus === 'CHECKED_OUT'
-                            ? 'Checked out'
-                            : meToday?.uiStatus === 'PRESENT'
-                              ? 'Present'
-                              : 'Not marked'
-                        }
-                        color={
-                          meToday?.uiStatus === 'CHECKED_OUT'
-                            ? 'default'
-                            : meToday?.uiStatus === 'PRESENT'
-                              ? 'success'
-                              : 'warning'
-                        }
-                        variant='tonal'
-                      />
-                    </Typography>
-                    {meToday?.checkInTime && (
-                      <Typography variant='body2' color='text.secondary'>
-                        Check-in (PT): {formatPstHm(meToday.checkInTime as string) ?? '—'}
-                      </Typography>
-                    )}
-                    {meToday?.checkOutTime && (
-                      <Typography variant='body2' color='text.secondary'>
-                        Check-out (PT): {formatPstHm(meToday.checkOutTime as string) ?? '—'}
-                      </Typography>
-                    )}
-                    {meToday?.pstDate && (
-                      <Typography variant='caption' color='text.disabled'>
-                        Business date (Pacific): {meToday.pstDate}
-                      </Typography>
-                    )}
-                    <div className='flex flex-wrap gap-2'>
-                      <Button
-                        variant='contained'
-                        size='small'
-                        onClick={handleCheckIn}
-                        disabled={
-                          meTodayLoading ||
-                          checkingIn ||
-                          checkingOut ||
-                          !meToday?.canCheckIn
-                        }
-                      >
-                        {checkingIn ? 'Checking in...' : 'Check In'}
-                      </Button>
-                      <Button
-                        variant='tonal'
-                        color='secondary'
-                        size='small'
-                        onClick={handleCheckOut}
-                        disabled={
-                          meTodayLoading ||
-                          checkingIn ||
-                          checkingOut ||
-                          !meToday?.canCheckOut
-                        }
-                      >
-                        {checkingOut ? 'Checking out...' : 'Check Out'}
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+            <MyAttendanceCard
+              meTodayLoading={meTodayLoading}
+              meToday={meToday}
+              checkingIn={checkingIn}
+              checkingOut={checkingOut}
+              handleCheckIn={handleCheckIn}
+              handleCheckOut={handleCheckOut}
+              formatPstHm={formatPstHm}
+            />
           </Grid>
         )}
         {showCompanyAttendance && (
@@ -271,69 +198,95 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
                           <MenuItem value='NOT_MARKED'>Not marked</MenuItem>
                         </CustomTextField>
                       </div>
-                      <TableContainer component={Paper} variant='outlined'>
-                        <Table size='small'>
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Name</TableCell>
-                              <TableCell>Status</TableCell>
-                              <TableCell align='right'>Check-in (PT)</TableCell>
-                              <TableCell align='right'>Check-out (PT)</TableCell>
-                              {isAdmin && <TableCell align='right'>Actions</TableCell>}
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {tableRows.length === 0 ? (
+                      <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+                        <TableContainer component={Paper} variant='outlined'>
+                          <Table size='small'>
+                            <TableHead>
                               <TableRow>
-                                <TableCell colSpan={isAdmin ? 5 : 4} align='center'>
-                                  <Typography color='text.secondary' variant='body2'>
-                                    No rows match the current filters.
-                                  </Typography>
-                                </TableCell>
+                                <TableCell>Name</TableCell>
+                                <TableCell>Status</TableCell>
+                                <TableCell align='right'>Check-in (PT)</TableCell>
+                                <TableCell align='right'>Check-out (PT)</TableCell>
+                                {isAdmin && <TableCell align='right'>Actions</TableCell>}
                               </TableRow>
-                            ) : (
-                              tableRows.map(row => (
-                                <TableRow
-                                  key={row.employeeId}
-                                  hover
-                                  sx={row.hasCheckedOut ? { bgcolor: 'action.hover' } : undefined}
-                                >
-                                  <TableCell>
-                                    <Typography fontWeight={500}>{row.name}</Typography>
+                            </TableHead>
+                            <TableBody>
+                              {tableRows.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={isAdmin ? 5 : 4} align='center'>
+                                    <Typography color='text.secondary' variant='body2'>
+                                      No rows match the current filters.
+                                    </Typography>
                                   </TableCell>
-                                  <TableCell>
-                                    <Chip
-                                      size='small'
-                                      variant='tonal'
-                                      label={statusDisplay(row.status)}
-                                      color={statusChipColor(row.status)}
-                                    />
-                                  </TableCell>
-                                  <TableCell align='right'>
-                                    {row.checkInTime ?? '—'}
-                                  </TableCell>
-                                  <TableCell align='right'>
-                                    {row.checkOutTime ?? '—'}
-                                  </TableCell>
-                                  {isAdmin && (
-                                    <TableCell align='right'>
-                                      <Button
-                                        size='small'
-                                        variant='outlined'
-                                        disabled={adminAttendanceBusy}
-                                        onClick={e => openStatusMenu(e, row)}
-                                        endIcon={<i className='tabler-chevron-down text-base' />}
-                                      >
-                                        Set status
-                                      </Button>
-                                    </TableCell>
-                                  )}
                                 </TableRow>
-                              ))
-                            )}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
+                              ) : (
+                                tableRows.map(row => (
+                                  <TableRow
+                                    key={row.employeeId}
+                                    hover
+                                    sx={row.hasCheckedOut ? { bgcolor: 'action.hover' } : undefined}
+                                  >
+                                    <TableCell>
+                                      <Typography fontWeight={500}>{row.name}</Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Chip
+                                        size='small'
+                                        variant='tonal'
+                                        label={statusDisplay(row.status)}
+                                        color={statusChipColor(row.status)}
+                                      />
+                                    </TableCell>
+                                    <TableCell align='right'>
+                                      {row.checkInTime ?? '—'}
+                                    </TableCell>
+                                    <TableCell align='right'>
+                                      {row.checkOutTime ?? '—'}
+                                    </TableCell>
+                                    {isAdmin && (
+                                      <TableCell align='right'>
+                                        <Button
+                                          size='small'
+                                          variant='outlined'
+                                          disabled={adminAttendanceBusy}
+                                          onClick={e => openStatusMenu(e, row)}
+                                          endIcon={<i className='tabler-chevron-down text-base' />}
+                                        >
+                                          Set status
+                                        </Button>
+                                      </TableCell>
+                                    )}
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      </Box>
+                      <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+                        <MobileCardList
+                          items={tableRows.map(row => ({
+                            id: row.employeeId,
+                            title: row.name,
+                            subtitle: `In: ${row.checkInTime ?? '—'} · Out: ${row.checkOutTime ?? '—'}`,
+                            value: statusDisplay(row.status),
+                            tone: statusChipColor(row.status),
+                            action: isAdmin ? (
+                              <Button
+                                fullWidth
+                                size='small'
+                                variant='outlined'
+                                disabled={adminAttendanceBusy}
+                                onClick={e => openStatusMenu(e, row)}
+                                endIcon={<i className='tabler-chevron-down text-base' />}
+                              >
+                                Set status
+                              </Button>
+                            ) : undefined
+                          }))}
+                          emptyText='No rows match the current filters.'
+                        />
+                      </Box>
                     </Grid>
                     <Grid size={{ xs: 12, lg: 5 }}>
                       <Typography variant='subtitle2' color='text.secondary' className='mbe-2'>
@@ -358,8 +311,9 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
           </Grid>
         )}
       </Grid>
-    </Grid>
   )
+  if (embedded) return content
+  return <Grid size={{ xs: 12 }}>{content}</Grid>
 })
 
 export default DashboardAttendanceSection
