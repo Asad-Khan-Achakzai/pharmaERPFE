@@ -48,9 +48,6 @@
       ],
       "@views/*": [
         "./src/views/*"
-      ],
-      "@fullversion/*": [
-        "../full-version/src/*"
       ]
     }
   },
