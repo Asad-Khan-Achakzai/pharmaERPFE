@@ -104,9 +104,9 @@ const StockTransferPage = () => {
     setLoadingData(true)
     try {
       const [d, p, s] = await Promise.all([
-        distributorsService.list({ limit: 100 }),
-        productsService.list({ limit: 100 }),
-        canPickSupplier ? supplierService.list({ limit: '100', isActive: 'true' }) : Promise.resolve({ data: { docs: [] as any[] } })
+        distributorsService.lookup({ limit: 100 }),
+        productsService.lookup({ limit: 100 }),
+        canPickSupplier ? supplierService.lookup({ limit: '100', isActive: 'true' }) : Promise.resolve({ data: { data: [] as any[] } })
       ])
       setDistributors(d.data.data || [])
       setProducts(p.data.data || [])
@@ -127,7 +127,7 @@ const StockTransferPage = () => {
   useEffect(() => {
     fetchLookups()
     fetchHistory()
-  }, [])
+  }, [canPickSupplier])
 
   useEffect(() => {
     if (transferMode !== 'between' || !fromDistributorId) {

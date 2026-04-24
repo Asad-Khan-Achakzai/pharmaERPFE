@@ -1,6 +1,8 @@
 import api from './api'
 
 export const doctorsService = {
+  /** Dropdowns (auth + tenant only; no doctors.view) */
+  lookup: (params?: any) => api.get('/doctors/lookup', { params }),
   list: (params?: any) => api.get('/doctors', { params }),
   create: (data: any) => api.post('/doctors', data),
   getById: (id: string) => api.get(`/doctors/${id}`),

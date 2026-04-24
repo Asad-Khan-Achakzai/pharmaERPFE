@@ -8,6 +8,8 @@ function parseFilenameFromDisposition(cd: string | undefined, fallback: string) 
 }
 
 export const supplierService = {
+  /** Dropdowns (auth + tenant only; no suppliers.view) */
+  lookup: (params?: Record<string, string | undefined>) => api.get('/suppliers/lookup', { params }),
   list: (params?: Record<string, string | undefined>) => api.get('/suppliers', { params }),
   balancesSummary: (config?: { signal?: AbortSignal }) => api.get('/suppliers/balances/summary', config),
   getById: (id: string) => api.get(`/suppliers/${id}`),

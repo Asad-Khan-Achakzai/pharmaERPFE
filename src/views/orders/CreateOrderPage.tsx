@@ -15,6 +15,7 @@ import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { useAuth } from '@/contexts/AuthContext'
 import { ordersService } from '@/services/orders.service'
+import { usersService } from '@/services/users.service'
 import { pharmaciesService } from '@/services/pharmacies.service'
 import { distributorsService } from '@/services/distributors.service'
 import { productsService } from '@/services/products.service'
@@ -73,11 +74,11 @@ const CreateOrderPage = () => {
       setLoadingData(true)
       try {
         const [ph, di, pr, reps, docRes] = await Promise.all([
-          pharmaciesService.list({ limit: 100 }),
-          distributorsService.list({ limit: 100 }),
-          productsService.list({ limit: 100 }),
-          ordersService.listAssignableReps(),
-          doctorsService.list({ limit: 100, isActive: 'true' })
+          pharmaciesService.lookup({ limit: 100 }),
+          distributorsService.lookup({ limit: 100 }),
+          productsService.lookup({ limit: 100 }),
+          usersService.assignable(),
+          doctorsService.lookup({ limit: 100, isActive: 'true' })
         ])
         setPharmacies(ph.data.data || [])
         setDistributors(di.data.data || [])
@@ -108,7 +109,7 @@ const CreateOrderPage = () => {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await doctorsService.list({ pharmacyId, limit: 100, isActive: 'true' })
+        const res = await doctorsService.lookup({ pharmacyId, limit: 100, isActive: 'true' })
         const raw = res.data.data || []
         const list = [...raw].sort((a: any, b: any) =>
           (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
