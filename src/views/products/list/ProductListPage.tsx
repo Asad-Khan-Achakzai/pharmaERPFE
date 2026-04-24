@@ -39,7 +39,8 @@ type Product = {
   composition: string
   mrp: number
   tp: number
-  casting: number
+  /** Omitted from GET /products when user lacks products.viewCostPrice */
+  casting?: number
   isActive: boolean
 }
 
@@ -64,12 +65,17 @@ const ProductListPage = () => {
   const [deleting, setDeleting] = useState(false)
   const [viewItem, setViewItem] = useState<Product | null>(null)
 
-  const isFormValid = form.name.trim() !== '' && form.mrp > 0 && form.tp > 0 && form.casting > 0
-
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('products.create')
   const canEdit = hasPermission('products.edit')
   const canDelete = hasPermission('products.delete')
+  const canViewCostPrice = hasPermission('products.viewCostPrice')
+
+  const isFormValid =
+    form.name.trim() !== '' &&
+    form.mrp > 0 &&
+    form.tp > 0 &&
+    (canViewCostPrice ? form.casting > 0 : true)
 
   const fetchData = async () => {
     setLoading(true)
@@ -85,7 +91,13 @@ const ProductListPage = () => {
   const handleOpen = (item?: Product) => {
     if (item) {
       setEditItem(item)
-      setForm({ name: item.name, composition: item.composition || '', mrp: item.mrp, tp: item.tp, casting: item.casting })
+      setForm({
+        name: item.name,
+        composition: item.composition || '',
+        mrp: item.mrp,
+        tp: item.tp,
+        casting: canViewCostPrice ? (item.casting ?? 0) : 0
+      })
     } else {
       setEditItem(null)
       setForm({ name: '', composition: '', mrp: 0, tp: 0, casting: 0 })
@@ -97,10 +109,14 @@ const ProductListPage = () => {
     setSaving(true)
     try {
       if (editItem) {
-        await productsService.update(editItem._id, form)
+        const body = canViewCostPrice
+          ? form
+          : { name: form.name, composition: form.composition, mrp: form.mrp, tp: form.tp }
+        await productsService.update(editItem._id, body)
         showSuccess('Product updated')
       } else {
-        await productsService.create(form)
+        const body = canViewCostPrice ? form : { ...form, casting: 0 }
+        await productsService.create(body)
         showSuccess('Product created')
       }
       setOpen(false)
@@ -123,23 +139,35 @@ const ProductListPage = () => {
     finally { setDeleting(false) }
   }, [deleteId])
 
-  const columns = useMemo<ColumnDef<Product, any>[]>(() => [
-    columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
-    columnHelper.accessor('mrp', { header: 'MRP', cell: ({ row }) => `₨ ${row.original.mrp?.toFixed(2)}` }),
-    columnHelper.accessor('tp', { header: 'TP', cell: ({ row }) => `₨ ${row.original.tp?.toFixed(2)}` }),
-    columnHelper.accessor('casting', { header: 'Casting', cell: ({ row }) => `₨ ${row.original.casting?.toFixed(2)}` }),
-    columnHelper.display({
-      id: 'actions',
-      header: 'Actions',
-      cell: ({ row }) => (
-        <div className='flex gap-1'>
-          <IconButton size='small' onClick={() => setViewItem(row.original)}><i className='tabler-eye text-textSecondary' /></IconButton>
-          {canEdit && <IconButton size='small' onClick={() => handleOpen(row.original)}><i className='tabler-edit text-textSecondary' /></IconButton>}
-          {canDelete && <IconButton size='small' onClick={() => openDeleteConfirm(row.original._id)}><i className='tabler-trash text-textSecondary' /></IconButton>}
-        </div>
+  const columns = useMemo<ColumnDef<Product, any>[]>(() => {
+    const base: ColumnDef<Product, any>[] = [
+      columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
+      columnHelper.accessor('mrp', { header: 'MRP', cell: ({ row }) => `₨ ${row.original.mrp?.toFixed(2)}` }),
+      columnHelper.accessor('tp', { header: 'TP', cell: ({ row }) => `₨ ${row.original.tp?.toFixed(2)}` })
+    ]
+    if (canViewCostPrice) {
+      base.push(
+        columnHelper.accessor('casting', {
+          header: 'Cost price',
+          cell: ({ row }) => `₨ ${row.original.casting != null ? row.original.casting.toFixed(2) : '—'}`
+        })
       )
-    })
-  ], [canEdit, canDelete])
+    }
+    base.push(
+      columnHelper.display({
+        id: 'actions',
+        header: 'Actions',
+        cell: ({ row }) => (
+          <div className='flex gap-1'>
+            <IconButton size='small' onClick={() => setViewItem(row.original)}><i className='tabler-eye text-textSecondary' /></IconButton>
+            {canEdit && <IconButton size='small' onClick={() => handleOpen(row.original)}><i className='tabler-edit text-textSecondary' /></IconButton>}
+            {canDelete && <IconButton size='small' onClick={() => openDeleteConfirm(row.original._id)}><i className='tabler-trash text-textSecondary' /></IconButton>}
+          </div>
+        )
+      })
+    )
+    return base
+  }, [canEdit, canDelete, canViewCostPrice])
 
   const table = useReactTable({
     data, columns, filterFns: { fuzzy: fuzzyFilter },
@@ -200,7 +228,18 @@ const ProductListPage = () => {
             <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Composition' value={form.composition} onChange={e => setForm(p => ({ ...p, composition: e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='MRP' type='number' value={form.mrp} onChange={e => setForm(p => ({ ...p, mrp: +e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='TP' type='number' value={form.tp} onChange={e => setForm(p => ({ ...p, tp: +e.target.value }))} /></Grid>
-            <Grid size={{ xs: 12 }}><CustomTextField required fullWidth label='Casting' type='number' value={form.casting} onChange={e => setForm(p => ({ ...p, casting: +e.target.value }))} /></Grid>
+            {canViewCostPrice && (
+              <Grid size={{ xs: 12 }}>
+                <CustomTextField
+                  required
+                  fullWidth
+                  label='Cost price'
+                  type='number'
+                  value={form.casting}
+                  onChange={e => setForm(p => ({ ...p, casting: +e.target.value }))}
+                />
+              </Grid>
+            )}
           </Grid>
         </DialogContent>
         <DialogActions>
@@ -218,7 +257,12 @@ const ProductListPage = () => {
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Composition</Typography><Typography>{viewItem.composition || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>MRP</Typography><Typography>₨ {viewItem.mrp?.toFixed(2)}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>TP</Typography><Typography>₨ {viewItem.tp?.toFixed(2)}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Casting</Typography><Typography>₨ {viewItem.casting?.toFixed(2)}</Typography></Grid>
+              {canViewCostPrice && (
+                <Grid size={{ xs: 6 }}>
+                  <Typography variant='body2' color='text.secondary'>Cost price</Typography>
+                  <Typography>₨ {(viewItem.casting ?? 0).toFixed(2)}</Typography>
+                </Grid>
+              )}
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Status</Typography><Typography>{viewItem.isActive ? 'Active' : 'Inactive'}</Typography></Grid>
             </Grid>
           )}

@@ -28,9 +28,14 @@ import tableStyles from '@core/styles/table.module.css'
 
 type User = { _id: string; name: string; email: string; role: string; phone: string; permissions: string[]; isActive: boolean; lastLoginAt?: string | null }
 
+/** Human-readable labels for permissions where the id alone is not clear enough. */
+const PERMISSION_LABELS: Record<string, string> = {
+  'products.viewCostPrice': 'View product cost price (products page only)'
+}
+
 const PERMISSION_GROUPS: Record<string, string[]> = {
   dashboard: ['dashboard.view'],
-  products: ['products.view', 'products.create', 'products.edit', 'products.delete'],
+  products: ['products.view', 'products.create', 'products.edit', 'products.delete', 'products.viewCostPrice'],
   distributors: ['distributors.view', 'distributors.create', 'distributors.edit', 'distributors.delete'],
   inventory: ['inventory.view', 'inventory.transfer'],
   pharmacies: ['pharmacies.view', 'pharmacies.create', 'pharmacies.edit', 'pharmacies.delete'],
@@ -237,7 +242,7 @@ const UserListPage = () => {
                                 onChange={() => togglePermission(perm)}
                               />
                             }
-                            label={perm.split('.')[1]}
+                            label={PERMISSION_LABELS[perm] ?? perm.split('.').slice(1).join(' · ')}
                           />
                         )
                       })}
