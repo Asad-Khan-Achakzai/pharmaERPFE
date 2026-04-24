@@ -38,7 +38,7 @@ const RecordSettlementPage = () => {
     const f = async () => {
       setLoadingData(true)
       try {
-        const { data: r } = await distributorsService.list({ limit: 200, isActive: 'true' })
+        const { data: r } = await distributorsService.lookup({ limit: 200, isActive: 'true' })
         setDistributors(r.data || [])
       } catch (err) {
         showApiError(err, 'Failed to load distributors')

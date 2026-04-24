@@ -47,8 +47,8 @@ const RecordPaymentPage = () => {
       setLoadingData(true)
       try {
         const [pr, dr] = await Promise.all([
-          pharmaciesService.list({ limit: 100 }),
-          distributorsService.list({ limit: 200, isActive: 'true' })
+          pharmaciesService.lookup({ limit: 100 }),
+          distributorsService.lookup({ limit: 200, isActive: 'true' })
         ])
         setPharmacies(pr.data.data || [])
         setDistributors(dr.data.data || [])

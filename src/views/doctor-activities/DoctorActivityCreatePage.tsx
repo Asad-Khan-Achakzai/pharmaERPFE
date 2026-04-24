@@ -15,6 +15,7 @@ import CustomTextField from '@core/components/mui/TextField'
 import { doctorsService, doctorActivitiesService } from '@/services/doctors.service'
 import { usersService } from '@/services/users.service'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
+import { filterMedicalReps } from '@/utils/userLookups'
 
 const DoctorActivityCreatePage = () => {
   const router = useRouter()
@@ -36,11 +37,11 @@ const DoctorActivityCreatePage = () => {
     const load = async () => {
       try {
         const [dr, ur] = await Promise.all([
-          doctorsService.list({ limit: 500 }),
-          usersService.list({ limit: 200, role: 'MEDICAL_REP', isActive: 'true' })
+          doctorsService.lookup({ limit: 500, isActive: 'true' }),
+          usersService.assignable()
         ])
         setDoctors(dr.data.data || [])
-        setReps(ur.data.data || [])
+        setReps(filterMedicalReps(ur.data.data || []))
       } catch (e) {
         showApiError(e, 'Failed to load form data')
       } finally {

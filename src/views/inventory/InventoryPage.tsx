@@ -92,8 +92,8 @@ const InventoryPage = () => {
   const fetchLookups = async () => {
     try {
       const [d, p] = await Promise.all([
-        distributorsService.list({ limit: 200 }),
-        productsService.list({ limit: 200 })
+        distributorsService.lookup({ limit: 200 }),
+        productsService.lookup({ limit: 200 })
       ])
       setDistributors(d.data.data || [])
       setProducts(p.data.data || [])

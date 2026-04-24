@@ -93,7 +93,7 @@ const SalaryStructurePage = () => {
     try {
       const [s, u] = await Promise.all([
         salaryStructureService.list({ limit: 100 }),
-        usersService.list({ limit: 200 })
+        usersService.assignable()
       ])
       setRows(s.data.data || [])
       setUsers(u.data.data || [])

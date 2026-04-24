@@ -21,6 +21,7 @@ import AppReactDatepicker from '@/libs/styles/AppReactDatepicker'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { targetsService } from '@/services/targets.service'
 import { usersService } from '@/services/users.service'
+import { filterMedicalReps } from '@/utils/userLookups'
 import tableStyles from '@core/styles/table.module.css'
 
 type Target = { _id: string; medicalRepId: any; month: string; salesTarget: number; achievedSales: number; packsTarget: number; achievedPacks: number }
@@ -51,8 +52,13 @@ const TargetsPage = () => {
 
   const fetchData = async () => {
     setLoading(true)
-    try { const [t, u] = await Promise.all([targetsService.list({ limit: 100 }), usersService.list({ limit: 100 })]); setData(t.data.data || []); setUsers(u.data.data || []) }
-    catch (err) { showApiError(err, 'Failed to load targets') }
+    try {
+      const [t, u] = await Promise.all([targetsService.list({ limit: 100 }), usersService.assignable()])
+      setData(t.data.data || [])
+      setUsers(filterMedicalReps(u.data.data || []))
+    } catch (err) {
+      showApiError(err, 'Failed to load targets')
+    }
     finally { setLoading(false) }
   }
   useEffect(() => { fetchData() }, [])
@@ -95,7 +101,7 @@ const TargetsPage = () => {
         <DialogTitle>Add Target</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select required fullWidth label='Medical Rep' value={form.medicalRepId} onChange={e => setForm(p => ({ ...p, medicalRepId: e.target.value }))}>{users.filter((u: any) => u.role === 'MEDICAL_REP').map((u: any) => <MenuItem key={u._id} value={u._id}>{u.name}</MenuItem>)}</CustomTextField></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select required fullWidth label='Medical Rep' value={form.medicalRepId} onChange={e => setForm(p => ({ ...p, medicalRepId: e.target.value }))}>{users.map((u: any) => <MenuItem key={u._id} value={u._id}>{u.name}</MenuItem>)}</CustomTextField></Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <AppReactDatepicker
                 showMonthYearPicker

@@ -105,8 +105,8 @@ const FinancialReportsSection = () => {
       try {
         if (financialReportsCache?.pharmacies && financialReportsCache?.distributors) return
         const [pr, dr] = await Promise.all([
-          pharmaciesService.list({ limit: 500 }),
-          distributorsService.list({ limit: 500, isActive: 'true' })
+          pharmaciesService.lookup({ limit: 500 }),
+          distributorsService.lookup({ limit: 500, isActive: 'true' })
         ])
         const next = {
           pharmacies: pr.data.data || [],

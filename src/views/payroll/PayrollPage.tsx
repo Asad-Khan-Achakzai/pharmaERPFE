@@ -135,7 +135,7 @@ const PayrollPage = () => {
         if (filterMonthFrom.trim()) params.monthFrom = filterMonthFrom.trim()
         if (filterMonthTo.trim()) params.monthTo = filterMonthTo.trim()
       }
-      const [p, u] = await Promise.all([payrollService.list(params), usersService.list({ limit: 200 })])
+      const [p, u] = await Promise.all([payrollService.list(params), usersService.assignable()])
       setData(p.data.data || [])
       setUsers(u.data.data || [])
     } catch (err) {

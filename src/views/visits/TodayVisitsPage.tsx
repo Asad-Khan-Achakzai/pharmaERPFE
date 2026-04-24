@@ -49,7 +49,7 @@ const TodayVisitsPage = () => {
       const listRes = await planItemsService.listToday({ date })
       setItems(listRes.data.data || [])
       if (canMark) {
-        const docRes = await doctorsService.list({ limit: 500 })
+        const docRes = await doctorsService.lookup({ limit: 500, isActive: 'true' })
         setDoctors(docRes.data.data || [])
       } else {
         setDoctors([])

@@ -21,6 +21,7 @@ import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { weeklyPlansService } from '@/services/weeklyPlans.service'
 import { usersService } from '@/services/users.service'
+import { filterMedicalReps } from '@/utils/userLookups'
 import tableStyles from '@core/styles/table.module.css'
 
 type Plan = {
@@ -42,7 +43,6 @@ const WeeklyPlansPage = () => {
   const router = useRouter()
   const { hasPermission, user } = useAuth()
   const canCreate = hasPermission('weeklyPlans.create')
-  const canListUsers = hasPermission('users.view')
   const [data, setData] = useState<Plan[]>([])
   const [reps, setReps] = useState<any[]>([])
   const [open, setOpen] = useState(false)
@@ -59,19 +59,17 @@ const WeeklyPlansPage = () => {
   const isFormValid =
     form.weekStartDate !== '' &&
     form.weekEndDate !== '' &&
-    (canListUsers ? form.medicalRepId !== '' : Boolean(user?._id))
+    (reps.length > 0 ? form.medicalRepId !== '' : Boolean(user?._id))
 
   const fetchData = async () => {
     setLoading(true)
     try {
-      const r = await weeklyPlansService.list({ limit: 100 })
+      const [r, u] = await Promise.all([
+        weeklyPlansService.list({ limit: 100 }),
+        usersService.assignable()
+      ])
       setData(r.data.data || [])
-      if (canListUsers) {
-        const u = await usersService.list({ role: 'MEDICAL_REP', limit: 100 })
-        setReps(u.data.data || [])
-      } else {
-        setReps([])
-      }
+      setReps(filterMedicalReps(u.data.data || []))
     } catch (err) {
       showApiError(err, 'Failed to load weekly plans')
     } finally {
@@ -83,7 +81,7 @@ const WeeklyPlansPage = () => {
   }, [])
 
   const handleSave = async () => {
-    const medicalRepId = canListUsers ? form.medicalRepId : user?._id
+    const medicalRepId = reps.length > 0 ? form.medicalRepId : user?._id
     if (!medicalRepId) {
       showApiError(null, 'Could not determine assignee')
       return
@@ -186,7 +184,7 @@ const WeeklyPlansPage = () => {
               startIcon={<i className='tabler-plus' />}
               onClick={() => {
                 setForm({
-                  medicalRepId: canListUsers ? '' : user?._id || '',
+                  medicalRepId: reps.length > 0 ? '' : user?._id || '',
                   weekStartDate: '',
                   weekEndDate: '',
                   notes: '',
@@ -241,7 +239,7 @@ const WeeklyPlansPage = () => {
         <DialogTitle>Create Weekly Plan</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            {canListUsers ? (
+            {reps.length > 0 ? (
               <Grid size={{ xs: 12 }}>
                 <CustomTextField
                   required

@@ -63,7 +63,7 @@ const AttendancePage = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const u = await usersService.list({ limit: 200 })
+        const u = await usersService.assignable()
         setUsers(u.data.data || [])
       } catch (e) {
         showApiError(e, 'Failed to load users')

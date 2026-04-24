@@ -122,9 +122,9 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
       setLookupsLoading(true)
       try {
         const [pr, di, us] = await Promise.all([
-          productsService.list({ limit: 200 }),
-          distributorsService.list({ limit: 200 }),
-          usersService.list({ limit: 200 })
+          productsService.lookup({ limit: 200 }),
+          distributorsService.lookup({ limit: 200 }),
+          usersService.assignable()
         ])
         setProductOptions(pr.data.data || [])
         setDistributorOptions(di.data.data || [])

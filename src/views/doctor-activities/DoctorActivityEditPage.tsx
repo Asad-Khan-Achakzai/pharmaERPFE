@@ -15,6 +15,7 @@ import CustomTextField from '@core/components/mui/TextField'
 import { doctorsService, doctorActivitiesService } from '@/services/doctors.service'
 import { usersService } from '@/services/users.service'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
+import { filterMedicalReps } from '@/utils/userLookups'
 import { useAuth } from '@/contexts/AuthContext'
 
 const toDateInput = (iso: string | undefined) => {
@@ -55,12 +56,12 @@ const DoctorActivityEditPage = () => {
     try {
       const [actRes, dr, ur] = await Promise.all([
         doctorActivitiesService.getById(id),
-        doctorsService.list({ limit: 500 }),
-        usersService.list({ limit: 200, role: 'MEDICAL_REP', isActive: 'true' })
+        doctorsService.lookup({ limit: 500, isActive: 'true' }),
+        usersService.assignable()
       ])
       const a = actRes.data.data
       setDoctors(dr.data.data || [])
-      setReps(ur.data.data || [])
+      setReps(filterMedicalReps(ur.data.data || []))
       setForm({
         doctorId: a?.doctorId?._id ?? a?.doctorId ?? '',
         medicalRepId: a?.medicalRepId?._id ?? a?.medicalRepId ?? '',

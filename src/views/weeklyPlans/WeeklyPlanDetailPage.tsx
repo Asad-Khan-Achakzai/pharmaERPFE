@@ -47,7 +47,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       const planRes = await weeklyPlansService.getById(params.id)
       setPlan(planRes.data.data)
       if (canEdit) {
-        const docRes = await doctorsService.list({ limit: 500 })
+        const docRes = await doctorsService.lookup({ limit: 500, isActive: 'true' })
         setDoctors(docRes.data.data || [])
       } else {
         setDoctors([])
