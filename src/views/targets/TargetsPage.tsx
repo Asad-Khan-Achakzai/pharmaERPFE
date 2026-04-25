@@ -48,7 +48,8 @@ const TargetsPage = () => {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const isFormValid = form.medicalRepId !== '' && form.month.trim() !== '' && form.salesTarget > 0 && form.packsTarget > 0
+  const hasAtLeastOneTarget = form.salesTarget > 0 || form.packsTarget > 0
+  const isFormValid = form.medicalRepId !== '' && form.month.trim() !== '' && hasAtLeastOneTarget
 
   const fetchData = async () => {
     setLoading(true)
@@ -114,8 +115,39 @@ const TargetsPage = () => {
                 customInput={<CustomTextField fullWidth required label='Month (YYYY-MM)' helperText='YYYY-MM' />}
               />
             </Grid>
-            <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='Sales Target' type='number' value={form.salesTarget} onChange={e => setForm(p => ({ ...p, salesTarget: +e.target.value }))} /></Grid>
-            <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='Packs Target' type='number' value={form.packsTarget} onChange={e => setForm(p => ({ ...p, packsTarget: +e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12 }}>
+              <Typography variant='caption' color='text.secondary' className='block mbe-2'>
+                Set at least one: sales target (PKR), packs target, or both.
+              </Typography>
+            </Grid>
+            <Grid size={{ xs: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Sales target (PKR)'
+                type='number'
+                inputProps={{ min: 0, step: 0.01 }}
+                value={form.salesTarget || ''}
+                onChange={e => {
+                  const v = e.target.value
+                  setForm(p => ({ ...p, salesTarget: v === '' ? 0 : +v }))
+                }}
+                helperText='Optional if packs target is set'
+              />
+            </Grid>
+            <Grid size={{ xs: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Packs target'
+                type='number'
+                inputProps={{ min: 0, step: 1 }}
+                value={form.packsTarget || ''}
+                onChange={e => {
+                  const v = e.target.value
+                  setForm(p => ({ ...p, packsTarget: v === '' ? 0 : +v }))
+                }}
+                helperText='Optional if sales target is set'
+              />
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions><Button onClick={() => setOpen(false)} disabled={saving}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>

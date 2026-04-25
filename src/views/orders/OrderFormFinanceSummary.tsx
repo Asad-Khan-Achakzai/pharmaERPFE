@@ -8,6 +8,8 @@ import Collapse from '@mui/material/Collapse'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
 import type { OrderFinancialTotals } from '@/utils/orderFinancialPreview'
+import { useAuth } from '@/contexts/AuthContext'
+import { isAdminLike } from '@/utils/roleHelpers'
 
 const fmt = (n: number) =>
   `₨ ${n.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -18,6 +20,8 @@ type Props = {
 
 const OrderFormFinanceSummary = ({ preview }: Props) => {
   const [open, setOpen] = useState(false)
+  const { user } = useAuth()
+  const showAdminFinancials = isAdminLike(user?.role)
 
   if (!preview) return null
 
@@ -52,35 +56,41 @@ const OrderFormFinanceSummary = ({ preview }: Props) => {
             </Typography>
             <Typography variant='h6'>{fmt(preview.totalAmount)}</Typography>
           </div>
-          <div>
-            <Typography variant='caption' color='text.secondary'>
-              Final company revenue
-            </Typography>
-            <Typography variant='h6' color='primary.main'>
-              {fmt(preview.finalCompanyRevenue)}
-            </Typography>
-          </div>
+          {showAdminFinancials && (
+            <div>
+              <Typography variant='caption' color='text.secondary'>
+                Final company revenue
+              </Typography>
+              <Typography variant='h6' color='primary.main'>
+                {fmt(preview.finalCompanyRevenue)}
+              </Typography>
+            </div>
+          )}
         </div>
-        <Typography variant='caption' color='text.secondary' className='mts-1 block'>
-          Inventory cost (casting × paid+bonus): {fmt(preview.totalCastingCost)}
-        </Typography>
-        <Button size='small' className='mts-2' onClick={() => setOpen(!open)}>
-          {open ? 'Hide' : 'Show'} pharmacy & distributor impact
-        </Button>
-        <Collapse in={open}>
-          <Divider className='mbs-2 mts-2' />
-          <div className='mts-2 flex flex-col gap-1 pbs-2'>
-            <Typography variant='body2'>
-              Pharmacy discount: <strong>{fmt(preview.pharmacyDiscountAmount)}</strong>
+        {showAdminFinancials && (
+          <>
+            <Typography variant='caption' color='text.secondary' className='mts-1 block'>
+              Inventory cost (casting × paid+bonus): {fmt(preview.totalCastingCost)}
             </Typography>
-            <Typography variant='body2'>
-              Distributor commission (on gross TP): <strong>{fmt(preview.distributorCommissionAmount)}</strong>
-            </Typography>
-            <Typography variant='caption' color='text.secondary'>
-              Commission uses the distributor&apos;s rate on TP; pharmacy discount applies to TP line totals only.
-            </Typography>
-          </div>
-        </Collapse>
+            <Button size='small' className='mts-2' onClick={() => setOpen(!open)}>
+              {open ? 'Hide' : 'Show'} pharmacy & distributor impact
+            </Button>
+            <Collapse in={open}>
+              <Divider className='mbs-2 mts-2' />
+              <div className='mts-2 flex flex-col gap-1 pbs-2'>
+                <Typography variant='body2'>
+                  Pharmacy discount: <strong>{fmt(preview.pharmacyDiscountAmount)}</strong>
+                </Typography>
+                <Typography variant='body2'>
+                  Distributor commission (on gross TP): <strong>{fmt(preview.distributorCommissionAmount)}</strong>
+                </Typography>
+                <Typography variant='caption' color='text.secondary'>
+                  Commission uses the distributor&apos;s rate on TP; pharmacy discount applies to TP line totals only.
+                </Typography>
+              </div>
+            </Collapse>
+          </>
+        )}
       </CardContent>
     </Card>
   )
