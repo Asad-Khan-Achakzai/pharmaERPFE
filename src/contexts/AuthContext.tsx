@@ -164,8 +164,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const hasPermission = useCallback((permission: string) => {
     if (!user) return false
-    if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return true
-    return user.permissions.includes(permission)
+    if (user.role === 'SUPER_ADMIN') return true
+    const p = user.permissions || []
+    /** Must match backend `userHasPermission` (admin.access = full catalog) — do not use legacy `role` for RBAC. */
+    if (p.includes('admin.access')) return true
+    return p.includes(permission)
   }, [user])
 
   const switchCompanyContext = useCallback(

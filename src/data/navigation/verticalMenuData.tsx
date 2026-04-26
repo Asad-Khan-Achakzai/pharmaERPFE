@@ -128,9 +128,12 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
   },
   {
     label: 'Users',
-    href: '/users/list',
     icon: 'tabler-users',
-    permission: 'users.view'
+    permission: 'users.view',
+    children: [
+      { label: 'User list', href: '/users/list' },
+      { label: 'Roles', href: '/users/roles', permission: 'users.view' }
+    ]
   },
   {
     label: 'Audit Log',

@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import Link from 'next/link'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Button from '@mui/material/Button'
@@ -13,8 +14,6 @@ import Grid from '@mui/material/Grid'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
 import Chip from '@mui/material/Chip'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import Checkbox from '@mui/material/Checkbox'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import { createColumnHelper, flexRender, getCoreRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
@@ -23,51 +22,40 @@ import { rankItem } from '@tanstack/match-sorter-utils'
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { usersService } from '@/services/users.service'
+import { rolesService } from '@/services/roles.service'
+import type { Role } from '@/services/roles.service'
+import { extractPaginatedList } from '@/utils/apiPaginated'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import tableStyles from '@core/styles/table.module.css'
 
-type User = { _id: string; name: string; email: string; role: string; phone: string; permissions: string[]; isActive: boolean; lastLoginAt?: string | null }
-
-/** Human-readable labels for permissions where the id alone is not clear enough. */
-const PERMISSION_LABELS: Record<string, string> = {
-  'products.viewCostPrice': 'View product cost price (products page only)'
+type User = {
+  _id: string
+  name: string
+  email: string
+  role: string
+  roleId?: Role | null
+  phone: string
+  permissions: string[]
+  isActive: boolean
+  lastLoginAt?: string | null
 }
-
-const PERMISSION_GROUPS: Record<string, string[]> = {
-  dashboard: ['dashboard.view'],
-  products: ['products.view', 'products.create', 'products.edit', 'products.delete', 'products.viewCostPrice'],
-  distributors: ['distributors.view', 'distributors.create', 'distributors.edit', 'distributors.delete'],
-  inventory: ['inventory.view', 'inventory.transfer'],
-  pharmacies: ['pharmacies.view', 'pharmacies.create', 'pharmacies.edit', 'pharmacies.delete'],
-  doctors: ['doctors.view', 'doctors.create', 'doctors.edit', 'doctors.delete'],
-  orders: ['orders.view', 'orders.create', 'orders.edit', 'orders.deliver', 'orders.return'],
-  payments: ['payments.view', 'payments.create'],
-  ledger: ['ledger.view'],
-  targets: ['targets.view', 'targets.create', 'targets.edit'],
-  weeklyPlans: ['weeklyPlans.view', 'weeklyPlans.create', 'weeklyPlans.edit', 'weeklyPlans.markVisit'],
-  expenses: ['expenses.view', 'expenses.create', 'expenses.edit', 'expenses.delete'],
-  payroll: ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.pay'],
-  reports: ['reports.view'],
-  users: ['users.view', 'users.create', 'users.edit', 'users.delete']
-}
-
-const ALL_PERMISSIONS: string[] = Object.values(PERMISSION_GROUPS).flat()
-
-/** Always granted for Medical Rep users; cannot be removed in the UI. */
-const DASHBOARD_VIEW = 'dashboard.view'
-
-const ensureDashboardPermission = (perms: string[]) =>
-  perms.includes(DASHBOARD_VIEW) ? perms : [...perms, DASHBOARD_VIEW]
 
 const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => { const r = rankItem(row.getValue(columnId), value); addMeta({ itemRank: r }); return r.passed }
 const columnHelper = createColumnHelper<User>()
 
 const UserListPage = () => {
   const [data, setData] = useState<User[]>([])
+  const [roleOptions, setRoleOptions] = useState<Role[]>([])
   const [globalFilter, setGlobalFilter] = useState('')
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<User | null>(null)
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'MEDICAL_REP', phone: '', permissions: [] as string[] })
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    phone: '',
+    roleId: '' as string
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -75,41 +63,64 @@ const UserListPage = () => {
   const [deleting, setDeleting] = useState(false)
   const [viewItem, setViewItem] = useState<User | null>(null)
 
-  const isFormValid = form.name.trim() !== '' && form.email.trim() !== '' && form.role !== '' && (editItem ? true : form.password.trim() !== '')
+  const isFormValid =
+    form.name.trim() !== '' && form.email.trim() !== '' && form.roleId !== '' && (editItem ? true : form.password.trim() !== '')
 
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('users.create')
   const canEdit = hasPermission('users.edit')
   const canDelete = hasPermission('users.delete')
 
+  const defaultRepRoleId = useMemo(
+    () => roleOptions.find(r => r.code === 'DEFAULT_MEDICAL_REP')?._id || roleOptions[0]?._id || '',
+    [roleOptions]
+  )
+
+  const loadRoles = useCallback(async () => {
+    try {
+      const res = await rolesService.list({ limit: 200 })
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log('ROLES (user form) API RESPONSE', { axiosData: res.data, list: extractPaginatedList<Role>(res) })
+      }
+      setRoleOptions(extractPaginatedList<Role>(res))
+    } catch {
+      setRoleOptions([])
+    }
+  }, [])
+
   const fetchData = async () => {
     setLoading(true)
-    try { const { data: r } = await usersService.list({ limit: 100 }); setData(r.data || []) } catch (err) { showApiError(err, 'Failed to load users') }
-    finally { setLoading(false) }
+    try {
+      const res = await usersService.list({ limit: 100 })
+      setData(extractPaginatedList<User>(res))
+    } catch (err) {
+      showApiError(err, 'Failed to load users')
+    } finally {
+      setLoading(false)
+    }
   }
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => {
+    void loadRoles()
+  }, [loadRoles])
+  useEffect(() => {
+    fetchData()
+  }, [])
 
   const handleOpen = (item?: User) => {
     if (item) {
       setEditItem(item)
+      const rid = (item.roleId as Role | undefined)?._id
       setForm({
         name: item.name,
         email: item.email,
         password: '',
-        role: item.role,
         phone: item.phone || '',
-        permissions: item.role === 'MEDICAL_REP' ? ensureDashboardPermission(item.permissions || []) : item.permissions || []
+        roleId: typeof rid === 'string' ? rid : rid != null ? String(rid) : defaultRepRoleId
       })
     } else {
       setEditItem(null)
-      setForm({
-        name: '',
-        email: '',
-        password: '',
-        role: 'MEDICAL_REP',
-        phone: '',
-        permissions: [DASHBOARD_VIEW]
-      })
+      setForm({ name: '', email: '', password: '', phone: '', roleId: defaultRepRoleId })
     }
     setOpen(true)
   }
@@ -117,64 +128,74 @@ const UserListPage = () => {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const payload: any = { ...form }
-      if (payload.role === 'MEDICAL_REP' && Array.isArray(payload.permissions)) {
-        payload.permissions = ensureDashboardPermission(payload.permissions)
+      const payload: Record<string, unknown> = {
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        roleId: form.roleId
       }
-      if (editItem) { delete payload.password; await usersService.update(editItem._id, payload); showSuccess('User updated') }
-      else { await usersService.create(payload); showSuccess('User created') }
-      setOpen(false); fetchData()
-    } catch (e: any) { showApiError(e, 'Error saving user') }
-    finally { setSaving(false) }
+      if (editItem) {
+        if (form.password?.trim()) payload.password = form.password
+        else delete (payload as { password?: string }).password
+        await usersService.update(editItem._id, payload)
+        showSuccess('User updated')
+      } else {
+        payload.password = form.password
+        await usersService.create(payload)
+        showSuccess('User created')
+      }
+      setOpen(false)
+      fetchData()
+    } catch (e: any) {
+      showApiError(e, 'Error saving user')
+    } finally {
+      setSaving(false) }
   }
 
-  const openDeleteConfirm = (id: string) => { setDeleteId(id); setConfirmOpen(true) }
+  const openDeleteConfirm = (id: string) => {
+    setDeleteId(id)
+    setConfirmOpen(true)
+  }
 
   const handleDelete = useCallback(async () => {
     if (!deleteId) return
     setDeleting(true)
-    try { await usersService.remove(deleteId); showSuccess('User deleted successfully'); setConfirmOpen(false); fetchData() }
-    catch (err) { showApiError(err, 'Error deleting user') }
-    finally { setDeleting(false) }
+    try {
+      await usersService.remove(deleteId)
+      showSuccess('User deleted successfully')
+      setConfirmOpen(false)
+      fetchData()
+    } catch (err) {
+      showApiError(err, 'Error deleting user')
+    } finally {
+      setDeleting(false)
+    }
   }, [deleteId])
-
-  const togglePermission = (perm: string) => {
-    if (perm === DASHBOARD_VIEW) return
-    setForm(prev => ({
-      ...prev,
-      permissions: prev.permissions.includes(perm)
-        ? prev.permissions.filter(p => p !== perm)
-        : [...prev.permissions, perm]
-    }))
-  }
-
-  const selectAllPermissions = useCallback(() => {
-    setForm(prev => ({ ...prev, permissions: ensureDashboardPermission([...ALL_PERMISSIONS]) }))
-  }, [])
-
-  const clearAllPermissions = useCallback(() => {
-    setForm(prev => ({ ...prev, permissions: [DASHBOARD_VIEW] }))
-  }, [])
 
   const columns = useMemo<ColumnDef<User, any>[]>(() => [
     columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
     columnHelper.accessor('email', { header: 'Email' }),
-    columnHelper.accessor('role', {
+    columnHelper.display({
+      id: 'roleName',
       header: 'Role',
-      cell: ({ row }) => (
+      cell: ({ row }) => {
+        const o = row.original
+        const label = o.roleId?.name ?? o.role
+        return (
         <Chip
-          label={row.original.role}
+          label={label}
           color={
-            row.original.role === 'ADMIN'
+            o.role === 'ADMIN'
               ? 'primary'
-              : row.original.role === 'SUPER_ADMIN'
+              : o.role === 'SUPER_ADMIN'
                 ? 'secondary'
                 : 'default'
           }
           size='small'
           variant='tonal'
         />
-      )
+        )
+      }
     }),
     columnHelper.display({ id: 'status', header: 'Status', cell: ({ row }) => <Chip label={row.original.isActive ? 'Active' : 'Inactive'} color={row.original.isActive ? 'success' : 'error'} size='small' variant='tonal' /> }),
     columnHelper.display({ id: 'actions', header: 'Actions', cell: ({ row }) => (
@@ -190,10 +211,23 @@ const UserListPage = () => {
 
   return (
     <Card>
-      <CardHeader title='Users' />
+      <CardHeader
+        title='Users'
+        action={
+          <div className='flex flex-wrap gap-2'>
+            <Button component={Link} href='/users/roles' size='small' variant='outlined' startIcon={<i className='tabler-shield' />}>
+              Roles
+            </Button>
+            {canCreate && (
+              <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => handleOpen()}>
+                Add User
+              </Button>
+            )}
+          </div>
+        }
+      />
       <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
-        <CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />
-        {canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => handleOpen()}>Add User</Button>}
+        <CustomTextField value={globalFilter ?? ''} onChange={e => setGlobalFilter(e.target.value)} placeholder='Search...' />
       </div>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
@@ -208,49 +242,27 @@ const UserListPage = () => {
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Email' value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Email' value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} disabled={!!editItem} /></Grid>
             {!editItem && <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Password' type='password' value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} /></Grid>}
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required select fullWidth label='Role' value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}><MenuItem value='ADMIN'>Admin</MenuItem><MenuItem value='MEDICAL_REP'>Medical Rep</MenuItem></CustomTextField></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Phone' value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></Grid>
-            {form.role === 'MEDICAL_REP' && (
-              <Grid size={{ xs: 12 }}>
-                <div className='flex flex-wrap items-center justify-between gap-2 mbe-2'>
-                  <Typography variant='h6'>Permissions</Typography>
-                  <div className='flex flex-wrap gap-2'>
-                    <Button size='small' variant='outlined' onClick={selectAllPermissions}>
-                      Select all
-                    </Button>
-                    <Button size='small' variant='outlined' onClick={clearAllPermissions}>
-                      Clear all
-                    </Button>
-                  </div>
-                </div>
-                {Object.entries(PERMISSION_GROUPS).map(([group, perms]) => (
-                  <div key={group} className='mbe-2'>
-                    <Typography variant='subtitle2' className='capitalize mbe-1'>{group}</Typography>
-                    <div className='flex flex-wrap gap-1'>
-                      {perms.map(perm => {
-                        const isLockedDashboard = perm === DASHBOARD_VIEW
-                        return (
-                          <FormControlLabel
-                            key={perm}
-                            control={
-                              <Checkbox
-                                size='small'
-                                checked={isLockedDashboard ? true : form.permissions.includes(perm)}
-                                disabled={isLockedDashboard}
-                                onChange={() => togglePermission(perm)}
-                              />
-                            }
-                            label={PERMISSION_LABELS[perm] ?? perm.split('.').slice(1).join(' · ')}
-                          />
-                        )
-                      })}
-                    </div>
-                  </div>
+            {editItem && <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='New password' type='password' value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} helperText='Leave empty to keep current' /></Grid>}
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                required
+                select
+                fullWidth
+                label='Role'
+                value={form.roleId}
+                onChange={e => setForm(p => ({ ...p, roleId: e.target.value }))}
+                helperText='Permissions come from the role. Manage roles in Roles.'>
+                {roleOptions.map(r => (
+                  <MenuItem key={r._id} value={r._id}>
+                    {r.name}
+                    {r.isSystem ? ' (system)' : ''}
+                  </MenuItem>
                 ))}
-              </Grid>
-            )}
+              </CustomTextField>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Phone' value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></Grid>
           </Grid>
         </DialogContent>
         <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
@@ -263,7 +275,7 @@ const UserListPage = () => {
             <Grid container spacing={3} className='pbs-4'>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Name</Typography><Typography fontWeight={500}>{viewItem.name}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Email</Typography><Typography>{viewItem.email}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Role</Typography><Chip label={viewItem.role} color={viewItem.role === 'ADMIN' ? 'primary' : viewItem.role === 'SUPER_ADMIN' ? 'secondary' : 'default'} size='small' variant='tonal' /></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Role</Typography><Chip label={viewItem.roleId?.name ?? viewItem.role} color={viewItem.role === 'ADMIN' ? 'primary' : viewItem.role === 'SUPER_ADMIN' ? 'secondary' : 'default'} size='small' variant='tonal' /></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Status</Typography><Chip label={viewItem.isActive ? 'Active' : 'Inactive'} color={viewItem.isActive ? 'success' : 'error'} size='small' variant='tonal' /></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Phone</Typography><Typography>{viewItem.phone || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Last Login</Typography><Typography>{viewItem.lastLoginAt ? new Date(viewItem.lastLoginAt).toLocaleString() : '-'}</Typography></Grid>

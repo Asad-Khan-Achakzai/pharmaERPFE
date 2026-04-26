@@ -1,15 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
+import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
+import IconButton from '@mui/material/IconButton'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
+import Tooltip from '@mui/material/Tooltip'
 import type { ApexOptions } from 'apexcharts'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
@@ -22,6 +25,84 @@ const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexChart
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/** Short labels + info icon; tooltip copy is plain language for all users. */
+const MetricLabelWithHint = ({ label, hint }: { label: string; hint: ReactNode }) => (
+  <Box className='flex items-center gap-0.5 flex-wrap' sx={{ minHeight: 24 }}>
+    <Typography variant='body2' color='text.secondary' component='span'>
+      {label}
+    </Typography>
+    <Tooltip
+      title={hint}
+      placement='top'
+      arrow
+      enterTouchDelay={0}
+      slotProps={{ tooltip: { sx: { maxWidth: 320, typography: 'body2', lineHeight: 1.5 } } }}
+    >
+      <IconButton
+        type='button'
+        size='small'
+        aria-label={`${label} — more detail`}
+        sx={{ p: 0.25, color: 'text.secondary' }}
+      >
+        <i className='tabler-info-circle' style={{ fontSize: 18, lineHeight: 1, display: 'block' }} />
+      </IconButton>
+    </Tooltip>
+  </Box>
+)
+
+const FP_TOOLTIPS = {
+  /** “Cash in hand” style question — this is an implied / derived balance */
+  impliedCash: (
+    <>
+      This is the app’s <strong>estimate of money you can think of as “with you”</strong> right now. It is{' '}
+      <strong>not</strong> the same as opening a safe and counting notes unless every payment is recorded
+      here.
+      <br />
+      <br />
+      We start from the <strong>opening</strong> amount (what you or your office entered as “how much you
+      started with”), then we add what came in and subtract what went out—based only on this system’s
+      data.
+    </>
+  ),
+  openingLine: (
+    <>
+      <strong>Opening</strong> is the amount someone put in as your <strong>starting</strong> cash in this
+      system. The big number above uses this as a starting line, then moves it up and down with later
+      activity (collections, spending, and so on).
+    </>
+  ),
+  pharmacyRec: (
+    <>
+      This is <strong>money that shops (pharmacies) still have to pay you</strong> for what they already
+      took. They owe you; you are waiting to get this cash or bank transfer. It is not in your hand yet,
+      but it is yours in principle.
+    </>
+  ),
+  supplierPay: (
+    <>
+      This is <strong>money you still need to pay your suppliers</strong> (who send you products). The stock
+      or bill may already be with you, but the payment is not finished yet. Think of it as a bill you still
+      have to pay.
+    </>
+  ),
+  distributorPay: (
+    <>
+      This is <strong>money you still owe to distributors</strong>—for example their part of the sale, work,
+      or commission that this system has not marked as fully paid to them yet. It is a debt of the company
+      to the distributor.
+    </>
+  ),
+  netPosition: (
+    <>
+      This is <strong>one number that sums up the picture in simple terms</strong>. We add your implied cash
+      and what pharmacies still owe you, then we take away what you still owe to suppliers and to
+      distributors. If the result is <strong>high and positive</strong>, your side of the money looks
+      strong; if it is <strong>low or negative</strong>, you owe more out than is clearly “with you” in this
+      view.
+    </>
+  )
+} as const
 
 /** Stretch cards to match the tallest item in each Grid row */
 const metricGridSx = { display: 'flex' } as const
@@ -163,23 +244,41 @@ const FinancialPositionSection = () => {
       <Grid size={{ xs: 12, sm: 6, md: 4 }} sx={metricGridSx}>
         <Card sx={metricCardSx}>
           <CardContent sx={metricCardContentSx}>
-            <Typography variant='body2' color='text.secondary'>
-              Implied cash balance
+            <MetricLabelWithHint label='Implied cash balance' hint={FP_TOOLTIPS.impliedCash} />
+            <Typography variant='h5' sx={{ mt: 0.5 }}>
+              {formatPKR(summary?.cashBalance ?? 0)}
             </Typography>
-            <Typography variant='h5'>{formatPKR(summary?.cashBalance ?? 0)}</Typography>
-            <Typography variant='caption' color='text.secondary' display='block' className='mts-2'>
-              Opening: {formatPKR(summary?.cashOpeningBalance ?? 0)}
-            </Typography>
+            <Box
+              className='mts-2 flex items-center flex-wrap gap-0.5'
+              sx={{ color: 'text.secondary', typography: 'caption' }}
+            >
+              <span>Opening</span>
+              <Tooltip
+                title={FP_TOOLTIPS.openingLine}
+                placement='top'
+                arrow
+                enterTouchDelay={0}
+                slotProps={{ tooltip: { sx: { maxWidth: 300, typography: 'body2', lineHeight: 1.5 } } }}
+              >
+                <IconButton
+                  type='button'
+                  size='small'
+                  aria-label='Opening cash — more detail'
+                  sx={{ p: 0, color: 'text.secondary' }}
+                >
+                  <i className='tabler-info-circle' style={{ fontSize: 15, lineHeight: 1, display: 'block' }} />
+                </IconButton>
+              </Tooltip>
+              <span>: {formatPKR(summary?.cashOpeningBalance ?? 0)}</span>
+            </Box>
           </CardContent>
         </Card>
       </Grid>
       <Grid size={{ xs: 12, sm: 6, md: 4 }} sx={metricGridSx}>
         <Card sx={metricCardSx}>
           <CardContent sx={metricCardContentSx}>
-            <Typography variant='body2' color='text.secondary'>
-              Pharmacy receivables
-            </Typography>
-            <Typography variant='h5' color='success.main'>
+            <MetricLabelWithHint label='Pharmacy receivables' hint={FP_TOOLTIPS.pharmacyRec} />
+            <Typography variant='h5' color='success.main' sx={{ mt: 0.5 }}>
               {formatPKR(summary?.totalPharmacyReceivable ?? 0)}
             </Typography>
           </CardContent>
@@ -188,10 +287,8 @@ const FinancialPositionSection = () => {
       <Grid size={{ xs: 12, sm: 6, md: 4 }} sx={metricGridSx}>
         <Card sx={metricCardSx}>
           <CardContent sx={metricCardContentSx}>
-            <Typography variant='body2' color='text.secondary'>
-              Supplier payables
-            </Typography>
-            <Typography variant='h5' color='warning.main'>
+            <MetricLabelWithHint label='Supplier payables' hint={FP_TOOLTIPS.supplierPay} />
+            <Typography variant='h5' color='warning.main' sx={{ mt: 0.5 }}>
               {formatPKR(summary?.totalSupplierPayable ?? 0)}
             </Typography>
           </CardContent>
@@ -200,10 +297,8 @@ const FinancialPositionSection = () => {
       <Grid size={{ xs: 12, sm: 6, md: 4 }} sx={metricGridSx}>
         <Card sx={metricCardSx}>
           <CardContent sx={metricCardContentSx}>
-            <Typography variant='body2' color='text.secondary'>
-              Distributor commission payable
-            </Typography>
-            <Typography variant='h5' color='info.main'>
+            <MetricLabelWithHint label='Distributor commission payable' hint={FP_TOOLTIPS.distributorPay} />
+            <Typography variant='h5' color='info.main' sx={{ mt: 0.5 }}>
               {formatPKR(summary?.totalDistributorPayable ?? 0)}
             </Typography>
           </CardContent>
@@ -212,14 +307,12 @@ const FinancialPositionSection = () => {
       <Grid size={{ xs: 12, sm: 6, md: 4 }} sx={metricGridSx}>
         <Card sx={metricCardSx}>
           <CardContent sx={metricCardContentSx}>
-            <Typography variant='body2' color='text.secondary'>
-              Net position
-            </Typography>
-            <Typography variant='h5' color={summary?.netPosition >= 0 ? 'success.main' : 'error.main'}>
+            <MetricLabelWithHint label='Net position' hint={FP_TOOLTIPS.netPosition} />
+            <Typography variant='h5' color={summary?.netPosition >= 0 ? 'success.main' : 'error.main'} sx={{ mt: 0.5 }}>
               {formatPKR(summary?.netPosition ?? 0)}
             </Typography>
             <Typography variant='caption' color='text.secondary' display='block' className='mts-1'>
-              Cash + pharmacy receivable − supplier − distributor (working-capital style)
+              Simplified total from the items above. It is a guide, not a full bank report.
             </Typography>
           </CardContent>
         </Card>

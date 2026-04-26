@@ -66,18 +66,18 @@ function dashLog(phase: string, data?: Record<string, unknown>) {
 let dashboardKpiCache: any = null
 
 const DashboardPage = () => {
-  const { user } = useAuth()
+  const { user, hasPermission } = useAuth()
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
 
-  /** Stable booleans — do not depend on hasPermission() identity */
+  /**
+   * Use resolved permissions (same as API), not legacy `user.role`.
+   * Users with `roleId` may still have `role: 'MEDICAL_REP'` in the user record while permissions come only from the Role document.
+   */
   const attendanceScope = useMemo(() => {
     if (!user) return { team: false, mine: false }
-    const r = user.role
-    if (r === 'ADMIN' || r === 'SUPER_ADMIN' || r === 'MEDICAL_REP') return { team: true, mine: true }
-    const p = user.permissions || []
-    return { team: p.includes('attendance.view'), mine: p.includes('attendance.mark') }
-  }, [user])
+    return { team: hasPermission('attendance.view'), mine: hasPermission('attendance.mark') }
+  }, [user, hasPermission])
 
   const showCompanyAttendance = attendanceScope.team
   const showMyAttendance = attendanceScope.mine
@@ -100,24 +100,11 @@ const DashboardPage = () => {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [filterStatus, setFilterStatus] = useState<string>('')
   const textSecondary = 'var(--mui-palette-text-secondary)'
-  const canViewReports = useMemo(() => {
-    if (!user) return false
-    if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return true
-    return user.permissions.includes('reports.view')
-  }, [user])
+  const canViewReports = useMemo(() => hasPermission('reports.view'), [hasPermission])
 
-  const canViewInventory = useMemo(() => {
-    if (!user) return false
-    if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return true
-    return user.permissions.includes('inventory.view')
-  }, [user])
+  const canViewInventory = useMemo(() => hasPermission('inventory.view'), [hasPermission])
 
-  /** Stable for effects — mirrors hasPermission('suppliers.view') */
-  const canViewSuppliers = useMemo(() => {
-    if (!user) return false
-    if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return true
-    return user.permissions.includes('suppliers.view')
-  }, [user])
+  const canViewSuppliers = useMemo(() => hasPermission('suppliers.view'), [hasPermission])
 
   const isAdmin = isAdminLike(user?.role)
 
@@ -627,8 +614,7 @@ const DashboardPage = () => {
 
   const quickActions = useMemo<QuickAction[]>(() => {
     if (!user) return []
-    const has = (permission: string) =>
-      user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' || user.permissions.includes(permission)
+    const has = (permission: string) => hasPermission(permission)
     const actionCatalog: QuickAction[] = [
       { key: 'orders', label: 'Orders', href: '/orders/list', icon: 'tabler-clipboard-list' },
       { key: 'visits', label: 'Visits', href: '/visits/today', icon: 'tabler-map-pin' },
@@ -648,7 +634,7 @@ const DashboardPage = () => {
       payments: 'payments.view'
     }
     return actionCatalog.filter(a => has(permissionMap[a.key] || ''))
-  }, [user])
+  }, [user, hasPermission])
 
   return (
     <>
