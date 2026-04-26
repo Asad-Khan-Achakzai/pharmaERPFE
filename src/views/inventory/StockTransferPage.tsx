@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
@@ -32,6 +32,8 @@ import { rankItem } from '@tanstack/match-sorter-utils'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import CustomTextField from '@core/components/mui/TextField'
+import AppReactDatepicker from '@/libs/styles/AppReactDatepicker'
+import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { inventoryService } from '@/services/inventory.service'
 import { distributorsService } from '@/services/distributors.service'
@@ -88,6 +90,8 @@ const StockTransferPage = () => {
 
   const [transfers, setTransfers] = useState<Transfer[]>([])
   const [loadingHistory, setLoadingHistory] = useState(true)
+  /** YYYY-MM-DD; empty = show latest transfers (no day filter) */
+  const [historyDate, setHistoryDate] = useState('')
   const [globalFilter, setGlobalFilter] = useState('')
   const [viewItem, setViewItem] = useState<Transfer | null>(null)
   const [stockByProductId, setStockByProductId] = useState<Record<string, number>>({})
@@ -115,19 +119,35 @@ const StockTransferPage = () => {
     finally { setLoadingData(false) }
   }
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     setLoadingHistory(true)
     try {
-      const { data: res } = await inventoryService.getTransfers({ limit: 200, sort: '-createdAt' })
+      const params: Record<string, string | number> = { limit: 200, sort: '-createdAt' }
+      if (historyDate) {
+        const d = parseYyyyMmDd(historyDate)
+        if (d) {
+          const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
+          const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+          params.createdAtFrom = start.toISOString()
+          params.createdAtTo = end.toISOString()
+        }
+      }
+      const { data: res } = await inventoryService.getTransfers(params)
       setTransfers(res.data || [])
-    } catch (err) { showApiError(err, 'Failed to load transfer history') }
-    finally { setLoadingHistory(false) }
-  }
+    } catch (err) {
+      showApiError(err, 'Failed to load transfer history')
+    } finally {
+      setLoadingHistory(false)
+    }
+  }, [historyDate])
 
   useEffect(() => {
     fetchLookups()
-    fetchHistory()
   }, [canPickSupplier])
+
+  useEffect(() => {
+    fetchHistory()
+  }, [canPickSupplier, fetchHistory])
 
   useEffect(() => {
     if (transferMode !== 'between' || !fromDistributorId) {
@@ -396,12 +416,22 @@ const StockTransferPage = () => {
           <CardHeader
             title='Transfer History'
             action={
-              <CustomTextField
-                value={globalFilter ?? ''}
-                onChange={(e) => setGlobalFilter(e.target.value)}
-                placeholder='Search...'
-                size='small'
-              />
+              <div className='flex flex-wrap items-end gap-3 justify-end max-is-full'>
+                <AppReactDatepicker
+                  selected={parseYyyyMmDd(historyDate) ?? null}
+                  id='st-transfer-history-date'
+                  dateFormat='yyyy-MM-dd'
+                  onChange={(d: Date | null) => setHistoryDate(d ? formatYyyyMmDd(d) : '')}
+                  placeholderText='Date'
+                  customInput={<CustomTextField label='Date' size='small' sx={{ minWidth: 200 }} />}
+                />
+                <CustomTextField
+                  value={globalFilter ?? ''}
+                  onChange={e => setGlobalFilter(e.target.value)}
+                  placeholder='Search...'
+                  size='small'
+                />
+              </div>
             }
           />
           <div className='overflow-x-auto'>
@@ -429,7 +459,15 @@ const StockTransferPage = () => {
                 {loadingHistory ? (
                   <tr><td colSpan={columns.length} className='text-center p-6'><CircularProgress size={32} /></td></tr>
                 ) : table.getRowModel().rows.length === 0 ? (
-                  <tr><td colSpan={columns.length} className='text-center p-6'>No transfers found</td></tr>
+                  <tr>
+                    <td colSpan={columns.length} className='text-center p-6'>
+                      {globalFilter
+                        ? 'No matching transfers'
+                        : historyDate
+                          ? 'No transfers on the selected day'
+                          : 'No transfers found'}
+                    </td>
+                  </tr>
                 ) : table.getRowModel().rows.map(row => (
                   <tr key={row.id}>
                     {row.getVisibleCells().map(cell => (

@@ -13,6 +13,7 @@ import DialogActions from '@mui/material/DialogActions'
 import Grid from '@mui/material/Grid'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
+import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
@@ -58,18 +59,20 @@ const UserListPage = () => {
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [statusConfirmOpen, setStatusConfirmOpen] = useState(false)
+  const [statusTarget, setStatusTarget] = useState<User | null>(null)
+  const [statusNextActive, setStatusNextActive] = useState(true)
+  const [statusLoading, setStatusLoading] = useState(false)
   const [viewItem, setViewItem] = useState<User | null>(null)
 
   const isFormValid =
     form.name.trim() !== '' && form.email.trim() !== '' && form.roleId !== '' && (editItem ? true : form.password.trim() !== '')
 
-  const { hasPermission } = useAuth()
+  const { hasPermission, user: authUser } = useAuth()
   const canCreate = hasPermission('users.create')
   const canEdit = hasPermission('users.edit')
   const canDelete = hasPermission('users.delete')
+  const canToggleStatus = canEdit || canDelete
 
   const defaultRepRoleId = useMemo(
     () => roleOptions.find(r => r.code === 'DEFAULT_MEDICAL_REP')?._id || roleOptions[0]?._id || '',
@@ -152,25 +155,28 @@ const UserListPage = () => {
       setSaving(false) }
   }
 
-  const openDeleteConfirm = (id: string) => {
-    setDeleteId(id)
-    setConfirmOpen(true)
+  const openStatusConfirm = (u: User, nextActive: boolean) => {
+    setStatusTarget(u)
+    setStatusNextActive(nextActive)
+    setStatusConfirmOpen(true)
   }
 
-  const handleDelete = useCallback(async () => {
-    if (!deleteId) return
-    setDeleting(true)
+  const handleConfirmStatus = async () => {
+    if (!statusTarget) return
+    setStatusLoading(true)
     try {
-      await usersService.remove(deleteId)
-      showSuccess('User deleted successfully')
-      setConfirmOpen(false)
-      fetchData()
+      const res = await usersService.setStatus(statusTarget._id, statusNextActive)
+      const body = res.data as { message?: string }
+      showSuccess(body?.message || (statusNextActive ? 'User activated successfully' : 'User deactivated successfully'))
+      setStatusConfirmOpen(false)
+      setStatusTarget(null)
+      await fetchData()
     } catch (err) {
-      showApiError(err, 'Error deleting user')
+      showApiError(err, 'Failed to update user status')
     } finally {
-      setDeleting(false)
+      setStatusLoading(false)
     }
-  }, [deleteId])
+  }
 
   const columns = useMemo<ColumnDef<User, any>[]>(() => [
     columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
@@ -198,14 +204,59 @@ const UserListPage = () => {
       }
     }),
     columnHelper.display({ id: 'status', header: 'Status', cell: ({ row }) => <Chip label={row.original.isActive ? 'Active' : 'Inactive'} color={row.original.isActive ? 'success' : 'error'} size='small' variant='tonal' /> }),
-    columnHelper.display({ id: 'actions', header: 'Actions', cell: ({ row }) => (
-      <div className='flex gap-1'>
-        <IconButton size='small' onClick={() => setViewItem(row.original)}><i className='tabler-eye text-textSecondary' /></IconButton>
-        {canEdit && <IconButton size='small' onClick={() => handleOpen(row.original)}><i className='tabler-edit text-textSecondary' /></IconButton>}
-        {canDelete && <IconButton size='small' onClick={() => openDeleteConfirm(row.original._id)}><i className='tabler-trash text-textSecondary' /></IconButton>}
-      </div>
-    ) })
-  ], [canEdit, canDelete])
+    columnHelper.display({
+      id: 'actions',
+      header: 'Actions',
+      cell: ({ row }) => {
+        const u = row.original
+        const isSelf = authUser?._id === u._id
+        const canChangeStatus = canToggleStatus && !isSelf
+        return (
+          <div className='flex gap-0.5 items-center flex-wrap'>
+            <IconButton size='small' onClick={() => setViewItem(u)}><i className='tabler-eye text-textSecondary' /></IconButton>
+            {canEdit && <IconButton size='small' onClick={() => handleOpen(u)}><i className='tabler-edit text-textSecondary' /></IconButton>}
+            {canChangeStatus && u.isActive && (
+              <Tooltip title='Deactivate user (sign-in blocked).'>
+                <span>
+                  <IconButton
+                    size='small'
+                    onClick={() => openStatusConfirm(u, false)}
+                    color='error'
+                    aria-label='Deactivate user'
+                  >
+                    <i className='tabler-user-x text-textSecondary' />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+            {canChangeStatus && !u.isActive && (
+              <Tooltip title='Reactivate user (can sign in again).'>
+                <span>
+                  <IconButton
+                    size='small'
+                    onClick={() => openStatusConfirm(u, true)}
+                    color='primary'
+                    aria-label='Activate user'
+                  >
+                    <i className='tabler-user-check text-textSecondary' />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+            {canToggleStatus && isSelf && (
+              <Tooltip title="You can’t change your own active status.">
+                <span>
+                  <IconButton size='small' disabled>
+                    <i className='tabler-lock text-textSecondary' />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+          </div>
+        )
+      }
+    })
+  ], [canEdit, canToggleStatus, authUser?._id])
 
   const table = useReactTable({ data, columns, filterFns: { fuzzy: fuzzyFilter }, state: { globalFilter }, globalFilterFn: fuzzyFilter, onGlobalFilterChange: setGlobalFilter, getCoreRowModel: getCoreRowModel(), getFilteredRowModel: getFilteredRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel() })
 
@@ -289,13 +340,19 @@ const UserListPage = () => {
       </Dialog>
 
       <ConfirmDialog
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        onConfirm={handleDelete}
-        title='Delete User?'
-        description='This user will be removed and will no longer be able to log in.'
-        confirmText='Yes, Delete'
-        loading={deleting}
+        open={statusConfirmOpen}
+        onClose={() => { if (!statusLoading) { setStatusConfirmOpen(false); setStatusTarget(null) } }}
+        onConfirm={() => { void handleConfirmStatus() }}
+        title={statusNextActive ? 'Activate user?' : 'Deactivate user?'}
+        description={
+          statusNextActive
+            ? 'This user will be able to sign in again (subject to their role).'
+            : 'This user will be deactivated and will no longer be able to sign in. Historical data and references are kept.'
+        }
+        confirmText={statusNextActive ? 'Activate' : 'Deactivate'}
+        confirmColor={statusNextActive ? 'primary' : 'error'}
+        icon={statusNextActive ? 'tabler-user-check' : 'tabler-user-x'}
+        loading={statusLoading}
       />
     </Card>
   )

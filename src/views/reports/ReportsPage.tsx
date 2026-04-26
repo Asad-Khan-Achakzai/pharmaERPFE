@@ -13,6 +13,8 @@ import Tabs from '@mui/material/Tabs'
 import Tab from '@mui/material/Tab'
 import { showApiError } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
+import AppReactDatepicker from '@/libs/styles/AppReactDatepicker'
+import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
 import { reportsService } from '@/services/reports.service'
 import { mapProfitFinancial } from '@/utils/financialMapper'
 import FinancialReportsSection from '@/views/reports/FinancialReportsSection'
@@ -163,20 +165,22 @@ const ReportsPage = () => {
         <>
           <Grid size={{ xs: 12 }}>
             <Card>
-              <CardContent className='flex gap-4 items-end'>
-                <CustomTextField
-                  label='From'
-                  type='date'
-                  value={from}
-                  onChange={e => setFrom(e.target.value)}
-                  slotProps={{ inputLabel: { shrink: true } }}
+              <CardContent className='flex flex-wrap gap-4 items-end'>
+                <AppReactDatepicker
+                  selected={parseYyyyMmDd(from) ?? null}
+                  id='reports-ops-from'
+                  dateFormat='yyyy-MM-dd'
+                  onChange={(d: Date | null) => setFrom(d ? formatYyyyMmDd(d) : '')}
+                  placeholderText='From'
+                  customInput={<CustomTextField label='From' sx={{ minWidth: 200 }} />}
                 />
-                <CustomTextField
-                  label='To'
-                  type='date'
-                  value={to}
-                  onChange={e => setTo(e.target.value)}
-                  slotProps={{ inputLabel: { shrink: true } }}
+                <AppReactDatepicker
+                  selected={parseYyyyMmDd(to) ?? null}
+                  id='reports-ops-to'
+                  dateFormat='yyyy-MM-dd'
+                  onChange={(d: Date | null) => setTo(d ? formatYyyyMmDd(d) : '')}
+                  placeholderText='To'
+                  customInput={<CustomTextField label='To' sx={{ minWidth: 200 }} />}
                 />
                 <Button
                   variant='contained'
@@ -195,21 +199,25 @@ const ReportsPage = () => {
               <CardHeader title='Field visit performance' subheader='Planned vs completed (Pacific week)' />
               <CardContent className='flex flex-col gap-4'>
                 <div className='flex flex-wrap gap-4 items-end'>
-                  <CustomTextField
-                    label='Week start'
-                    type='date'
-                    value={visitWeekStart}
-                    onChange={e => setVisitWeekStart(e.target.value)}
-                    slotProps={{ inputLabel: { shrink: true } }}
-                    size='small'
+                  <AppReactDatepicker
+                    selected={parseYyyyMmDd(visitWeekStart) ?? null}
+                    id='reports-visit-week-start'
+                    dateFormat='yyyy-MM-dd'
+                    onChange={(d: Date | null) => setVisitWeekStart(d ? formatYyyyMmDd(d) : '')}
+                    placeholderText='Week start'
+                    customInput={
+                      <CustomTextField label='Week start' size='small' sx={{ minWidth: 200 }} />
+                    }
                   />
-                  <CustomTextField
-                    label='Week end'
-                    type='date'
-                    value={visitWeekEnd}
-                    onChange={e => setVisitWeekEnd(e.target.value)}
-                    slotProps={{ inputLabel: { shrink: true } }}
-                    size='small'
+                  <AppReactDatepicker
+                    selected={parseYyyyMmDd(visitWeekEnd) ?? null}
+                    id='reports-visit-week-end'
+                    dateFormat='yyyy-MM-dd'
+                    onChange={(d: Date | null) => setVisitWeekEnd(d ? formatYyyyMmDd(d) : '')}
+                    placeholderText='Week end'
+                    customInput={
+                      <CustomTextField label='Week end' size='small' sx={{ minWidth: 200 }} />
+                    }
                   />
                   <Button variant='outlined' size='small' onClick={fetchVisitSummary} disabled={visitLoading}>
                     Refresh

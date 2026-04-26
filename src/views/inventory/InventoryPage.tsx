@@ -31,6 +31,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import Button from '@mui/material/Button'
+import Tooltip from '@mui/material/Tooltip'
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { showApiError } from '@/utils/apiErrors'
@@ -44,6 +45,16 @@ const LOW_STOCK_THRESHOLD = 50
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/** Cost-based stock value: includes landed cost; transfer shipping is spread across products on the same transfer. */
+const TOOLTIP_TOTAL_COST_VALUE =
+  'This is the total at cost: quantity × average cost per unit. That cost can include a share of shipping when stock was added through a stock transfer—shipping is split (shared) across all products in that transfer, so each line gets a fair per-unit cost. It is the amount the distributor is carrying the stock at, not list price.'
+
+const TOOLTIP_INVENTORY_VALUE_KPI =
+  'Total inventory at cost (sum of quantity × average cost) across the company, including the same shipping allocation rules when items came in on transfers. Not the same as sum of trade (TP) values.'
+
+const TOOLTIP_TRADE_PRICE_NO_SHIPPING =
+  'Trade price (TP) is taken from the product. It does not add shipping. Shipping is only reflected in the cost / average cost side when you receive stock on a transfer (shipping is shared across products in that move).'
 
 type InventoryRow = {
   _id: string
@@ -74,6 +85,17 @@ const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => {
 
 const detailHelper = createColumnHelper<InventoryRow>()
 const summaryHelper = createColumnHelper<SummaryRow>()
+
+function TableHeaderWithHelp({ label, tooltip }: { label: string; tooltip: string }) {
+  return (
+    <Tooltip title={tooltip} arrow leaveTouchDelay={4000} placement='top-start'>
+      <span className='inline-flex items-center gap-0.5 cursor-help align-middle'>
+        {label}
+        <i className='tabler-info-circle size-3.5 text-textSecondary' aria-hidden />
+      </span>
+    </Tooltip>
+  )
+}
 
 const InventoryPage = () => {
   const [tab, setTab] = useState('detail')
@@ -138,11 +160,18 @@ const InventoryPage = () => {
       (acc, row) => {
         acc.units += row.quantity
         acc.value += row.quantity * row.avgCostPerUnit
+        acc.tpValue += row.quantity * Number(row.productId?.tp ?? 0)
         return acc
       },
-      { units: 0, value: 0 }
+      { units: 0, value: 0, tpValue: 0 }
     )
   }, [detailData])
+
+  const summaryTotalTp = useMemo(
+    () =>
+      summaryData.reduce((sum, row) => sum + row.totalQuantity * Number(row.tp ?? 0), 0),
+    [summaryData]
+  )
 
   const detailColumns = useMemo<ColumnDef<InventoryRow, any>[]>(
     () => [
@@ -169,8 +198,12 @@ const InventoryPage = () => {
       }),
       detailHelper.display({
         id: 'totalValue',
-        header: 'Total Value',
-        cell: ({ row }) => formatPKR(row.original.quantity * row.original.avgCostPerUnit)
+        header: () => <TableHeaderWithHelp label='Total at cost' tooltip={TOOLTIP_TOTAL_COST_VALUE} />,
+        cell: ({ row }) => (
+          <Tooltip title={TOOLTIP_TOTAL_COST_VALUE} arrow>
+            <span className='cursor-help'>{formatPKR(row.original.quantity * row.original.avgCostPerUnit)}</span>
+          </Tooltip>
+        )
       }),
       detailHelper.display({
         id: 'actions',
@@ -199,8 +232,12 @@ const InventoryPage = () => {
         }
       }),
       summaryHelper.accessor('totalValue', {
-        header: 'Total Value',
-        cell: ({ row }) => formatPKR(row.original.totalValue)
+        header: () => <TableHeaderWithHelp label='Total at cost' tooltip={TOOLTIP_TOTAL_COST_VALUE} />,
+        cell: ({ row }) => (
+          <Tooltip title={TOOLTIP_TOTAL_COST_VALUE} arrow>
+            <span className='cursor-help'>{formatPKR(row.original.totalValue)}</span>
+          </Tooltip>
+        )
       }),
       summaryHelper.accessor('distributorCount', {
         header: 'Distributors',
@@ -241,18 +278,12 @@ const InventoryPage = () => {
     getPaginationRowModel: getPaginationRowModel()
   })
 
-  const kpis = [
+  const kpiData: { title: string; value: string; icon: string; color: string; tooltip?: string }[] = [
     { title: 'Unique Products', value: totals.uniqueProducts.toString(), icon: 'tabler-packages', color: 'primary' },
     { title: 'Total Units', value: totals.totalUnits.toLocaleString(), icon: 'tabler-box', color: 'info' },
-    { title: 'Inventory Value', value: formatPKR(totals.totalValue), icon: 'tabler-coin', color: 'success' },
-  // TODO: Commented for now as we don't needed at this time
-    // {
-    //   title: 'Low Stock Items',
-    //   value: summaryData.filter((r) => r.totalQuantity <= LOW_STOCK_THRESHOLD).length.toString(),
-    //   icon: 'tabler-alert-triangle',
-    //   color: 'warning'
-    // }
+    { title: 'Inventory at cost', value: formatPKR(totals.totalValue), icon: 'tabler-coin', color: 'success', tooltip: TOOLTIP_INVENTORY_VALUE_KPI }
   ]
+  // TODO: Low stock KPI
 
   const renderTable = (table: any, cols: any[]) => (
     <>
@@ -308,15 +339,28 @@ const InventoryPage = () => {
 
   return (
     <Grid container spacing={6}>
-      {kpis.map((kpi, i) => (
+      {kpiData.map((kpi, i) => (
         <Grid key={i} size={{ xs: 12, sm: 4 }}>
           <Card>
             <CardContent className='flex flex-col items-center gap-2 p-6'>
-              <i className={`${kpi.icon} text-3xl text-${kpi.color}`} />
-              <Typography variant='h5'>{loading ? '-' : kpi.value}</Typography>
-              <Typography variant='body2' color='text.secondary'>
-                {kpi.title}
-              </Typography>
+              {kpi.tooltip ? (
+                <Tooltip title={kpi.tooltip} arrow leaveTouchDelay={5000}>
+                  <span className='inline-flex w-full flex-col items-center gap-2 cursor-help'>
+                    <i className={`${kpi.icon} text-3xl text-${kpi.color}`} />
+                    <Typography variant='h5'>{loading ? '-' : kpi.value}</Typography>
+                    <Typography variant='body2' color='text.secondary' className='inline-flex items-center gap-0.5'>
+                      {kpi.title}
+                      <i className='tabler-info-circle size-3.5 opacity-70' aria-hidden />
+                    </Typography>
+                  </span>
+                </Tooltip>
+              ) : (
+                <>
+                  <i className={`${kpi.icon} text-3xl text-${kpi.color}`} />
+                  <Typography variant='h5'>{loading ? '-' : kpi.value}</Typography>
+                  <Typography variant='body2' color='text.secondary'>{kpi.title}</Typography>
+                </>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -382,18 +426,54 @@ const InventoryPage = () => {
               <TabPanel value='detail' className='p-0'>
                 {renderTable(detailTable, detailColumns)}
                 {!loading && detailData.length > 0 && (
-                  <div className='flex justify-end gap-6 p-4 border-bs'>
-                    <Typography variant='body2'>
-                      <strong>Total Units:</strong> {detailTotals.units.toLocaleString()}
-                    </Typography>
-                    <Typography variant='body2'>
-                      <strong>Total Value:</strong> {formatPKR(detailTotals.value)}
+                  <div className='flex flex-col items-end gap-1 p-4 border-bs'>
+                    <div className='flex flex-wrap justify-end gap-6'>
+                      <Typography variant='body2'>
+                        <strong>Total units (filtered):</strong> {detailTotals.units.toLocaleString()}
+                      </Typography>
+                      <Tooltip title={TOOLTIP_TOTAL_COST_VALUE} arrow>
+                        <Typography variant='body2' className='cursor-help inline-flex items-center gap-0.5'>
+                          <strong>Total at cost:</strong> {formatPKR(detailTotals.value)}
+                          <i className='tabler-info-circle size-3.5 text-textSecondary' aria-hidden />
+                        </Typography>
+                      </Tooltip>
+                      <Tooltip title={TOOLTIP_TRADE_PRICE_NO_SHIPPING} arrow>
+                        <Typography variant='body2' className='cursor-help inline-flex items-center gap-0.5'>
+                          <strong>Total at TP:</strong> {formatPKR(detailTotals.tpValue)}
+                          <i className='tabler-info-circle size-3.5 text-textSecondary' aria-hidden />
+                        </Typography>
+                      </Tooltip>
+                    </div>
+                    <Typography variant='caption' color='text.secondary' className='max-w-[min(100%,42rem)] text-end'>
+                      Cost can include a share of transfer shipping; TP is quantity × product TP (no shipping in TP).
                     </Typography>
                   </div>
                 )}
               </TabPanel>
               <TabPanel value='summary' className='p-0'>
                 {renderTable(summaryTable, summaryColumns)}
+                {!loading && summaryData.length > 0 && (
+                  <div className='flex flex-col items-end gap-1 p-4 border-bs'>
+                    <div className='flex flex-wrap justify-end gap-4'>
+                      <Typography variant='body2'><strong>Total units:</strong> {totals.totalUnits.toLocaleString()}</Typography>
+                      <Tooltip title={TOOLTIP_INVENTORY_VALUE_KPI} arrow>
+                        <Typography variant='body2' className='cursor-help inline-flex items-center gap-0.5'>
+                          <strong>Total at cost (all products):</strong> {formatPKR(totals.totalValue)}
+                          <i className='tabler-info-circle size-3.5 text-textSecondary' aria-hidden />
+                        </Typography>
+                      </Tooltip>
+                      <Tooltip title={TOOLTIP_TRADE_PRICE_NO_SHIPPING} arrow>
+                        <Typography variant='body2' className='cursor-help inline-flex items-center gap-0.5'>
+                          <strong>Total at TP (all products):</strong> {formatPKR(summaryTotalTp)}
+                          <i className='tabler-info-circle size-3.5 text-textSecondary' aria-hidden />
+                        </Typography>
+                      </Tooltip>
+                    </div>
+                    <Typography variant='caption' color='text.secondary' className='max-w-[min(100%,42rem)] text-end'>
+                      Cost includes transfer-shipping share when applicable. TP is sum of (qty × TP) per product—shipping is not in TP.
+                    </Typography>
+                  </div>
+                )}
               </TabPanel>
             </TabContext>
           </CardContent>
@@ -403,18 +483,42 @@ const InventoryPage = () => {
       <Dialog open={!!viewDetail} onClose={() => setViewDetail(null)} maxWidth='sm' fullWidth>
         <DialogTitle>Inventory Details</DialogTitle>
         <DialogContent>
-          {viewDetail && (
+          {viewDetail && (() => {
+            const unitTp = Number(viewDetail.productId?.tp ?? 0)
+            const totalAtCost = viewDetail.quantity * viewDetail.avgCostPerUnit
+            const totalTpLine = viewDetail.quantity * unitTp
+            return (
             <Grid container spacing={3} className='pbs-4'>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Product</Typography><Typography fontWeight={500}>{viewDetail.productId?.name || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Composition</Typography><Typography>{viewDetail.productId?.composition || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Distributor</Typography><Typography>{viewDetail.distributorId?.name || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Quantity</Typography><Typography>{viewDetail.quantity}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Avg Cost/Unit</Typography><Typography>{formatPKR(viewDetail.avgCostPerUnit)}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Total Value</Typography><Typography fontWeight={500}>{formatPKR(viewDetail.quantity * viewDetail.avgCostPerUnit)}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>MRP</Typography><Typography>{formatPKR(viewDetail.productId?.mrp || 0)}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>TP</Typography><Typography>{formatPKR(viewDetail.productId?.tp || 0)}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Avg cost / unit</Typography><Typography>{formatPKR(viewDetail.avgCostPerUnit)}</Typography></Grid>
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary'>Total at cost</Typography>
+                <Typography fontWeight={500}>{formatPKR(totalAtCost)}</Typography>
+              </Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>MRP (per unit)</Typography><Typography>{formatPKR(viewDetail.productId?.mrp || 0)}</Typography></Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant='body2' color='text.secondary'>TP (per unit)</Typography>
+                <Typography>{formatPKR(unitTp)}</Typography>
+                <Tooltip title={TOOLTIP_TRADE_PRICE_NO_SHIPPING} arrow>
+                  <Typography variant='caption' color='text.secondary' className='cursor-help inline-flex items-center gap-0.5'>
+                    List price only — no shipping
+                    <i className='tabler-info-circle size-3' />
+                  </Typography>
+                </Tooltip>
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary'>Total at TP (this line)</Typography>
+                <Typography fontWeight={600}>{formatPKR(totalTpLine)}</Typography>
+                <Typography variant='caption' color='text.secondary' display='block' className='mbs-1'>
+                  Quantity × TP per unit. Shipping is <strong>not</strong> included in TP; shipping is only in the cost side when stock is received on a transfer (shared across products on that transfer).
+                </Typography>
+              </Grid>
             </Grid>
-          )}
+            )
+          })()}
         </DialogContent>
         <DialogActions><Button onClick={() => setViewDetail(null)}>Close</Button></DialogActions>
       </Dialog>
@@ -422,19 +526,45 @@ const InventoryPage = () => {
       <Dialog open={!!viewSummary} onClose={() => setViewSummary(null)} maxWidth='sm' fullWidth>
         <DialogTitle>Product Inventory Summary</DialogTitle>
         <DialogContent>
-          {viewSummary && (
+          {viewSummary && (() => {
+            const unitTp = Number(viewSummary.tp ?? 0)
+            const totalTpAllUnits = viewSummary.totalQuantity * unitTp
+            return (
             <Grid container spacing={3} className='pbs-4'>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Product</Typography><Typography fontWeight={500}>{viewSummary.productName}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Composition</Typography><Typography>{viewSummary.composition || '-'}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Total Quantity</Typography><Typography>{viewSummary.totalQuantity}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Total quantity</Typography><Typography>{viewSummary.totalQuantity}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Distributors</Typography><Typography>{viewSummary.distributorCount}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Avg Cost/Unit</Typography><Typography>{formatPKR(viewSummary.avgCostPerUnit)}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Total Value</Typography><Typography fontWeight={500}>{formatPKR(viewSummary.totalValue)}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>MRP</Typography><Typography>{formatPKR(viewSummary.mrp)}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>TP</Typography><Typography>{formatPKR(viewSummary.tp)}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Casting</Typography><Typography>{formatPKR(viewSummary.casting)}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Avg cost / unit</Typography><Typography>{formatPKR(viewSummary.avgCostPerUnit)}</Typography></Grid>
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary'>Total at cost (this product, all distributors)</Typography>
+                <Typography fontWeight={500}>{formatPKR(viewSummary.totalValue)}</Typography>
+                <Typography variant='caption' color='text.secondary' display='block' className='mbs-1'>
+                  {TOOLTIP_TOTAL_COST_VALUE}
+                </Typography>
+              </Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>MRP (per unit)</Typography><Typography>{formatPKR(viewSummary.mrp)}</Typography></Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant='body2' color='text.secondary'>TP (per unit)</Typography>
+                <Typography>{formatPKR(unitTp)}</Typography>
+                <Tooltip title={TOOLTIP_TRADE_PRICE_NO_SHIPPING} arrow>
+                  <Typography variant='caption' color='text.secondary' className='cursor-help inline-flex items-center gap-0.5'>
+                    List price only — no shipping
+                    <i className='tabler-info-circle size-3' />
+                  </Typography>
+                </Tooltip>
+              </Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Casting (per unit)</Typography><Typography>{formatPKR(viewSummary.casting)}</Typography></Grid>
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary'>Total at TP (all units, this product)</Typography>
+                <Typography fontWeight={600}>{formatPKR(totalTpAllUnits)}</Typography>
+                <Typography variant='caption' color='text.secondary' display='block' className='mbs-1'>
+                  Total quantity × TP per unit. <strong>Shipping is not</strong> part of this figure. Cost (above) is where transfer shipping is spread across products when stock came in on a transfer.
+                </Typography>
+              </Grid>
             </Grid>
-          )}
+            )
+          })()}
         </DialogContent>
         <DialogActions><Button onClick={() => setViewSummary(null)}>Close</Button></DialogActions>
       </Dialog>

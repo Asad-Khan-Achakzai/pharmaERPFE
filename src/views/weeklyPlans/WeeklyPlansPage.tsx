@@ -1,5 +1,6 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, forwardRef } from 'react'
+import type { TextFieldProps } from '@mui/material/TextField'
 import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -18,6 +19,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { createColumnHelper, flexRender, getCoreRowModel, getPaginationRowModel, useReactTable } from '@tanstack/react-table'
 import type { ColumnDef } from '@tanstack/react-table'
 import CustomTextField from '@core/components/mui/TextField'
+import AppReactDatepicker from '@/libs/styles/AppReactDatepicker'
+import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { weeklyPlansService } from '@/services/weeklyPlans.service'
 import { usersService } from '@/services/users.service'
@@ -38,6 +41,40 @@ type Plan = {
 }
 
 const columnHelper = createColumnHelper<Plan>()
+
+function formatRangeDisplay(d: Date) {
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${mm}/${dd}/${d.getFullYear()}`
+}
+
+type WeekRangeInputProps = TextFieldProps & {
+  label: string
+  end: Date | null
+  start: Date | null
+}
+
+const WeekRangeCustomInput = forwardRef<HTMLInputElement, WeekRangeInputProps>(
+  function WeekRangeCustomInput({ label, start, end, slotProps, ...rest }, ref) {
+    const value =
+      !start
+        ? ''
+        : !end
+          ? `${formatRangeDisplay(start)} – …`
+          : `${formatRangeDisplay(start)} - ${formatRangeDisplay(end)}`
+    return (
+      <CustomTextField
+        fullWidth
+        inputRef={ref}
+        required
+        {...rest}
+        label={label}
+        value={value}
+        slotProps={{ ...slotProps, htmlInput: { readOnly: true, ...slotProps?.htmlInput } }}
+      />
+    )
+  }
+)
 
 const WeeklyPlansPage = () => {
   const router = useRouter()
@@ -235,9 +272,15 @@ const WeeklyPlansPage = () => {
         </table>
       </div>
       <TablePaginationComponent table={table as any} />
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth='sm' fullWidth>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        maxWidth='sm'
+        fullWidth
+        slotProps={{ paper: { sx: { overflow: 'visible' } } }}
+      >
         <DialogTitle>Create Weekly Plan</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflow: 'visible' }}>
           <Grid container spacing={4} className='pbs-4'>
             {reps.length > 0 ? (
               <Grid size={{ xs: 12 }}>
@@ -263,26 +306,34 @@ const WeeklyPlansPage = () => {
                 </Typography>
               </Grid>
             )}
-            <Grid size={{ xs: 6 }}>
-              <CustomTextField
-                required
-                fullWidth
-                label='Week start'
-                type='date'
-                value={form.weekStartDate}
-                onChange={e => setForm(p => ({ ...p, weekStartDate: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }}
-              />
-            </Grid>
-            <Grid size={{ xs: 6 }}>
-              <CustomTextField
-                required
-                fullWidth
-                label='Week end'
-                type='date'
-                value={form.weekEndDate}
-                onChange={e => setForm(p => ({ ...p, weekEndDate: e.target.value }))}
-                slotProps={{ inputLabel: { shrink: true } }}
+            <Grid size={{ xs: 12 }}>
+              <AppReactDatepicker
+                selectsRange
+                endDate={parseYyyyMmDd(form.weekEndDate) ?? null}
+                startDate={parseYyyyMmDd(form.weekStartDate) ?? null}
+                selected={parseYyyyMmDd(form.weekStartDate) ?? null}
+                id='weekly-plan-week-range'
+                onChange={dates => {
+                  if (!dates) {
+                    setForm(p => ({ ...p, weekStartDate: '', weekEndDate: '' }))
+                    return
+                  }
+                  const [s, e] = dates
+                  setForm(p => ({
+                    ...p,
+                    weekStartDate: s ? formatYyyyMmDd(s) : '',
+                    weekEndDate: e ? formatYyyyMmDd(e) : ''
+                  }))
+                }}
+                shouldCloseOnSelect={false}
+                placeholderText='Week start – end'
+                customInput={
+                  <WeekRangeCustomInput
+                    label='Week (start – end)'
+                    start={parseYyyyMmDd(form.weekStartDate) ?? null}
+                    end={parseYyyyMmDd(form.weekEndDate) ?? null}
+                  />
+                }
               />
             </Grid>
             <Grid size={{ xs: 12 }}>

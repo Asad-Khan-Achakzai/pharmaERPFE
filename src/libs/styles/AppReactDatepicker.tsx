@@ -22,7 +22,8 @@ type Props = ComponentProps<typeof ReactDatePickerComponent> & {
 const StyledReactDatePicker = styled(Box)<BoxProps>(({ theme }) => {
   return {
     '& .react-datepicker-popper': {
-      zIndex: 20,
+      /** Above MUI Dialog/Modal (default ~1300) so the calendar is not hidden behind the overlay. */
+      zIndex: theme.zIndex.modal + 1,
       paddingTop: `${theme.spacing(0.5)} !important`
     },
     '& .react-datepicker-wrapper': {
