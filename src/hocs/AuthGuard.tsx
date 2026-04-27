@@ -10,7 +10,7 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 
 const AuthGuard = ({ children }: { children: ReactNode }) => {
-  const { user, loading, hasPermission } = useAuth()
+  const { user, loading, hasPermission, needsCompanySelection } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const redirected = useRef(false)
@@ -21,6 +21,18 @@ const AuthGuard = ({ children }: { children: ReactNode }) => {
       router.replace('/login')
     }
   }, [user, loading, router])
+
+  useEffect(() => {
+    if (!loading && user && needsCompanySelection && pathname) {
+      if (
+        pathname.startsWith('/select-company') ||
+        pathname.startsWith('/platform') ||
+        pathname.startsWith('/super-admin')
+      )
+        return
+      router.replace('/select-company')
+    }
+  }, [loading, user, needsCompanySelection, pathname, router])
 
   useEffect(() => {
     if (user) {
@@ -41,23 +53,31 @@ const AuthGuard = ({ children }: { children: ReactNode }) => {
   if (!user) return null
 
   if (pathname.startsWith('/super-admin')) {
-    if (user.role !== 'SUPER_ADMIN') {
-      return (
-        <div className='flex items-center justify-center min-bs-screen'>
-          <Card className='max-is-md'>
-            <CardContent className='flex flex-col items-center gap-4 p-8 text-center'>
-              <i className='tabler-lock text-5xl text-error' />
-              <Typography variant='h5'>Access Denied</Typography>
-              <Typography color='text.secondary'>Super Admin area is restricted to platform administrators.</Typography>
-              <Button variant='contained' onClick={() => router.replace('/home')}>
-                Go to Dashboard
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )
+    const isPlatformUsersOnly =
+      pathname === '/super-admin/platform-users' || pathname.startsWith('/super-admin/platform-users/')
+    if (user.role === 'SUPER_ADMIN') {
+      return <>{children}</>
     }
-    return <>{children}</>
+    if (
+      isPlatformUsersOnly &&
+      (user.permissions || []).includes('platform.companies.manage')
+    ) {
+      return <>{children}</>
+    }
+    return (
+      <div className='flex items-center justify-center min-bs-screen'>
+        <Card className='max-is-md'>
+          <CardContent className='flex flex-col items-center gap-4 p-8 text-center'>
+            <i className='tabler-lock text-5xl text-error' />
+            <Typography variant='h5'>Access Denied</Typography>
+            <Typography color='text.secondary'>Super Admin area is restricted to platform administrators.</Typography>
+            <Button variant='contained' onClick={() => router.replace('/home')}>
+              Go to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   const requiredPermission = getRequiredPermission(pathname)

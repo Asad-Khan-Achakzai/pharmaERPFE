@@ -57,7 +57,12 @@ const HorizontalMenu = () => {
   const { hasPermission, user } = useAuth()
 
   const { transitionDuration } = verticalNavOptions
-  const filteredMenuData = filterMenuByPermission(horizontalMenuData(), hasPermission, user?.role)
+  const filteredMenuData = filterMenuByPermission(
+    horizontalMenuData(),
+    hasPermission,
+    user?.role,
+    user?.permissions
+  )
 
   return (
     <HorizontalNav

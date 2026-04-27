@@ -3,6 +3,8 @@ import type { VerticalMenuDataType } from '@/types/menuTypes'
 
 export type MenuItemWithPermission = VerticalMenuDataType & {
   permission?: string
+  /** If true, require that exact key in user.permissions (not admin.access / SUPER_ADMIN bypass in menu filter). */
+  explicitPermission?: boolean
   /** If set, menu item is only shown for these roles (e.g. SUPER_ADMIN). */
   roles?: string[]
   children?: MenuItemWithPermission[]
@@ -11,9 +13,22 @@ export type MenuItemWithPermission = VerticalMenuDataType & {
 const verticalMenuData = (): MenuItemWithPermission[] => [
   {
     label: 'Super Admin',
-    href: '/super-admin',
     icon: 'tabler-shield-lock',
-    roles: ['SUPER_ADMIN']
+    children: [
+      { label: 'Companies', href: '/super-admin', roles: ['SUPER_ADMIN'] },
+      {
+        label: 'Platform users',
+        href: '/super-admin/platform-users',
+        permission: 'platform.companies.manage',
+        explicitPermission: true
+      }
+    ]
+  },
+  {
+    label: 'Platform',
+    href: '/platform',
+    icon: 'tabler-building-community',
+    permission: 'platform.dashboard.view'
   },
   {
     label: 'Dashboard',

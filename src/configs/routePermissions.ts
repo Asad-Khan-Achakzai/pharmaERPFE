@@ -4,6 +4,7 @@
  * ADMIN role bypasses all checks.
  */
 export const routePermissions: Array<{ path: string; permission: string }> = [
+  { path: '/platform', permission: 'platform.dashboard.view' },
   { path: '/orders/add', permission: 'orders.create' },
   { path: '/orders', permission: 'orders.view' },
   { path: '/payments/add', permission: 'payments.create' },

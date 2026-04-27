@@ -16,10 +16,15 @@ type CompanyRow = {
 }
 
 const SuperAdminCompanySwitcher = () => {
-  const { user, switchCompanyContext } = useAuth()
+  const { user, switchCompanyContext, needsCompanySelection } = useAuth()
   const [companies, setCompanies] = useState<CompanyRow[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+
+  const show =
+    user &&
+    (user.userType === 'PLATFORM' || user.role === 'SUPER_ADMIN') &&
+    !needsCompanySelection
 
   const activeId =
     user?.activeCompanyId && typeof user.activeCompanyId === 'object'
@@ -29,6 +34,16 @@ const SuperAdminCompanySwitcher = () => {
         : ''
 
   const load = useCallback(async () => {
+    if (user?.userType === 'PLATFORM' && user.allowedCompanies && user.allowedCompanies.length) {
+      setCompanies(
+        user.allowedCompanies.map(c => ({
+          _id: c._id,
+          name: c.name,
+          city: c.city
+        }))
+      )
+      return
+    }
     setLoading(true)
     try {
       const { data } = await superAdminService.listCompanies({ limit: 100, page: 1 })
@@ -38,19 +53,27 @@ const SuperAdminCompanySwitcher = () => {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [user?.userType, user?.allowedCompanies])
 
   useEffect(() => {
-    if (user?.role === 'SUPER_ADMIN') load()
-  }, [user?.role, load])
+    if (show) void load()
+  }, [show, load])
 
-  if (user?.role !== 'SUPER_ADMIN') return null
+  if (!show) return null
 
   const handleChange = async (companyId: string) => {
     if (!companyId || companyId === activeId) return
     setBusy(true)
     try {
-      await switchCompanyContext(companyId)
+      if (user?.userType === 'PLATFORM') {
+        await switchCompanyContext(companyId)
+      } else {
+        const { data } = await superAdminService.switchCompany(companyId)
+        const payload = data.data as { tokens: { accessToken: string; refreshToken: string } }
+        localStorage.setItem('accessToken', payload.tokens.accessToken)
+        localStorage.setItem('refreshToken', payload.tokens.refreshToken)
+        window.location.reload()
+      }
     } catch (e) {
       showApiError(e, 'Could not switch company')
     } finally {
@@ -65,7 +88,7 @@ const SuperAdminCompanySwitcher = () => {
         labelId='sa-company-switch'
         label='Company'
         value={activeId || ''}
-        onChange={e => handleChange(e.target.value as string)}
+        onChange={e => void handleChange(e.target.value as string)}
       >
         {companies.map(c => (
           <MenuItem key={c._id} value={c._id}>

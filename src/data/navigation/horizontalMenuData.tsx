@@ -3,12 +3,26 @@ import type { HorizontalMenuDataType } from '@/types/menuTypes'
 
 export type HorizontalMenuItemWithPermission = HorizontalMenuDataType & {
   permission?: string
+  explicitPermission?: boolean
   roles?: string[]
   children?: HorizontalMenuItemWithPermission[]
 }
 
 const horizontalMenuData = (): HorizontalMenuItemWithPermission[] => [
-  { label: 'Super Admin', href: '/super-admin', icon: 'tabler-shield-lock', roles: ['SUPER_ADMIN'] },
+  {
+    label: 'Super Admin',
+    icon: 'tabler-shield-lock',
+    children: [
+      { label: 'Companies', href: '/super-admin', roles: ['SUPER_ADMIN'] },
+      {
+        label: 'Platform users',
+        href: '/super-admin/platform-users',
+        permission: 'platform.companies.manage',
+        explicitPermission: true
+      }
+    ]
+  },
+  { label: 'Platform', href: '/platform', icon: 'tabler-building-community', permission: 'platform.dashboard.view' },
   { label: 'Dashboard', href: '/home', icon: 'tabler-smart-home', permission: 'dashboard.view' },
   { label: 'Products', href: '/products/list', icon: 'tabler-pill', permission: 'products.view' },
   { label: 'Distributors', href: '/distributors/list', icon: 'tabler-truck', permission: 'distributors.view' },

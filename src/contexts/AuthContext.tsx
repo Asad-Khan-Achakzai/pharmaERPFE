@@ -12,17 +12,28 @@ import {
 } from 'react'
 import { useRouter } from 'next/navigation'
 import { authService } from '@/services/auth.service'
-import { superAdminService } from '@/services/superAdmin.service'
+import { showApiError } from '@/utils/apiErrors'
 
-interface User {
+export type UserType = 'COMPANY' | 'PLATFORM'
+
+interface AllowedCompany {
+  _id: string
+  name: string
+  city?: string
+  currency?: string
+  isActive?: boolean
+}
+
+export interface User {
   _id: string
   name: string
   email: string
   role: string
+  userType?: UserType
   permissions: string[]
   companyId: any
-  /** Populated when present — operating tenant for SUPER_ADMIN. */
   activeCompanyId?: { _id: string; name: string; city?: string; currency?: string } | string | null
+  allowedCompanies?: AllowedCompany[]
   phone?: string
 }
 
@@ -33,9 +44,11 @@ interface AuthContextType {
   register: (data: any) => Promise<void>
   logout: () => void
   hasPermission: (permission: string) => boolean
-  /** SUPER_ADMIN only — switches operating company; updates tokens and user. */
+  /** Platform: switch active tenant (validates access server-side). */
   switchCompanyContext: (companyId: string) => Promise<void>
   refreshUser: () => Promise<void>
+  /** True when platform user must pick a company before using tenant-scoped features. */
+  needsCompanySelection: boolean
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -48,7 +61,12 @@ function idKey(x: unknown): string {
   return String(x)
 }
 
-/** Avoid replacing user with a new object when nothing meaningful changed — prevents effect storms downstream. */
+function needsSelectCompany(u: User | null): boolean {
+  if (!u || u.userType !== 'PLATFORM') return false
+  if (!u.allowedCompanies || u.allowedCompanies.length === 0) return true
+  return !u.activeCompanyId
+}
+
 function authUserEquivalent(a: User | null, b: User | null): boolean {
   if (a === b) return true
   if (!a || !b) return false
@@ -56,11 +74,13 @@ function authUserEquivalent(a: User | null, b: User | null): boolean {
   return (
     a._id === b._id &&
     a.role === b.role &&
+    a.userType === b.userType &&
     a.email === b.email &&
     a.name === b.name &&
     perm(a.permissions || []) === perm(b.permissions || []) &&
     idKey(a.companyId) === idKey(b.companyId) &&
-    idKey(a.activeCompanyId) === idKey(b.activeCompanyId)
+    idKey(a.activeCompanyId) === idKey(b.activeCompanyId) &&
+    JSON.stringify(a.allowedCompanies || []) === JSON.stringify(b.allowedCompanies || [])
   )
 }
 
@@ -68,11 +88,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
-  /** All callers await the same in-flight /auth/me — avoids races and duplicate work */
   const fetchUserPromiseRef = useRef<Promise<void> | null>(null)
   const lastBackgroundRevalidate = useRef(0)
-  /** Skip tab-visibility refresh right after login (navigation can fire visibility + overlap with session) */
   const skipBackgroundRevalidateUntil = useRef(0)
+
+  const needsCompanySelection = useMemo(() => needsSelectCompany(user), [user])
 
   const fetchUser = useCallback(async () => {
     const token = localStorage.getItem('accessToken')
@@ -93,7 +113,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser((prev) => (authUserEquivalent(prev, next) ? prev : next))
       } catch (e: unknown) {
         const status = (e as { response?: { status?: number } })?.response?.status
-        /** Only drop the session when the server rejects credentials — not 5xx/network blips */
         if (status === 401) {
           localStorage.removeItem('accessToken')
           localStorage.removeItem('refreshToken')
@@ -115,11 +134,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     void fetchUser()
   }, [fetchUser])
 
-  /**
-   * Refresh session when the tab becomes visible again — throttled so we do not stack /auth/me
-   * with heavy dashboard loads or steal the main thread after login.
-   * (We intentionally avoid window "focus" — it fires on almost every click and caused request storms.)
-   */
   useEffect(() => {
     const REVALIDATE_MIN_MS = 60_000
 
@@ -137,23 +151,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [fetchUser])
 
-  const login = useCallback(async (email: string, password: string) => {
-    const { data } = await authService.login({ email, password })
-    localStorage.setItem('accessToken', data.data.tokens.accessToken)
-    localStorage.setItem('refreshToken', data.data.tokens.refreshToken)
-    skipBackgroundRevalidateUntil.current = Date.now() + 5_000
-    setUser(data.data.user)
-    router.push('/home')
-  }, [router])
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const { data } = await authService.login({ email, password })
+      const payload = data.data as { user: User; tokens: { accessToken: string; refreshToken: string } }
+      localStorage.setItem('accessToken', payload.tokens.accessToken)
+      localStorage.setItem('refreshToken', payload.tokens.refreshToken)
+      skipBackgroundRevalidateUntil.current = Date.now() + 5_000
+      setUser(payload.user)
+      if (needsSelectCompany(payload.user)) {
+        router.push('/select-company')
+      } else {
+        router.push('/home')
+      }
+    },
+    [router]
+  )
 
-  const register = useCallback(async (regData: any) => {
-    const { data } = await authService.register(regData)
-    localStorage.setItem('accessToken', data.data.tokens.accessToken)
-    localStorage.setItem('refreshToken', data.data.tokens.refreshToken)
-    skipBackgroundRevalidateUntil.current = Date.now() + 5_000
-    setUser(data.data.user)
-    router.push('/home')
-  }, [router])
+  const register = useCallback(
+    async (regData: any) => {
+      const { data } = await authService.register(regData)
+      const payload = data.data as { user: User; tokens: { accessToken: string; refreshToken: string } }
+      localStorage.setItem('accessToken', payload.tokens.accessToken)
+      localStorage.setItem('refreshToken', payload.tokens.refreshToken)
+      skipBackgroundRevalidateUntil.current = Date.now() + 5_000
+      setUser(payload.user)
+      router.push('/home')
+    },
+    [router]
+  )
 
   const logout = useCallback(() => {
     localStorage.removeItem('accessToken')
@@ -166,18 +192,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (!user) return false
     if (user.role === 'SUPER_ADMIN') return true
     const p = user.permissions || []
-    /** Must match backend `userHasPermission` (admin.access = full catalog) — do not use legacy `role` for RBAC. */
     if (p.includes('admin.access')) return true
     return p.includes(permission)
   }, [user])
 
   const switchCompanyContext = useCallback(
     async (companyId: string) => {
-      const { data } = await superAdminService.switchCompany(companyId)
-      const payload = data.data as { tokens: { accessToken: string; refreshToken: string } }
-      localStorage.setItem('accessToken', payload.tokens.accessToken)
-      localStorage.setItem('refreshToken', payload.tokens.refreshToken)
-      await fetchUser()
+      try {
+        const { data } = await authService.switchCompany(companyId)
+        const payload = data.data as { tokens: { accessToken: string; refreshToken: string }; user: User }
+        localStorage.setItem('accessToken', payload.tokens.accessToken)
+        localStorage.setItem('refreshToken', payload.tokens.refreshToken)
+        setUser(payload.user)
+        await fetchUser()
+      } catch (e) {
+        showApiError(e, 'Could not switch company')
+        throw e
+      }
     },
     [fetchUser]
   )
@@ -191,9 +222,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       logout,
       hasPermission,
       switchCompanyContext,
-      refreshUser: fetchUser
+      refreshUser: fetchUser,
+      needsCompanySelection
     }),
-    [user, loading, login, register, logout, hasPermission, switchCompanyContext, fetchUser]
+    [user, loading, login, register, logout, hasPermission, switchCompanyContext, fetchUser, needsCompanySelection]
   )
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
