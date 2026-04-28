@@ -59,6 +59,16 @@ const ProfitCostManagementSection = () => {
 
   const marginPct = summary?.profitMarginPercent
 
+  const topProfitable = summary?.insights?.topProfitableProducts || []
+  const lowestRaw = summary?.insights?.topLossMakingProducts || []
+  /** Backend sorts ascending by profit for “lowest”; with a single SKU it is the same row as “top”. Avoid duplicate chips. */
+  const lowestProfitable =
+    topProfitable.length === 1 &&
+    lowestRaw.length === 1 &&
+    String(topProfitable[0]?.productId) === String(lowestRaw[0]?.productId)
+      ? []
+      : lowestRaw
+
   return (
     <Grid container spacing={6}>
       <Grid size={{ xs: 12 }}>
@@ -203,13 +213,13 @@ const ProfitCostManagementSection = () => {
             <Card>
               <CardHeader title='Top profitable products' />
               <CardContent className='flex flex-col gap-2'>
-                {(summary?.insights?.topProfitableProducts || []).map((p: any) => (
+                {topProfitable.map((p: any) => (
                   <div key={String(p.productId)} className='flex justify-between gap-2'>
                     <Typography variant='body2'>{p.productName}</Typography>
                     <Chip size='small' color='success' variant='tonal' label={formatPKR(p.profit)} />
                   </div>
                 ))}
-                {!summary?.insights?.topProfitableProducts?.length && (
+                {!topProfitable.length && (
                   <Typography variant='body2' color='text.secondary'>
                     No data
                   </Typography>
@@ -220,17 +230,27 @@ const ProfitCostManagementSection = () => {
 
           <Grid size={{ xs: 12, md: 6 }}>
             <Card>
-              <CardHeader title='Lowest profit products' />
+              <CardHeader
+                title='Lowest profit products'
+                subheader='Sorted by gross profit (revenue − COGS) ascending — not the same as “loss-making” unless profit is negative.'
+              />
               <CardContent className='flex flex-col gap-2'>
-                {(summary?.insights?.topLossMakingProducts || []).map((p: any) => (
+                {lowestProfitable.map((p: any) => (
                   <div key={String(p.productId)} className='flex justify-between gap-2'>
                     <Typography variant='body2'>{p.productName}</Typography>
-                    <Chip size='small' color='warning' variant='tonal' label={formatPKR(p.profit)} />
+                    <Chip
+                      size='small'
+                      color={p.profit < 0 ? 'error' : 'warning'}
+                      variant='tonal'
+                      label={formatPKR(p.profit)}
+                    />
                   </div>
                 ))}
-                {!summary?.insights?.topLossMakingProducts?.length && (
+                {!lowestProfitable.length && (
                   <Typography variant='body2' color='text.secondary'>
-                    No data
+                    {topProfitable.length === 1 && lowestRaw.length === 1
+                      ? 'Only one product in this period — it appears under Top profitable. Use the table for detail.'
+                      : 'No data'}
                   </Typography>
                 )}
               </CardContent>
@@ -267,14 +287,17 @@ const ProfitCostManagementSection = () => {
 
           <Grid size={{ xs: 12 }}>
             <Card>
-              <CardHeader title='Product profitability' />
+              <CardHeader
+                title='Product profitability'
+                subheader='Revenue is company net (after distributor commission on TP). Line profit = that revenue − COGS. Summary Net profit also deducts payroll and other period costs where applicable. Total revenue on the cards is pharmacy invoice net from transactions (typically higher than the sum of company-net product revenue).'
+              />
               <CardContent className='overflow-x-auto'>
                 <table className='min-is-full text-sm'>
                   <thead>
                     <tr className='border-b'>
                       <th className='text-left p-2'>Product</th>
                       <th className='text-right p-2'>Sold</th>
-                      <th className='text-right p-2'>Revenue</th>
+                      <th className='text-right p-2'>Revenue (company net)</th>
                       <th className='text-right p-2'>COGS</th>
                       <th className='text-right p-2'>Profit</th>
                     </tr>

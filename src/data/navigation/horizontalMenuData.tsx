@@ -32,6 +32,12 @@ const horizontalMenuData = (): HorizontalMenuItemWithPermission[] => [
   { label: 'Dashboard', href: '/home', icon: 'tabler-smart-home', permission: 'dashboard.view' },
   { label: 'Products', href: '/products/list', icon: 'tabler-pill', permission: 'products.view' },
   { label: 'Distributors', href: '/distributors/list', icon: 'tabler-truck', permission: 'distributors.view' },
+  {
+    label: 'Procurement',
+    href: '/procurement',
+    icon: 'tabler-clipboard-check',
+    permission: 'procurement.view'
+  },
   { label: 'Orders', href: '/orders/list', icon: 'tabler-clipboard-list', permission: 'orders.view' },
   { label: 'Pharmacies', href: '/pharmacies/list', icon: 'tabler-building-store', permission: 'pharmacies.view' },
   { label: 'Payments', href: '/payments/list', icon: 'tabler-cash', permission: 'payments.view' },

@@ -46,6 +46,10 @@ const LOW_STOCK_THRESHOLD = 50
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+/** Catalog factory rate per unit (product casting); does not include receipt shipping baked into average cost. */
+const TOOLTIP_FACTORY_VALUE =
+  'Quantity × product factory rate (casting from the product master). This is the catalog cost price, not the weighted average stock cost. Stock “Avg cost / unit” can be higher when shipping was included on goods receipt or transfer.'
+
 /** Cost-based stock value: includes landed cost; transfer shipping is spread across products on the same transfer. */
 const TOOLTIP_TOTAL_COST_VALUE =
   'This is the total at cost: quantity × average cost per unit. That cost can include a share of shipping when stock was added through a stock transfer—shipping is split (shared) across all products in that transfer, so each line gets a fair per-unit cost. It is the amount the distributor is carrying the stock at, not list price.'
@@ -160,10 +164,11 @@ const InventoryPage = () => {
       (acc, row) => {
         acc.units += row.quantity
         acc.value += row.quantity * row.avgCostPerUnit
+        acc.factoryValue += row.quantity * Number(row.productId?.casting ?? 0)
         acc.tpValue += row.quantity * Number(row.productId?.tp ?? 0)
         return acc
       },
-      { units: 0, value: 0, tpValue: 0 }
+      { units: 0, value: 0, factoryValue: 0, tpValue: 0 }
     )
   }, [detailData])
 
@@ -197,13 +202,17 @@ const InventoryPage = () => {
         }
       }),
       detailHelper.display({
-        id: 'totalValue',
-        header: () => <TableHeaderWithHelp label='Total at cost' tooltip={TOOLTIP_TOTAL_COST_VALUE} />,
-        cell: ({ row }) => (
-          <Tooltip title={TOOLTIP_TOTAL_COST_VALUE} arrow>
-            <span className='cursor-help'>{formatPKR(row.original.quantity * row.original.avgCostPerUnit)}</span>
-          </Tooltip>
-        )
+        id: 'factoryValue',
+        header: () => <TableHeaderWithHelp label='Total at factory' tooltip={TOOLTIP_FACTORY_VALUE} />,
+        cell: ({ row }) => {
+          const fac = Number(row.original.productId?.casting ?? 0)
+          const total = row.original.quantity * fac
+          return (
+            <Tooltip title={TOOLTIP_FACTORY_VALUE} arrow>
+              <span className='cursor-help'>{formatPKR(total)}</span>
+            </Tooltip>
+          )
+        }
       }),
       detailHelper.display({
         id: 'actions',
@@ -431,9 +440,15 @@ const InventoryPage = () => {
                       <Typography variant='body2'>
                         <strong>Total units (filtered):</strong> {detailTotals.units.toLocaleString()}
                       </Typography>
+                      <Tooltip title={TOOLTIP_FACTORY_VALUE} arrow>
+                        <Typography variant='body2' className='cursor-help inline-flex items-center gap-0.5'>
+                          <strong>Total at factory:</strong> {formatPKR(detailTotals.factoryValue)}
+                          <i className='tabler-info-circle size-3.5 text-textSecondary' aria-hidden />
+                        </Typography>
+                      </Tooltip>
                       <Tooltip title={TOOLTIP_TOTAL_COST_VALUE} arrow>
                         <Typography variant='body2' className='cursor-help inline-flex items-center gap-0.5'>
-                          <strong>Total at cost:</strong> {formatPKR(detailTotals.value)}
+                          <strong>Total at cost (landed):</strong> {formatPKR(detailTotals.value)}
                           <i className='tabler-info-circle size-3.5 text-textSecondary' aria-hidden />
                         </Typography>
                       </Tooltip>
@@ -445,7 +460,7 @@ const InventoryPage = () => {
                       </Tooltip>
                     </div>
                     <Typography variant='caption' color='text.secondary' className='max-w-[min(100%,42rem)] text-end'>
-                      Cost can include a share of transfer shipping; TP is quantity × product TP (no shipping in TP).
+                      Factory total uses product casting × qty. Landed cost includes shipping from receipts/transfers where applicable. TP is quantity × product TP (no shipping in TP).
                     </Typography>
                   </div>
                 )}
@@ -485,6 +500,8 @@ const InventoryPage = () => {
         <DialogContent>
           {viewDetail && (() => {
             const unitTp = Number(viewDetail.productId?.tp ?? 0)
+            const factoryRate = Number(viewDetail.productId?.casting ?? 0)
+            const totalAtFactory = viewDetail.quantity * factoryRate
             const totalAtCost = viewDetail.quantity * viewDetail.avgCostPerUnit
             const totalTpLine = viewDetail.quantity * unitTp
             return (
@@ -493,10 +510,27 @@ const InventoryPage = () => {
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Composition</Typography><Typography>{viewDetail.productId?.composition || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Distributor</Typography><Typography>{viewDetail.distributorId?.name || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Quantity</Typography><Typography>{viewDetail.quantity}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Avg cost / unit</Typography><Typography>{formatPKR(viewDetail.avgCostPerUnit)}</Typography></Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant='body2' color='text.secondary'>Factory rate (per unit)</Typography>
+                <Typography>{formatPKR(factoryRate)}</Typography>
+                <Tooltip title={TOOLTIP_FACTORY_VALUE} arrow>
+                  <Typography variant='caption' color='text.secondary' className='cursor-help inline-flex items-center gap-0.5 mbs-0.5'>
+                    Product casting — catalog cost; excludes receipt shipping
+                    <i className='tabler-info-circle size-3' />
+                  </Typography>
+                </Tooltip>
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant='body2' color='text.secondary'>Total at factory</Typography>
+                <Typography fontWeight={500}>{formatPKR(totalAtFactory)}</Typography>
+              </Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Avg cost / unit (landed)</Typography><Typography>{formatPKR(viewDetail.avgCostPerUnit)}</Typography></Grid>
               <Grid size={{ xs: 12 }}>
-                <Typography variant='body2' color='text.secondary'>Total at cost</Typography>
+                <Typography variant='body2' color='text.secondary'>Total at cost (inventory, landed)</Typography>
                 <Typography fontWeight={500}>{formatPKR(totalAtCost)}</Typography>
+                <Typography variant='caption' color='text.secondary' display='block' className='mbs-1'>
+                  Quantity × average cost per unit (weighted average, can include shipping from GRN or transfer).
+                </Typography>
               </Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>MRP (per unit)</Typography><Typography>{formatPKR(viewDetail.productId?.mrp || 0)}</Typography></Grid>
               <Grid size={{ xs: 6 }}>
@@ -513,7 +547,7 @@ const InventoryPage = () => {
                 <Typography variant='body2' color='text.secondary'>Total at TP (this line)</Typography>
                 <Typography fontWeight={600}>{formatPKR(totalTpLine)}</Typography>
                 <Typography variant='caption' color='text.secondary' display='block' className='mbs-1'>
-                  Quantity × TP per unit. Shipping is <strong>not</strong> included in TP; shipping is only in the cost side when stock is received on a transfer (shared across products on that transfer).
+                  Quantity × TP per unit. Shipping is <strong>not</strong> included in TP; shipping is reflected in average cost when stock is received on a GRN or transfer.
                 </Typography>
               </Grid>
             </Grid>

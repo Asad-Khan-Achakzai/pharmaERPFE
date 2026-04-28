@@ -42,6 +42,7 @@ export const supplierService = {
       referenceNumber?: string
       attachmentUrl?: string
       verificationStatus?: 'VERIFIED' | 'UNVERIFIED'
+      paymentAllocations?: { supplierInvoiceId: string; amount: number }[]
     }
   ) => api.post(`/suppliers/${id}/payments`, data),
   updatePayment: (

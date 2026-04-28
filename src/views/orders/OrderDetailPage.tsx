@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, useMemo, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
@@ -18,11 +18,35 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
+import Paper from '@mui/material/Paper'
+import Stack from '@mui/material/Stack'
+import Tooltip from '@mui/material/Tooltip'
+import useMediaQuery from '@mui/material/useMediaQuery'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import CustomTextField from '@core/components/mui/TextField'
 import { ordersService } from '@/services/orders.service'
+import { inventoryService } from '@/services/inventory.service'
 import { lineTotalQuantity } from '@/utils/bonus'
+
+const HELP_NET_SALES =
+  'Revenue after pharmacy discount and distributor commission. This is NOT profit.'
+const HELP_ESTIMATED_CASTING =
+  'Catalog cost used at order time. May differ from actual inventory cost.'
+const HELP_ESTIMATED_PROFIT =
+  'Calculated using current inventory average cost. Actual profit is confirmed at delivery.'
+const HELP_AVG_COST_LINE =
+  'Weighted average from current distributor stock (live). Differs from casting at order time; official cost is recorded on each delivery.'
+
+function InfoTip({ title }: { title: string }) {
+  return (
+    <Tooltip title={title} arrow leaveTouchDelay={4000}>
+      <span className='inline-flex align-middle cursor-help opacity-70' aria-label='More info'>
+        <i className='tabler-info-circle size-3.5' />
+      </span>
+    </Tooltip>
+  )
+}
 
 const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'default'> = {
   PENDING: 'warning', PARTIALLY_DELIVERED: 'info', DELIVERED: 'success', PARTIALLY_RETURNED: 'warning', RETURNED: 'error', CANCELLED: 'default'
@@ -31,6 +55,7 @@ const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'd
 const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string }> }) => {
   const router = useRouter()
   const params = use(paramsPromise)
+  const isMobile = useMediaQuery((theme) => theme.breakpoints.down('md'))
   const [order, setOrder] = useState<any>(null)
   const [deliverOpen, setDeliverOpen] = useState(false)
   const [returnOpen, setReturnOpen] = useState(false)
@@ -39,6 +64,8 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   const [loadError, setLoadError] = useState(false)
   const [delivering, setDelivering] = useState(false)
   const [returning, setReturning] = useState(false)
+  const [invAvgByProduct, setInvAvgByProduct] = useState<Record<string, number>>({})
+  const [invAvgLoaded, setInvAvgLoaded] = useState(false)
   const { hasPermission } = useAuth()
   const hasDeliverPerm = hasPermission('orders.deliver')
   const hasReturnPerm = hasPermission('orders.return')
@@ -56,6 +83,120 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   }
 
   useEffect(() => { fetchOrder() }, [params.id])
+
+  useEffect(() => {
+    const distRaw = order?.distributorId
+    if (!distRaw) {
+      setInvAvgByProduct({})
+      setInvAvgLoaded(true)
+      return
+    }
+    const distId = typeof distRaw === 'object' ? distRaw._id : distRaw
+    if (!distId) {
+      setInvAvgByProduct({})
+      setInvAvgLoaded(true)
+      return
+    }
+    let cancelled = false
+    setInvAvgLoaded(false)
+    inventoryService
+      .getAll({ distributorId: distId, limit: 500 })
+      .then(res => {
+        const rows = res.data?.data ?? []
+        const m: Record<string, number> = {}
+        for (const r of rows) {
+          const pid = String(r.productId?._id ?? r.productId ?? '')
+          if (!pid) continue
+          const av = Number(r.avgCostPerUnit)
+          if (!Number.isNaN(av)) m[pid] = av
+        }
+        if (!cancelled) setInvAvgByProduct(m)
+      })
+      .catch(() => {
+        if (!cancelled) setInvAvgByProduct({})
+      })
+      .finally(() => {
+        if (!cancelled) setInvAvgLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [order?._id, order?.distributorId])
+
+  const profitEstimate = useMemo(() => {
+    if (!order?.items?.length) {
+      return {
+        netSales: 0,
+        missing: true,
+        profit: null as number | null,
+        marginPct: null as number | null,
+        weightedAvgCost: null as number | null,
+        basisLabel: '',
+        eligibleUnits: 0,
+        totalAvgCogs: 0,
+        loading: false
+      }
+    }
+    const netSales = Number(order.finalCompanyRevenue) || 0
+    const sumDelivered = order.items.reduce((s: number, i: any) => s + (Number(i.deliveredQty) || 0), 0)
+    const useDeliveredBasis = sumDelivered > 0
+    const basisLabel = useDeliveredBasis ? 'delivered quantity' : 'paid quantity'
+
+    if (!invAvgLoaded) {
+      return {
+        netSales,
+        missing: true,
+        profit: null,
+        marginPct: null,
+        weightedAvgCost: null,
+        basisLabel,
+        eligibleUnits: 0,
+        totalAvgCogs: 0,
+        loading: true
+      }
+    }
+
+    let totalAvgCogs = 0
+    let eligibleUnits = 0
+    let missing = false
+    for (const item of order.items) {
+      const pid = String(item.productId?._id ?? item.productId ?? '')
+      const u = useDeliveredBasis ? Number(item.deliveredQty) || 0 : Number(item.quantity) || 0
+      if (u <= 0) continue
+      eligibleUnits += u
+      if (!pid || !Object.prototype.hasOwnProperty.call(invAvgByProduct, pid)) {
+        missing = true
+        continue
+      }
+      const av = invAvgByProduct[pid]
+      if (typeof av !== 'number' || Number.isNaN(av)) {
+        missing = true
+        continue
+      }
+      totalAvgCogs += u * av
+    }
+
+    if (eligibleUnits <= 0) missing = true
+
+    const roundedCogs = Math.round(totalAvgCogs * 100) / 100
+    const profit = missing ? null : Math.round((netSales - roundedCogs) * 100) / 100
+    const marginPct =
+      profit != null && netSales > 0 ? Math.round((profit / netSales) * 10000) / 100 : null
+    const weightedAvgCost =
+      eligibleUnits > 0 ? Math.round((roundedCogs / eligibleUnits) * 10000) / 10000 : null
+
+    return {
+      netSales,
+      missing,
+      profit,
+      marginPct,
+      weightedAvgCost,
+      basisLabel,
+      eligibleUnits,
+      totalAvgCogs: roundedCogs,
+      loading: false
+    }
+  }, [order, invAvgByProduct, invAvgLoaded])
 
   const openDeliver = () => {
     const items = order.items
@@ -133,6 +274,25 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
     order.totalAmount != null
   const grossTotal = order.totalAmount ?? order.totalOrderedAmount
 
+  const snapSectionSx = {
+    p: 2,
+    mb: 2,
+    border: 1,
+    borderColor: 'divider',
+    borderRadius: 1
+  } as const
+
+  const statRow = (label: ReactNode, value: ReactNode) => (
+    <Stack direction='row' justifyContent='space-between' alignItems='flex-start' gap={1} sx={{ py: 0.5 }}>
+      <Typography variant='body2' color='text.secondary' component='div' sx={{ flex: 1 }}>
+        {label}
+      </Typography>
+      <Typography variant='body2' fontWeight={600} sx={{ textAlign: 'right' }}>
+        {value}
+      </Typography>
+    </Stack>
+  )
+
   return (
     <Grid container spacing={6}>
       <Grid size={{ xs: 12, md: 8 }}>
@@ -171,60 +331,110 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
               <Typography>Date: {new Date(order.createdAt).toLocaleDateString()}</Typography>
             </div>
             {hasOrderFinancialSnap ? (
-              <Box className='mbe-4 rounded p-4' sx={{ border: 1, borderColor: 'divider' }}>
+              <Box className='mbe-4'>
                 <Typography variant='subtitle2' color='text.secondary' className='mbe-2'>
                   Order financial snapshot (at order time)
                 </Typography>
-                <Grid container spacing={2}>
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant='body2' color='text.secondary'>
-                      Total amount (gross TP)
+                <Stack spacing={2}>
+                  <Paper variant='outlined' sx={snapSectionSx}>
+                    <Typography variant='overline' color='primary' sx={{ letterSpacing: 0.6 }}>
+                      A. Sales summary
                     </Typography>
-                    <Typography fontWeight={600}>{pk(grossTotal)}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant='body2' color='text.secondary'>
-                      Pharmacy discount
-                    </Typography>
-                    <Typography fontWeight={600}>{pk(order.pharmacyDiscountAmount)}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant='body2' color='text.secondary'>
-                      Amount after pharmacy discount
-                    </Typography>
-                    <Typography fontWeight={600}>{pk(order.amountAfterPharmacyDiscount)}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant='body2' color='text.secondary'>
-                      Distributor commission (on gross TP)
-                    </Typography>
-                    <Typography fontWeight={600}>{pk(order.distributorCommissionAmount)}</Typography>
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <Typography variant='body2' color='text.secondary'>
-                      Final company revenue
-                    </Typography>
-                    <Typography fontWeight={600} color='primary.main'>
-                      {pk(order.finalCompanyRevenue)}
-                    </Typography>
-                  </Grid>
-                  {order.totalBonusQuantity != null && order.totalBonusQuantity > 0 && (
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <Typography variant='body2' color='text.secondary'>
-                        Total bonus units (order)
+                    {statRow('Gross TP', pk(grossTotal))}
+                    {statRow('Pharmacy discount', pk(order.pharmacyDiscountAmount))}
+                    {statRow('Amount after pharmacy discount (before commission)', pk(order.amountAfterPharmacyDiscount))}
+                    {statRow('Distributor commission (on gross TP)', pk(order.distributorCommissionAmount))}
+                    {statRow(
+                      <span className='inline-flex items-center gap-0.5 flex-wrap'>
+                        Net Sales (After Pharmacy Discount & Distributor Commission)
+                        <InfoTip title={HELP_NET_SALES} />
+                      </span>,
+                      <Typography component='span' fontWeight={600} color='primary.main'>
+                        {pk(order.finalCompanyRevenue)}
                       </Typography>
-                      <Typography fontWeight={600}>{order.totalBonusQuantity}</Typography>
-                    </Grid>
-                  )}
-                  {order.totalCastingCost != null && order.totalCastingCost > 0 && (
-                    <Grid size={{ xs: 12, sm: 6 }}>
+                    )}
+                    {order.totalBonusQuantity != null && order.totalBonusQuantity > 0 &&
+                      statRow('Total bonus units (order)', order.totalBonusQuantity)}
+                  </Paper>
+
+                  <Paper variant='outlined' sx={snapSectionSx}>
+                    <Typography variant='overline' color='primary' sx={{ letterSpacing: 0.6 }}>
+                      B. Cost summary
+                    </Typography>
+                    {order.totalCastingCost != null ? (
+                      statRow(
+                        <span className='inline-flex items-center gap-0.5 flex-wrap'>
+                          Estimated Product Cost (Catalog / Casting at Order Time)
+                          <InfoTip title={HELP_ESTIMATED_CASTING} />
+                        </span>,
+                        pk(order.totalCastingCost)
+                      )
+                    ) : (
                       <Typography variant='body2' color='text.secondary'>
-                        Inventory cost snapshot (casting × units)
+                        No estimated catalog (casting) total on this order.
                       </Typography>
-                      <Typography fontWeight={600}>{pk(order.totalCastingCost)}</Typography>
-                    </Grid>
-                  )}
-                </Grid>
+                    )}
+                    {statRow(
+                      <span className='inline-flex items-center gap-0.5 flex-wrap'>
+                        Avg cost basis ({profitEstimate.basisLabel || '—'})
+                        <InfoTip title={HELP_AVG_COST_LINE} />
+                      </span>,
+                      profitEstimate.loading
+                        ? '…'
+                        : profitEstimate.missing || profitEstimate.weightedAvgCost == null
+                          ? 'Not available'
+                          : `${pk(profitEstimate.weightedAvgCost)} / unit`
+                    )}
+                    {!profitEstimate.loading &&
+                      !profitEstimate.missing &&
+                      profitEstimate.eligibleUnits > 0 && (
+                        <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.5 }}>
+                          Extended COGS (avg × {profitEstimate.basisLabel}): {pk(profitEstimate.totalAvgCogs)}
+                        </Typography>
+                      )}
+                  </Paper>
+
+                  <Paper variant='outlined' sx={{ ...snapSectionSx, mb: 0 }}>
+                    <Typography variant='overline' color='primary' sx={{ letterSpacing: 0.6 }}>
+                      C. Profitability (estimated)
+                    </Typography>
+                    <Typography variant='subtitle2' className='mbe-1' sx={{ fontWeight: 600 }}>
+                      Estimated Profit (Real Cost Based)
+                    </Typography>
+                    <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+                      Net Sales − (avg cost × {profitEstimate.basisLabel || 'quantity'}).
+                    </Typography>
+                    {profitEstimate.loading ? (
+                      <Typography variant='body2' color='text.secondary'>
+                        Loading inventory averages…
+                      </Typography>
+                    ) : profitEstimate.missing ? (
+                      <Typography variant='body2' color='text.secondary'>
+                        Estimated Profit: Not available
+                      </Typography>
+                    ) : (
+                      <>
+                        {statRow(
+                          <span className='inline-flex items-center gap-0.5 flex-wrap'>
+                            Estimated profit
+                            <InfoTip title={HELP_ESTIMATED_PROFIT} />
+                          </span>,
+                          <Typography
+                            component='span'
+                            fontWeight={700}
+                            color={profitEstimate.profit != null && profitEstimate.profit < 0 ? 'error.main' : 'text.primary'}
+                          >
+                            {profitEstimate.profit != null ? pk(profitEstimate.profit) : '—'}
+                          </Typography>
+                        )}
+                        {statRow(
+                          'Estimated profit margin %',
+                          profitEstimate.marginPct != null ? `${profitEstimate.marginPct}%` : '—'
+                        )}
+                      </>
+                    )}
+                  </Paper>
+                </Stack>
               </Box>
             ) : (
               <Typography className='mbe-4'>
@@ -240,6 +450,39 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
             </Grid>
             <Divider className='mbs-4 mbe-4' />
             <Typography variant='h6' className='mbe-2'>Items</Typography>
+            {isMobile ? (
+              <Stack spacing={2}>
+                {order.items.map((item: any, i: number) => (
+                  <Paper key={i} variant='outlined' sx={{ p: 2 }}>
+                    <Typography fontWeight={600} className='mbe-2'>
+                      {item.productName || item.productId?.name}
+                    </Typography>
+                    <Stack spacing={0.5}>
+                      <Typography variant='body2'>
+                        Paid / bonus / total: {item.quantity} / {item.bonusQuantity ?? 0} /{' '}
+                        {lineTotalQuantity(item.quantity, item.bonusQuantity ?? 0)}
+                      </Typography>
+                      <Typography variant='body2'>
+                        Delivered / returned: {item.deliveredQty} / {item.returnedQty}
+                      </Typography>
+                      <Typography variant='body2'>TP: ₨ {item.tpAtTime?.toFixed(2)} · Casting: ₨ {item.castingAtTime?.toFixed(2)}</Typography>
+                      {hasOrderFinancialSnap && (
+                        <>
+                          <Divider sx={{ my: 1 }} />
+                          <Typography variant='body2'>Gross Sales Value: {pk(item.grossAmount)}</Typography>
+                          <Typography variant='body2'>Pharm. disc.: {pk(item.pharmacyDiscountAmount)}</Typography>
+                          <Typography variant='body2'>Net: {pk(item.netAfterPharmacy)}</Typography>
+                          <Typography variant='body2'>Dist. comm.: {pk(item.distributorCommissionAmount)}</Typography>
+                          <Typography variant='body2' fontWeight={600}>
+                            Company: {pk(item.finalCompanyAmount)}
+                          </Typography>
+                        </>
+                      )}
+                    </Stack>
+                  </Paper>
+                ))}
+              </Stack>
+            ) : (
             <Box
               sx={{
                 overflowX: 'auto',
@@ -269,7 +512,7 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Casting</th>
                   {hasOrderFinancialSnap && (
                     <>
-                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Charged (TP×paid)</th>
+                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Gross Sales Value</th>
                       <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Pharm. disc.</th>
                       <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Net</th>
                       <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Dist. comm.</th>
@@ -303,6 +546,7 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
               </tbody>
             </table>
             </Box>
+            )}
           </CardContent>
         </Card>
       </Grid>

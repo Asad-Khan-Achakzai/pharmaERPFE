@@ -11,8 +11,6 @@ import Grid from '@mui/material/Grid'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import Chip from '@mui/material/Chip'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -38,8 +36,6 @@ import TablePaginationComponent from '@components/TablePaginationComponent'
 import { inventoryService } from '@/services/inventory.service'
 import { distributorsService } from '@/services/distributors.service'
 import { productsService } from '@/services/products.service'
-import { supplierService } from '@/services/supplier.service'
-import { normalizeDocs } from '@/utils/apiList'
 
 import tableStyles from '@core/styles/table.module.css'
 
@@ -75,14 +71,10 @@ const columnHelper = createColumnHelper<Transfer>()
 const StockTransferPage = () => {
   const { hasPermission } = useAuth()
   const canTransfer = hasPermission('inventory.transfer')
-  const canPickSupplier = hasPermission('suppliers.view')
   const [distributors, setDistributors] = useState<any[]>([])
-  const [suppliers, setSuppliers] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
-  const [transferMode, setTransferMode] = useState<'company' | 'between'>('company')
   const [fromDistributorId, setFromDistributorId] = useState('')
   const [distributorId, setDistributorId] = useState('')
-  const [supplierId, setSupplierId] = useState('')
   const [items, setItems] = useState([{ productId: '', quantity: 1 }])
   const [totalShippingCost, setTotalShippingCost] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -100,23 +92,24 @@ const StockTransferPage = () => {
   const isFormValid =
     items.length > 0 &&
     items.every(i => i.productId !== '' && i.quantity > 0) &&
-    (transferMode === 'company'
-      ? distributorId !== ''
-      : fromDistributorId !== '' && distributorId !== '' && fromDistributorId !== distributorId)
+    fromDistributorId !== '' &&
+    distributorId !== '' &&
+    fromDistributorId !== distributorId
 
   const fetchLookups = async () => {
     setLoadingData(true)
     try {
-      const [d, p, s] = await Promise.all([
+      const [d, p] = await Promise.all([
         distributorsService.lookup({ limit: 100 }),
-        productsService.lookup({ limit: 100 }),
-        canPickSupplier ? supplierService.lookup({ limit: '100', isActive: 'true' }) : Promise.resolve({ data: { data: [] as any[] } })
+        productsService.lookup({ limit: 100 })
       ])
       setDistributors(d.data.data || [])
       setProducts(p.data.data || [])
-      setSuppliers(normalizeDocs(s))
-    } catch (err) { showApiError(err, 'Failed to load data') }
-    finally { setLoadingData(false) }
+    } catch (err) {
+      showApiError(err, 'Failed to load data')
+    } finally {
+      setLoadingData(false)
+    }
   }
 
   const fetchHistory = useCallback(async () => {
@@ -143,14 +136,14 @@ const StockTransferPage = () => {
 
   useEffect(() => {
     fetchLookups()
-  }, [canPickSupplier])
+  }, [])
 
   useEffect(() => {
     fetchHistory()
-  }, [canPickSupplier, fetchHistory])
+  }, [fetchHistory])
 
   useEffect(() => {
-    if (transferMode !== 'between' || !fromDistributorId) {
+    if (!fromDistributorId) {
       setStockByProductId({})
       return
     }
@@ -174,39 +167,29 @@ const StockTransferPage = () => {
     }
     load()
     return () => { cancelled = true }
-  }, [transferMode, fromDistributorId])
+  }, [fromDistributorId])
 
   const addItem = () => setItems(prev => [...prev, { productId: '', quantity: 1 }])
   const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i))
   const updateItem = (i: number, field: string, value: any) => setItems(prev => prev.map((item, idx) => idx === i ? { ...item, [field]: value } : item))
 
   const handleSubmit = async () => {
-    if (transferMode === 'company' && !distributorId) {
-      showApiError(null, 'Select a distributor')
+    if (!fromDistributorId || !distributorId) {
+      showApiError(null, 'Select source and destination distributors')
       return
     }
-    if (transferMode === 'between') {
-      if (!fromDistributorId || !distributorId) {
-        showApiError(null, 'Select source and destination distributors')
-        return
-      }
-      if (fromDistributorId === distributorId) {
-        showApiError(null, 'Source and destination must be different')
-        return
-      }
+    if (fromDistributorId === distributorId) {
+      showApiError(null, 'Source and destination must be different')
+      return
     }
     if (items.some(i => !i.productId || i.quantity < 1)) { showApiError(null, 'Fill all item fields'); return }
     setSaving(true)
     try {
-      const payload =
-        transferMode === 'between'
-          ? { distributorId, fromDistributorId, items, totalShippingCost }
-          : { distributorId, items, totalShippingCost, ...(supplierId ? { supplierId } : {}) }
-      await inventoryService.transfer(payload)
+      await inventoryService.transfer({ distributorId, fromDistributorId, items, totalShippingCost })
       showSuccess('Stock transferred successfully')
       setItems([{ productId: '', quantity: 1 }])
       setTotalShippingCost(0)
-      if (transferMode === 'between') setFromDistributorId('')
+      setFromDistributorId('')
       fetchHistory()
     } catch (err) { showApiError(err, 'Transfer failed') }
     finally { setSaving(false) }
@@ -278,26 +261,21 @@ const StockTransferPage = () => {
             ) : (
               <Grid container spacing={4}>
                 <Grid size={{ xs: 12 }}>
-                  <Typography variant='body2' color='text.secondary' className='mbe-2'>Transfer type</Typography>
-                  <ToggleButtonGroup
-                    exclusive
-                    color='primary'
-                    size='small'
-                    value={transferMode}
-                    onChange={(_, v) => {
-                      if (v == null) return
-                      setTransferMode(v)
-                      setFromDistributorId('')
-                      setDistributorId('')
-                      setSupplierId('')
-                    }}
-                  >
+                  <Typography variant='body2' color='text.secondary' className='mbe-2'>
+                    Transfer type
+                  </Typography>
+                  {/*
+                    From company → distributor (tab) hidden for now — only between-distributors transfers.
+                  <ToggleButtonGroup exclusive ...>
                     <ToggleButton value='company'>From company to distributor</ToggleButton>
                     <ToggleButton value='between'>Between distributors</ToggleButton>
                   </ToggleButtonGroup>
+                  */}
+                  <Typography variant='body1' fontWeight={600}>
+                    Between distributors
+                  </Typography>
                 </Grid>
-                {transferMode === 'between' && (
-                  <Grid size={{ xs: 12, md: 6 }}>
+                <Grid size={{ xs: 12, md: 6 }}>
                     <CustomTextField
                       required
                       select
@@ -315,41 +293,23 @@ const StockTransferPage = () => {
                     >
                       {distributors.map(d => <MenuItem key={d._id} value={d._id}>{d.name}</MenuItem>)}
                     </CustomTextField>
-                  </Grid>
-                )}
-                <Grid size={{ xs: 12, md: transferMode === 'between' ? 6 : 12 }}>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
                   <CustomTextField
                     required
                     select
                     fullWidth
-                    label={transferMode === 'between' ? 'To distributor' : 'Distributor'}
+                    label='To distributor'
                     value={distributorId}
                     onChange={e => setDistributorId(e.target.value)}
                   >
-                    {distributors
-                      .filter(d => transferMode === 'company' || d._id !== fromDistributorId)
-                      .map(d => <MenuItem key={d._id} value={d._id}>{d.name}</MenuItem>)}
+                    {distributors.filter(d => d._id !== fromDistributorId).map(d => (
+                      <MenuItem key={d._id} value={d._id}>
+                        {d.name}
+                      </MenuItem>
+                    ))}
                   </CustomTextField>
                 </Grid>
-                {transferMode === 'company' && canPickSupplier && (
-                  <Grid size={{ xs: 12, md: 6 }}>
-                    <CustomTextField
-                      select
-                      fullWidth
-                      label='Supplier (factory)'
-                      value={supplierId}
-                      onChange={e => setSupplierId(e.target.value)}
-                      helperText='Optional. Records supplier PURCHASE (casting × qty) as payable — not an expense.'
-                    >
-                      <MenuItem value=''>None</MenuItem>
-                      {suppliers.map((x: any) => (
-                        <MenuItem key={x._id} value={x._id}>
-                          {x.name}
-                        </MenuItem>
-                      ))}
-                    </CustomTextField>
-                  </Grid>
-                )}
                 <Grid size={{ xs: 12, md: 6 }}>
                   <CustomTextField
                     fullWidth
@@ -370,9 +330,7 @@ const StockTransferPage = () => {
                           {products.map(p => {
                             const avail = stockByProductId[p._id]
                             const label =
-                              transferMode === 'between' && fromDistributorId && !loadingStock
-                                ? `${p.name} (available: ${avail ?? 0})`
-                                : p.name
+                              fromDistributorId && !loadingStock ? `${p.name} (available: ${avail ?? 0})` : p.name
                             return <MenuItem key={p._id} value={p._id}>{label}</MenuItem>
                           })}
                         </CustomTextField>
@@ -386,7 +344,7 @@ const StockTransferPage = () => {
                           value={item.quantity}
                           onChange={e => updateItem(i, 'quantity', +e.target.value)}
                           helperText={
-                            transferMode === 'between' && item.productId && stockByProductId[item.productId] !== undefined
+                            item.productId && stockByProductId[item.productId] !== undefined
                               ? `Max available: ${stockByProductId[item.productId]}`
                               : undefined
                           }

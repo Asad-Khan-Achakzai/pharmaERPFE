@@ -23,6 +23,13 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   attendance: ['attendance.view', 'attendance.mark'],
   reports: ['reports.view'],
   suppliers: ['suppliers.view', 'suppliers.manage'],
+  procurement: [
+    'procurement.view',
+    'procurement.create',
+    'procurement.approve',
+    'procurement.receive',
+    'procurement.invoicePost'
+  ],
   users: ['users.view', 'users.create', 'users.edit', 'users.delete']
 }
 

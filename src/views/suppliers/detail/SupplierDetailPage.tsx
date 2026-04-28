@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useCallback, useEffect, useState } from 'react'
+import { use, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -23,11 +23,14 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import CircularProgress from '@mui/material/CircularProgress'
 import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import MenuItem from '@mui/material/MenuItem'
 import CustomTextField from '@core/components/mui/TextField'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { supplierService } from '@/services/supplier.service'
+import { procurementService } from '@/services/procurement.service'
 import { useAuth } from '@/contexts/AuthContext'
+import { normalizeDocs } from '@/utils/apiList'
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -66,6 +69,13 @@ type PaymentRow = LedgerRow & {
   createdBy?: { name?: string; email?: string }
 }
 
+type SupplierInvoiceRow = {
+  _id: string
+  invoiceNumber?: string
+  totalAmount?: number
+  status?: string
+}
+
 const SupplierDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string }> }) => {
   const params = use(paramsPromise)
   const supplierId = params.id
@@ -101,6 +111,15 @@ const SupplierDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: st
   const [reverseId, setReverseId] = useState<string | null>(null)
   const [reverseReason, setReverseReason] = useState('')
   const [reverseSaving, setReverseSaving] = useState(false)
+
+  const [payOpen, setPayOpen] = useState(false)
+  const [payAmount, setPayAmount] = useState('')
+  const [payMethod, setPayMethod] = useState<'CASH' | 'BANK' | 'CHEQUE' | 'OTHER'>('BANK')
+  const [payNotes, setPayNotes] = useState('')
+  const [payInvoices, setPayInvoices] = useState<SupplierInvoiceRow[]>([])
+  const [payAlloc, setPayAlloc] = useState<Record<string, string>>({})
+  const [payLoading, setPayLoading] = useState(false)
+  const [paySaving, setPaySaving] = useState(false)
 
   const openEdit = (row: PaymentRow) => {
     setEditingId(row._id)
@@ -198,6 +217,83 @@ const SupplierDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: st
     loadAll()
   }, [loadAll])
 
+  const loadPayInvoices = useCallback(async () => {
+    try {
+      const res = await procurementService.listSupplierInvoices({
+        supplierId,
+        status: 'POSTED',
+        limit: '100'
+      })
+      setPayInvoices(normalizeDocs<SupplierInvoiceRow>(res))
+    } catch {
+      setPayInvoices([])
+    }
+  }, [supplierId])
+
+  const openMakePayment = async () => {
+    setPayAmount('')
+    setPayNotes('')
+    setPayAlloc({})
+    setPayMethod('BANK')
+    setPayOpen(true)
+    setPayLoading(true)
+    await loadPayInvoices()
+    const payable = balance?.netPayable ?? balance?.payable
+    if (payable != null && payable > 0) {
+      setPayAmount(String(Math.round(payable * 100) / 100))
+    }
+    setPayLoading(false)
+  }
+
+  const allocationSum = Object.values(payAlloc).reduce((s, raw) => {
+    const n = parseFloat(raw || '0')
+    return s + (Number.isFinite(n) && n > 0 ? n : 0)
+  }, 0)
+
+  const parsedPayAmount = parseFloat(payAmount.replace(/,/g, '').trim() || '0')
+  const allocRemainder = Math.max(0, (Number.isFinite(parsedPayAmount) ? parsedPayAmount : 0) - allocationSum)
+
+  const postedInvoicesTotal = useMemo(
+    () => payInvoices.reduce((s, inv) => s + (Number(inv.totalAmount) || 0), 0),
+    [payInvoices]
+  )
+
+  const submitPayment = async () => {
+    if (!canManage) return
+    const amt = parseFloat(payAmount.replace(/,/g, '').trim() || '0')
+    if (!Number.isFinite(amt) || amt <= 0) {
+      showApiError(null, 'Enter a valid payment amount')
+      return
+    }
+    const allocs: { supplierInvoiceId: string; amount: number }[] = []
+    payInvoices.forEach(inv => {
+      const v = parseFloat(payAlloc[inv._id]?.replace(/,/g, '') || '0')
+      if (Number.isFinite(v) && v > 0) {
+        allocs.push({ supplierInvoiceId: inv._id, amount: Math.round(v * 100) / 100 })
+      }
+    })
+    if (allocs.length && allocs.reduce((a, x) => a + x.amount, 0) > amt + 1e-6) {
+      showApiError(null, 'Allocated amounts cannot exceed the payment total')
+      return
+    }
+    setPaySaving(true)
+    try {
+      await supplierService.recordPayment(supplierId, {
+        amount: amt,
+        paymentMethod: payMethod,
+        notes: payNotes.trim() || undefined,
+        paymentAllocations: allocs.length ? allocs : undefined
+      })
+      showSuccess('Payment recorded')
+      setPayOpen(false)
+      await loadAll()
+    } catch (err) {
+      showApiError(err, 'Could not record payment')
+    } finally {
+      setPaySaving(false)
+    }
+  }
+
   const downloadInvoice = async (row: PaymentRow) => {
     try {
       const { blob, filename } = await supplierService.downloadPaymentInvoice(row._id)
@@ -244,7 +340,8 @@ const SupplierDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: st
         />
         <CardContent>
           {balance && (
-            <div className='flex flex-wrap gap-6'>
+            <div className='flex flex-wrap gap-6 items-end justify-between'>
+              <div className='flex flex-wrap gap-6'>
               <div>
                 <Typography variant='caption' color='text.secondary'>
                   Net payable
@@ -272,6 +369,17 @@ const SupplierDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: st
                   {balance.lastPaymentAmount != null ? formatPKR(balance.lastPaymentAmount) : '—'}
                 </Typography>
               </div>
+              </div>
+              {canManage && (
+                <Button
+                  variant='contained'
+                  startIcon={<i className='tabler-cash' />}
+                  onClick={() => void openMakePayment()}
+                  className='shrink-0'
+                >
+                  Make payment
+                </Button>
+              )}
             </div>
           )}
           {balance?.note && (
@@ -535,6 +643,112 @@ const SupplierDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: st
           </Button>
           <Button variant='contained' onClick={() => void saveEdit()} disabled={editSaving}>
             {editSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={payOpen} onClose={() => !paySaving && setPayOpen(false)} maxWidth='sm' fullWidth scroll='body'>
+        <DialogTitle>Make payment</DialogTitle>
+        <DialogContent className='flex flex-col gap-4 pbs-4'>
+          {payLoading ? (
+            <Box className='flex justify-center p-4'>
+              <CircularProgress size={32} />
+            </Box>
+          ) : (
+            <>
+              <Paper variant='outlined' sx={{ p: 2, borderRadius: 2 }}>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  Total payable (this supplier)
+                </Typography>
+                <Typography variant='h6' sx={{ fontWeight: 700 }}>
+                  {formatPKR(balance?.netPayable ?? balance?.payable ?? 0)}
+                </Typography>
+                {payInvoices.length > 0 && (
+                  <Typography variant='body2' color='text.secondary' className='mbs-2'>
+                    Posted supplier invoices (reference): <strong>{formatPKR(postedInvoicesTotal)}</strong> across{' '}
+                    {payInvoices.length} invoice{payInvoices.length === 1 ? '' : 's'}
+                  </Typography>
+                )}
+              </Paper>
+              <Typography variant='body2' color='text.secondary'>
+                Enter the amount you are paying. Leave invoice allocations empty to clear the balance in one payment.
+              </Typography>
+              <CustomTextField
+                fullWidth
+                label='Payment amount (PKR)'
+                type='number'
+                value={payAmount}
+                onChange={e => setPayAmount(e.target.value)}
+                inputProps={{ min: 0, step: '0.01' }}
+              />
+              <CustomTextField
+                fullWidth
+                select
+                label='Method'
+                value={payMethod}
+                onChange={e => setPayMethod(e.target.value as typeof payMethod)}
+              >
+                <MenuItem value='CASH'>Cash</MenuItem>
+                <MenuItem value='BANK'>Bank</MenuItem>
+                <MenuItem value='CHEQUE'>Cheque</MenuItem>
+                <MenuItem value='OTHER'>Other</MenuItem>
+              </CustomTextField>
+              <CustomTextField fullWidth label='Notes (optional)' multiline minRows={2} value={payNotes} onChange={e => setPayNotes(e.target.value)} />
+
+              {payInvoices.length > 0 && (
+                <>
+                  <Divider />
+                  <Typography variant='subtitle2'>
+                    Allocate to invoices <Typography component='span' variant='caption' color='text.secondary'>(optional)</Typography>
+                  </Typography>
+                  <Typography variant='caption' color='text.secondary'>
+                    Optional: split this payment across posted invoices. Allocations cannot exceed the payment amount.
+                    Unallocated amount: <strong>{formatPKR(allocRemainder)}</strong>
+                  </Typography>
+                  <TableContainer component={Paper} variant='outlined' sx={{ maxHeight: 260 }}>
+                    <Table size='small'>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Invoice</TableCell>
+                          <TableCell align='right'>Invoice total</TableCell>
+                          <TableCell align='right'>Allocate</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {payInvoices.map(inv => (
+                          <TableRow key={inv._id}>
+                            <TableCell>{inv.invoiceNumber || inv._id.slice(-6)}</TableCell>
+                            <TableCell align='right'>{formatPKR(inv.totalAmount ?? 0)}</TableCell>
+                            <TableCell align='right' sx={{ maxWidth: 140 }}>
+                              <CustomTextField
+                                size='small'
+                                fullWidth
+                                placeholder='0'
+                                value={payAlloc[inv._id] ?? ''}
+                                onChange={e =>
+                                  setPayAlloc(a => ({
+                                    ...a,
+                                    [inv._id]: e.target.value
+                                  }))
+                                }
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </>
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPayOpen(false)} disabled={paySaving}>
+            Cancel
+          </Button>
+          <Button variant='contained' onClick={() => void submitPayment()} disabled={paySaving || payLoading}>
+            {paySaving ? 'Saving…' : 'Save payment'}
           </Button>
         </DialogActions>
       </Dialog>
