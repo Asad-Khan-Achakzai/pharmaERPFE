@@ -1,7 +1,7 @@
 /**
  * Maps route prefixes to the permission required to access them.
  * Order matters: more specific routes must come before their parent prefixes.
- * ADMIN role bypasses all checks.
+ * `platform.*` permissions are enforced in AuthGuard: SUPER_ADMIN, `userType === 'PLATFORM'`, or a literal key on `user.permissions` — not `admin.access`.
  */
 export const routePermissions: Array<{ path: string; permission: string }> = [
   { path: '/platform', permission: 'platform.dashboard.view' },

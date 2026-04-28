@@ -8,7 +8,9 @@ export function filterMenuByPermission<T extends AnyMenuItem>(
   hasPermission: (perm: string) => boolean,
   userRole?: string | null,
   /** For items with explicitPermission, only this list is checked (not admin.access bypass). */
-  userPermissionKeys?: string[] | null
+  userPermissionKeys?: string[] | null,
+  /** Platform-scoped accounts (not company-tenant users). */
+  userType?: string | null
 ): T[] {
   return items.reduce<T[]>((acc, item) => {
     const roles = (item as { roles?: string[] }).roles
@@ -19,7 +21,14 @@ export function filterMenuByPermission<T extends AnyMenuItem>(
       }
     } else if (item.permission) {
       if (explicit) {
-        if (!userPermissionKeys?.includes(item.permission)) {
+        const keys = userPermissionKeys || []
+        const hasLiteral = keys.includes(item.permission)
+        /** SUPER_ADMIN may not have every key listed on the JWT; still show platform / explicit items. */
+        const superSeesExplicit = userRole === 'SUPER_ADMIN'
+        /** `platform.dashboard.view` is shown to platform user accounts (userType === 'PLATFORM'), not company admins. */
+        const platformUserSeesDashboard =
+          userType === 'PLATFORM' && item.permission === 'platform.dashboard.view'
+        if (!hasLiteral && !superSeesExplicit && !platformUserSeesDashboard) {
           return acc
         }
       } else if (!hasPermission(item.permission)) {
@@ -34,7 +43,8 @@ export function filterMenuByPermission<T extends AnyMenuItem>(
         withChildren.children,
         hasPermission,
         userRole,
-        userPermissionKeys
+        userPermissionKeys,
+        userType
       )
 
       if (filteredChildren.length === 0) return acc

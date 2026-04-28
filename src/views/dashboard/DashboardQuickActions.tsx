@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import type { SxProps, Theme } from '@mui/material/styles'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Box from '@mui/material/Box'
@@ -13,11 +14,18 @@ type QuickAction = {
   icon: string
 }
 
-const DashboardQuickActions = ({ actions }: { actions: QuickAction[] }) => {
+const DashboardQuickActions = ({
+  actions,
+  sx
+}: {
+  actions: QuickAction[]
+  /** e.g. `{ order: { xs: 1, md: 0 } }` to pin quick actions first on mobile */
+  sx?: SxProps<Theme>
+}) => {
   if (actions.length === 0) return null
 
   return (
-    <Grid size={{ xs: 12 }}>
+    <Grid size={{ xs: 12 }} sx={sx}>
       <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
         <CardContent
           sx={{

@@ -2,12 +2,30 @@
 
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { useAuth } from '@/contexts/AuthContext'
-import { getRequiredPermission } from '@/configs/routePermissions'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
+import { useAuth } from '@/contexts/AuthContext'
+import type { User } from '@/contexts/AuthContext'
+import { getRequiredPermission } from '@/configs/routePermissions'
+
+/**
+ * `platform.*` routes must not use `hasPermission` alone — `admin.access` would let company tenant admins through.
+ * Allow: SUPER_ADMIN, `userType === 'PLATFORM'`, or the literal permission on the JWT.
+ */
+function userCanAccessRequiredPermission(
+  user: User,
+  requiredPermission: string,
+  hasPermission: (p: string) => boolean
+): boolean {
+  if (user.role === 'SUPER_ADMIN') return true
+  if (requiredPermission.startsWith('platform.')) {
+    if (user.userType === 'PLATFORM') return true
+    return (user.permissions || []).includes(requiredPermission)
+  }
+  return hasPermission(requiredPermission)
+}
 
 const AuthGuard = ({ children }: { children: ReactNode }) => {
   const { user, loading, hasPermission, needsCompanySelection } = useAuth()
@@ -82,7 +100,7 @@ const AuthGuard = ({ children }: { children: ReactNode }) => {
 
   const requiredPermission = getRequiredPermission(pathname)
 
-  if (requiredPermission && !hasPermission(requiredPermission)) {
+  if (requiredPermission && !userCanAccessRequiredPermission(user, requiredPermission, hasPermission)) {
     return (
       <div className='flex items-center justify-center min-bs-screen'>
         <Card className='max-is-md'>

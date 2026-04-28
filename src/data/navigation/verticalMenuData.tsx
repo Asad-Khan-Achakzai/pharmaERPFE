@@ -28,7 +28,9 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
     label: 'Platform',
     href: '/platform',
     icon: 'tabler-building-community',
-    permission: 'platform.dashboard.view'
+    /** Do not use `admin.access` bypass — company tenant admins would otherwise see this link while APIs stay 403. */
+    permission: 'platform.dashboard.view',
+    explicitPermission: true
   },
   {
     label: 'Dashboard',

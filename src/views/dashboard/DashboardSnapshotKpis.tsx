@@ -24,11 +24,14 @@ type StatItem = { title: string; stats: string; icon: string; color: ThemeColor 
 const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
   dashboardDataLoading,
   loadError,
-  data
+  data,
+  /** Mobile: show at most 2 hero stat cards and fold mini line charts to save vertical space. */
+  mobileCompact
 }: {
   dashboardDataLoading: boolean
   loadError: boolean
   data: any
+  mobileCompact?: boolean
 }) {
   const statItems: StatItem[] = useMemo(() => {
     if (!data) return []
@@ -91,6 +94,8 @@ const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
     )
   }
 
+  const visibleStats = mobileCompact ? statItems.slice(0, 2) : statItems
+
   return (
     <Card sx={{ boxShadow: 'var(--shadow-xs)' }} className='h-full flex flex-col'>
       <CardHeader
@@ -114,7 +119,7 @@ const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
       >
         <div className='min-is-0 w-full'>
           <Grid container rowSpacing={3.5} columnSpacing={2.5} sx={{ width: '100%' }}>
-            {statItems.map((item, index) => (
+            {visibleStats.map((item, index) => (
               <Grid key={index} size={{ xs: 6, sm: 3 }} className='flex items-center gap-3.5 sm:gap-4'>
                 <CustomAvatar color={item.color} variant='rounded' size={44} skin='light'>
                   <i className={classnames(item.icon, 'text-[1.5rem]')} />
@@ -137,40 +142,42 @@ const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
           </Grid>
         </div>
 
-        <Divider flexItem className='max-is-full' />
+        {mobileCompact ? null : <Divider flexItem className='max-is-full' />}
 
-        <Grid container spacing={3} sx={{ width: '100%' }} rowSpacing={2.5}>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <DashboardMiniLineKpi
-              title='Revenue'
-              subheader='Snapshot'
-              valueLabel={formatPKR(data.totalSales)}
-              value={Number(data.totalSales) || 0}
-              deltaLabel={data.totalExpenses != null ? `Expenses ${formatPKR(data.totalExpenses)}` : '—'}
-              colorKey='primary'
-            />
+        {mobileCompact ? null : (
+          <Grid container spacing={3} sx={{ width: '100%' }} rowSpacing={2.5}>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <DashboardMiniLineKpi
+                title='Revenue'
+                subheader='Snapshot'
+                valueLabel={formatPKR(data.totalSales)}
+                value={Number(data.totalSales) || 0}
+                deltaLabel={data.totalExpenses != null ? `Expenses ${formatPKR(data.totalExpenses)}` : '—'}
+                colorKey='primary'
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <DashboardMiniLineKpi
+                title='Net profit'
+                subheader='Snapshot'
+                valueLabel={formatPKR(data.netProfit)}
+                value={Number(data.netProfit) || 0}
+                deltaLabel={marginHint}
+                colorKey={(data.netProfit || 0) >= 0 ? 'success' : 'error'}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <DashboardMiniLineKpi
+                title='Cash collected'
+                subheader='Snapshot'
+                valueLabel={formatPKR(data.totalPaid)}
+                value={Number(data.totalPaid) || 0}
+                deltaLabel={payablesHint}
+                colorKey='info'
+              />
+            </Grid>
           </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <DashboardMiniLineKpi
-              title='Net profit'
-              subheader='Snapshot'
-              valueLabel={formatPKR(data.netProfit)}
-              value={Number(data.netProfit) || 0}
-              deltaLabel={marginHint}
-              colorKey={(data.netProfit || 0) >= 0 ? 'success' : 'error'}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <DashboardMiniLineKpi
-              title='Cash collected'
-              subheader='Snapshot'
-              valueLabel={formatPKR(data.totalPaid)}
-              value={Number(data.totalPaid) || 0}
-              deltaLabel={payablesHint}
-              colorKey='info'
-            />
-          </Grid>
-        </Grid>
+        )}
       </CardContent>
     </Card>
   )

@@ -53,7 +53,8 @@ const VerticalMenu = ({ scrollMenu }: Props) => {
     verticalMenuData(),
     hasPermission,
     user?.role,
-    user?.permissions
+    user?.permissions,
+    user?.userType
   )
 
   const ScrollWrapper = isBreakpointReached ? 'div' : PerfectScrollbar

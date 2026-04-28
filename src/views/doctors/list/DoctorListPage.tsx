@@ -53,7 +53,10 @@ const DoctorListPage = () => {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [docsRes, pharmaRes] = await Promise.all([doctorsService.list({ limit: 100 }), pharmaciesService.list({ limit: 100 })])
+      const [docsRes, pharmaRes] = await Promise.all([
+        doctorsService.list({ limit: 100 }),
+        pharmaciesService.lookup({ limit: 100 })
+      ])
       setData(docsRes.data.data || [])
       setPharmacies(pharmaRes.data.data || [])
     } catch (err) { showApiError(err, 'Failed to load data') }

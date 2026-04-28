@@ -24,6 +24,13 @@ interface AllowedCompany {
   isActive?: boolean
 }
 
+/** Tenant-aligned role snapshot for dashboard tier only — same semantic role as effective permissions. */
+export interface ResolvedRole {
+  code?: string | null
+  isSystem?: boolean
+  name?: string
+}
+
 export interface User {
   _id: string
   name: string
@@ -31,6 +38,8 @@ export interface User {
   role: string
   userType?: UserType
   permissions: string[]
+  /** Active-tenant role metadata for dashboard UI; not used for RBAC checks. */
+  resolvedRole?: ResolvedRole | null
   companyId: any
   activeCompanyId?: { _id: string; name: string; city?: string; currency?: string } | string | null
   allowedCompanies?: AllowedCompany[]
@@ -78,6 +87,7 @@ function authUserEquivalent(a: User | null, b: User | null): boolean {
     a.email === b.email &&
     a.name === b.name &&
     perm(a.permissions || []) === perm(b.permissions || []) &&
+    JSON.stringify(a.resolvedRole ?? null) === JSON.stringify(b.resolvedRole ?? null) &&
     idKey(a.companyId) === idKey(b.companyId) &&
     idKey(a.activeCompanyId) === idKey(b.activeCompanyId) &&
     JSON.stringify(a.allowedCompanies || []) === JSON.stringify(b.allowedCompanies || [])

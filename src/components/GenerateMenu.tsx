@@ -20,6 +20,18 @@ import { SubMenu as HorizontalSubMenu, MenuItem as HorizontalMenuItem } from '@m
 import { SubMenu as VerticalSubMenu, MenuItem as VerticalMenuItem, MenuSection } from '@menu/vertical-menu'
 import CustomChip from '@core/components/mui/Chip'
 
+/**
+ * `permission` / `explicitPermission` / `roles` are only for `filterMenuByPermission` — they must not reach the DOM
+ * (menu wrappers forward extra props to `<a>` / `<button>`).
+ */
+function stripMenuMeta<T extends object>(item: T): T {
+  const clean = { ...item } as T & { permission?: unknown; explicitPermission?: unknown; roles?: unknown }
+  delete (clean as { permission?: unknown }).permission
+  delete (clean as { explicitPermission?: unknown }).explicitPermission
+  delete (clean as { roles?: unknown }).roles
+  return clean as T
+}
+
 // Generate a menu from the menu data array
 export const GenerateVerticalMenu = ({ menuData }: { menuData: VerticalMenuDataType[] }) => {
   // Hooks
@@ -38,7 +50,7 @@ export const GenerateVerticalMenu = ({ menuData }: { menuData: VerticalMenuDataT
 
         // If it is, return a MenuSection component and call generateMenu with the current menuSectionItem's children
         return (
-          <MenuSection key={index} {...rest}>
+          <MenuSection key={index} {...stripMenuMeta(rest)}>
             {children && renderMenuItems(children)}
           </MenuSection>
         )
@@ -47,6 +59,7 @@ export const GenerateVerticalMenu = ({ menuData }: { menuData: VerticalMenuDataT
       // Check if the current item is a sub menu
       if (subMenuItem.children) {
         const { children, icon, prefix, suffix, ...rest } = subMenuItem
+        const restClean = stripMenuMeta(rest)
 
         const Icon = icon ? <i className={icon} /> : null
 
@@ -70,7 +83,7 @@ export const GenerateVerticalMenu = ({ menuData }: { menuData: VerticalMenuDataT
             key={index}
             prefix={subMenuPrefix}
             suffix={subMenuSuffix}
-            {...rest}
+            {...restClean}
             {...(Icon && { icon: Icon })}
           >
             {children && renderMenuItems(children)}
@@ -80,9 +93,10 @@ export const GenerateVerticalMenu = ({ menuData }: { menuData: VerticalMenuDataT
 
       // If the current item is neither a section nor a sub menu, return a MenuItem component
       const { label, icon, prefix, suffix, ...rest } = menuItem
+      const restClean = stripMenuMeta(rest)
 
       // Localize the href
-      const href = rest.href
+      const href = restClean.href
 
       const Icon = icon ? <i className={icon} /> : null
 
@@ -105,7 +119,7 @@ export const GenerateVerticalMenu = ({ menuData }: { menuData: VerticalMenuDataT
           key={index}
           prefix={menuItemPrefix}
           suffix={menuItemSuffix}
-          {...rest}
+          {...restClean}
           href={href}
           {...(Icon && { icon: Icon })}
         >
@@ -131,6 +145,7 @@ export const GenerateHorizontalMenu = ({ menuData }: { menuData: HorizontalMenuD
       // Check if the current item is a sub menu
       if (subMenuItem.children) {
         const { children, icon, prefix, suffix, ...rest } = subMenuItem
+        const restClean = stripMenuMeta(rest)
 
         const Icon = icon ? <i className={icon} /> : null
 
@@ -154,7 +169,7 @@ export const GenerateHorizontalMenu = ({ menuData }: { menuData: HorizontalMenuD
             key={index}
             prefix={subMenuPrefix}
             suffix={subMenuSuffix}
-            {...rest}
+            {...restClean}
             {...(Icon && { icon: Icon })}
           >
             {children && renderMenuItems(children)}
@@ -164,9 +179,10 @@ export const GenerateHorizontalMenu = ({ menuData }: { menuData: HorizontalMenuD
 
       // If the current item is not a sub menu, return a MenuItem component
       const { label, icon, prefix, suffix, ...rest } = menuItem
+      const restClean = stripMenuMeta(rest)
 
       // Localize the href
-      const href = rest.href
+      const href = restClean.href
 
       const Icon = icon ? <i className={icon} /> : null
 
@@ -189,7 +205,7 @@ export const GenerateHorizontalMenu = ({ menuData }: { menuData: HorizontalMenuD
           key={index}
           prefix={menuItemPrefix}
           suffix={menuItemSuffix}
-          {...rest}
+          {...restClean}
           href={href}
           {...(Icon && { icon: Icon })}
         >

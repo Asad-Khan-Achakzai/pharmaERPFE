@@ -22,7 +22,13 @@ const horizontalMenuData = (): HorizontalMenuItemWithPermission[] => [
       }
     ]
   },
-  { label: 'Platform', href: '/platform', icon: 'tabler-building-community', permission: 'platform.dashboard.view' },
+  {
+    label: 'Platform',
+    href: '/platform',
+    icon: 'tabler-building-community',
+    permission: 'platform.dashboard.view',
+    explicitPermission: true
+  },
   { label: 'Dashboard', href: '/home', icon: 'tabler-smart-home', permission: 'dashboard.view' },
   { label: 'Products', href: '/products/list', icon: 'tabler-pill', permission: 'products.view' },
   { label: 'Distributors', href: '/distributors/list', icon: 'tabler-truck', permission: 'distributors.view' },

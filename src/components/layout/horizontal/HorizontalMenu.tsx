@@ -61,7 +61,8 @@ const HorizontalMenu = () => {
     horizontalMenuData(),
     hasPermission,
     user?.role,
-    user?.permissions
+    user?.permissions,
+    user?.userType
   )
 
   return (
