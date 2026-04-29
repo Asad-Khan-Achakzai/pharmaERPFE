@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef, type MouseEvent } from 'react'
 
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -15,9 +15,9 @@ import Divider from '@mui/material/Divider'
 import Grid from '@mui/material/Grid'
 import IconButton from '@mui/material/IconButton'
 import MenuItem from '@mui/material/MenuItem'
+import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 
-import { rankItem } from '@tanstack/match-sorter-utils'
 import {
   createColumnHelper,
   flexRender,
@@ -27,7 +27,7 @@ import {
   getSortedRowModel,
   useReactTable
 } from '@tanstack/react-table'
-import type { ColumnDef, FilterFn } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
@@ -37,6 +37,17 @@ import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 
 import tableStyles from '@core/styles/table.module.css'
+import {
+  TableListSearchField,
+  TableListFilterIconButton,
+  ListFilterPopover,
+  DateAndCreatedByFilterPanel,
+  useDebouncedSearch,
+  emptyDateUserFilters,
+  countDateUserFilters,
+  appendDateUserParams,
+  type DateUserFilterState
+} from '@/components/standard-list-toolbar'
 
 type LineIn = { name: string; type: 'fixed' | 'percentage'; value: number }
 
@@ -59,12 +70,6 @@ const lineAmount = (basic: number, item: LineIn) => {
   return roundPKR((basic * item.value) / 100)
 }
 
-const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => {
-  const r = rankItem(row.getValue(columnId), value)
-  addMeta({ itemRank: r })
-  return r.passed
-}
-
 const columnHelper = createColumnHelper<StructureRow>()
 
 const SalaryStructurePage = () => {
@@ -74,7 +79,10 @@ const SalaryStructurePage = () => {
   const [rows, setRows] = useState<StructureRow[]>([])
   const [users, setUsers] = useState<{ _id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
-  const [globalFilter, setGlobalFilter] = useState('')
+  const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
+  const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
+  const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
+  const fetchSeq = useRef(0)
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
@@ -88,21 +96,25 @@ const SalaryStructurePage = () => {
   })
   const [previewSales, setPreviewSales] = useState(0)
 
+  const filterOpen = Boolean(filterAnchor)
+  const activeFilterCount = countDateUserFilters(appliedFilters)
+
   const fetchRows = useCallback(async () => {
+    const seq = ++fetchSeq.current
     setLoading(true)
     try {
-      const [s, u] = await Promise.all([
-        salaryStructureService.list({ limit: 100 }),
-        usersService.assignable()
-      ])
+      const params: Record<string, string> = { limit: '100' }
+      appendDateUserParams(params, appliedFilters, debouncedSearch)
+      const [s, u] = await Promise.all([salaryStructureService.list(params), usersService.assignable()])
+      if (seq !== fetchSeq.current) return
       setRows(s.data.data || [])
       setUsers(u.data.data || [])
     } catch (e) {
-      showApiError(e, 'Failed to load salary structures')
+      if (seq === fetchSeq.current) showApiError(e, 'Failed to load salary structures')
     } finally {
-      setLoading(false)
+      if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [])
+  }, [appliedFilters, debouncedSearch])
 
   useEffect(() => {
     fetchRows()
@@ -203,25 +215,28 @@ const SalaryStructurePage = () => {
   const table = useReactTable({
     data: rows,
     columns,
-    filterFns: { fuzzy: fuzzyFilter },
-    state: { globalFilter },
-    globalFilterFn: fuzzyFilter,
-    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel()
   })
 
+  const openFilterPopover = (e: MouseEvent<HTMLElement>) => setFilterAnchor(e.currentTarget)
+  const closeFilterPopover = () => setFilterAnchor(null)
+
   return (
     <Card>
       <CardHeader title='Salary structures' />
       <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
-        <CustomTextField
-          value={globalFilter ?? ''}
-          onChange={e => setGlobalFilter(e.target.value)}
-          placeholder='Search...'
-        />
+        <Stack direction='row' spacing={1.5} alignItems='center' flexWrap='wrap' useFlexGap sx={{ flex: 1, minWidth: 0 }}>
+          <TableListSearchField
+            value={searchInput}
+            onChange={setSearchInput}
+            onClear={clearSearch}
+            placeholder='Search employee name…'
+          />
+          <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
+        </Stack>
         {canCreate && (
           <Button
             variant='contained'
@@ -244,6 +259,21 @@ const SalaryStructurePage = () => {
           </Button>
         )}
       </div>
+
+      <ListFilterPopover open={filterOpen} anchorEl={filterAnchor} onClose={closeFilterPopover}>
+        <DateAndCreatedByFilterPanel
+          title='Filter salary structures'
+          description='Narrow structures by when they were created and who created them.'
+          dateSectionLabel='Created date'
+          createdByHelperText='Matches the teammate who created the structure.'
+          datePickerId='salary-structure-date-range-picker-months'
+          appliedFilters={appliedFilters}
+          onAppliedChange={setAppliedFilters}
+          filterAnchor={filterAnchor}
+          open={filterOpen}
+          onClose={closeFilterPopover}
+        />
+      </ListFilterPopover>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>

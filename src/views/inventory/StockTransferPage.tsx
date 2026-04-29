@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
@@ -8,6 +8,7 @@ import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Grid from '@mui/material/Grid'
+import Stack from '@mui/material/Stack'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import Chip from '@mui/material/Chip'
@@ -26,18 +27,26 @@ import {
 } from '@tanstack/react-table'
 import type { ColumnDef, FilterFn } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
-
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import CustomTextField from '@core/components/mui/TextField'
-import AppReactDatepicker from '@/libs/styles/AppReactDatepicker'
-import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { inventoryService } from '@/services/inventory.service'
 import { distributorsService } from '@/services/distributors.service'
 import { productsService } from '@/services/products.service'
 
 import tableStyles from '@core/styles/table.module.css'
+import {
+  TableListSearchField,
+  TableListFilterIconButton,
+  ListFilterPopover,
+  DateAndCreatedByFilterPanel,
+  useDebouncedSearch,
+  emptyDateUserFilters,
+  countDateUserFilters,
+  appendDateUserParams,
+  type DateUserFilterState
+} from '@/components/standard-list-toolbar'
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -82,9 +91,10 @@ const StockTransferPage = () => {
 
   const [transfers, setTransfers] = useState<Transfer[]>([])
   const [loadingHistory, setLoadingHistory] = useState(true)
-  /** YYYY-MM-DD; empty = show latest transfers (no day filter) */
-  const [historyDate, setHistoryDate] = useState('')
-  const [globalFilter, setGlobalFilter] = useState('')
+  const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
+  const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
+  const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
+  const fetchSeq = useRef(0)
   const [viewItem, setViewItem] = useState<Transfer | null>(null)
   const [stockByProductId, setStockByProductId] = useState<Record<string, number>>({})
   const [loadingStock, setLoadingStock] = useState(false)
@@ -112,27 +122,32 @@ const StockTransferPage = () => {
     }
   }
 
+  const filterOpen = Boolean(filterAnchor)
+  const activeFilterCount = countDateUserFilters(appliedFilters)
+
   const fetchHistory = useCallback(async () => {
+    const seq = ++fetchSeq.current
     setLoadingHistory(true)
     try {
-      const params: Record<string, string | number> = { limit: 200, sort: '-createdAt' }
-      if (historyDate) {
-        const d = parseYyyyMmDd(historyDate)
-        if (d) {
-          const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
-          const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
-          params.createdAtFrom = start.toISOString()
-          params.createdAtTo = end.toISOString()
-        }
+      const params: Record<string, string> = { limit: '200', sort: '-createdAt' }
+      appendDateUserParams(params, appliedFilters, '')
+      if (params.from) {
+        params.createdAtFrom = params.from
+        delete params.from
+      }
+      if (params.to) {
+        params.createdAtTo = params.to
+        delete params.to
       }
       const { data: res } = await inventoryService.getTransfers(params)
+      if (seq !== fetchSeq.current) return
       setTransfers(res.data || [])
     } catch (err) {
-      showApiError(err, 'Failed to load transfer history')
+      if (seq === fetchSeq.current) showApiError(err, 'Failed to load transfer history')
     } finally {
-      setLoadingHistory(false)
+      if (seq === fetchSeq.current) setLoadingHistory(false)
     }
-  }, [historyDate])
+  }, [appliedFilters])
 
   useEffect(() => {
     fetchLookups()
@@ -240,14 +255,20 @@ const StockTransferPage = () => {
     data: transfers,
     columns,
     filterFns: { fuzzy: fuzzyFilter },
-    state: { globalFilter },
+    state: { globalFilter: debouncedSearch },
     globalFilterFn: fuzzyFilter,
-    onGlobalFilterChange: setGlobalFilter,
+    onGlobalFilterChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(debouncedSearch) : updater
+      setSearchInput(String(next ?? ''))
+    },
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel()
   })
+
+  const openFilterPopover = (e: MouseEvent<HTMLElement>) => setFilterAnchor(e.currentTarget)
+  const closeFilterPopover = () => setFilterAnchor(null)
 
   return (
     <Grid container spacing={6}>
@@ -374,24 +395,31 @@ const StockTransferPage = () => {
           <CardHeader
             title='Transfer History'
             action={
-              <div className='flex flex-wrap items-end gap-3 justify-end max-is-full'>
-                <AppReactDatepicker
-                  selected={parseYyyyMmDd(historyDate) ?? null}
-                  id='st-transfer-history-date'
-                  dateFormat='yyyy-MM-dd'
-                  onChange={(d: Date | null) => setHistoryDate(d ? formatYyyyMmDd(d) : '')}
-                  placeholderText='Date'
-                  customInput={<CustomTextField label='Date' size='small' sx={{ minWidth: 200 }} />}
+              <Stack direction='row' spacing={1.5} alignItems='center' flexWrap='wrap' useFlexGap>
+                <TableListSearchField
+                  value={searchInput}
+                  onChange={setSearchInput}
+                  onClear={clearSearch}
+                  placeholder='Search route, notes, products…'
                 />
-                <CustomTextField
-                  value={globalFilter ?? ''}
-                  onChange={e => setGlobalFilter(e.target.value)}
-                  placeholder='Search...'
-                  size='small'
-                />
-              </div>
+                <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
+              </Stack>
             }
           />
+          <ListFilterPopover open={filterOpen} anchorEl={filterAnchor} onClose={closeFilterPopover}>
+            <DateAndCreatedByFilterPanel
+              title='Filter transfers'
+              description='Filter transfer history by when the move was recorded and who recorded it.'
+              dateSectionLabel='Transfer date'
+              createdByHelperText='Matches the teammate who saved the transfer.'
+              datePickerId='stock-transfer-history-date-range-picker-months'
+              appliedFilters={appliedFilters}
+              onAppliedChange={setAppliedFilters}
+              filterAnchor={filterAnchor}
+              open={filterOpen}
+              onClose={closeFilterPopover}
+            />
+          </ListFilterPopover>
           <div className='overflow-x-auto'>
             <table className={tableStyles.table}>
               <thead>
@@ -419,10 +447,10 @@ const StockTransferPage = () => {
                 ) : table.getRowModel().rows.length === 0 ? (
                   <tr>
                     <td colSpan={columns.length} className='text-center p-6'>
-                      {globalFilter
+                      {debouncedSearch
                         ? 'No matching transfers'
-                        : historyDate
-                          ? 'No transfers on the selected day'
+                        : activeFilterCount > 0
+                          ? 'No transfers in this filter'
                           : 'No transfers found'}
                     </td>
                   </tr>

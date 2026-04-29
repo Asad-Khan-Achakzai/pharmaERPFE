@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, forwardRef } from 'react'
+import { useState, useEffect, useMemo, forwardRef, useCallback, useRef, type MouseEvent } from 'react'
 import type { TextFieldProps } from '@mui/material/TextField'
 import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
@@ -13,6 +13,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import Grid from '@mui/material/Grid'
+import Stack from '@mui/material/Stack'
 import MenuItem from '@mui/material/MenuItem'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
@@ -26,6 +27,17 @@ import { weeklyPlansService } from '@/services/weeklyPlans.service'
 import { usersService } from '@/services/users.service'
 import { filterMedicalReps } from '@/utils/userLookups'
 import tableStyles from '@core/styles/table.module.css'
+import {
+  TableListSearchField,
+  TableListFilterIconButton,
+  ListFilterPopover,
+  DateAndCreatedByFilterPanel,
+  useDebouncedSearch,
+  emptyDateUserFilters,
+  countDateUserFilters,
+  appendDateUserParams,
+  type DateUserFilterState
+} from '@/components/standard-list-toolbar'
 
 type Plan = {
   _id: string
@@ -82,6 +94,10 @@ const WeeklyPlansPage = () => {
   const canCreate = hasPermission('weeklyPlans.create')
   const [data, setData] = useState<Plan[]>([])
   const [reps, setReps] = useState<any[]>([])
+  const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
+  const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
+  const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
+  const fetchSeq = useRef(0)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     medicalRepId: '',
@@ -98,24 +114,29 @@ const WeeklyPlansPage = () => {
     form.weekEndDate !== '' &&
     (reps.length > 0 ? form.medicalRepId !== '' : Boolean(user?._id))
 
-  const fetchData = async () => {
+  const filterOpen = Boolean(filterAnchor)
+  const activeFilterCount = countDateUserFilters(appliedFilters)
+
+  const fetchData = useCallback(async () => {
+    const seq = ++fetchSeq.current
     setLoading(true)
     try {
-      const [r, u] = await Promise.all([
-        weeklyPlansService.list({ limit: 100 }),
-        usersService.assignable()
-      ])
+      const params: Record<string, string> = { limit: '100' }
+      appendDateUserParams(params, appliedFilters, debouncedSearch)
+      const [r, u] = await Promise.all([weeklyPlansService.list(params), usersService.assignable()])
+      if (seq !== fetchSeq.current) return
       setData(r.data.data || [])
       setReps(filterMedicalReps(u.data.data || []))
     } catch (err) {
-      showApiError(err, 'Failed to load weekly plans')
+      if (seq === fetchSeq.current) showApiError(err, 'Failed to load weekly plans')
     } finally {
-      setLoading(false)
+      if (seq === fetchSeq.current) setLoading(false)
     }
-  }
+  }, [appliedFilters, debouncedSearch])
+
   useEffect(() => {
-    fetchData()
-  }, [])
+    void fetchData()
+  }, [fetchData])
 
   const handleSave = async () => {
     const medicalRepId = reps.length > 0 ? form.medicalRepId : user?._id
@@ -210,6 +231,9 @@ const WeeklyPlansPage = () => {
     getPaginationRowModel: getPaginationRowModel()
   })
 
+  const openFilterPopover = (e: MouseEvent<HTMLElement>) => setFilterAnchor(e.currentTarget)
+  const closeFilterPopover = () => setFilterAnchor(null)
+
   return (
     <Card>
       <CardHeader
@@ -235,6 +259,33 @@ const WeeklyPlansPage = () => {
           )
         }
       />
+      <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
+        <Stack direction='row' spacing={1.5} alignItems='center' flexWrap='wrap' useFlexGap sx={{ flex: 1, minWidth: 0 }}>
+          <TableListSearchField
+            value={searchInput}
+            onChange={setSearchInput}
+            onClear={clearSearch}
+            placeholder='Search notes, rep…'
+          />
+          <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
+        </Stack>
+      </div>
+
+      <ListFilterPopover open={filterOpen} anchorEl={filterAnchor} onClose={closeFilterPopover}>
+        <DateAndCreatedByFilterPanel
+          title='Filter weekly plans'
+          description='Narrow plans by when they were created and who created them.'
+          dateSectionLabel='Created date'
+          createdByHelperText='Matches the teammate who created the plan.'
+          datePickerId='weekly-plans-date-range-picker-months'
+          appliedFilters={appliedFilters}
+          onAppliedChange={setAppliedFilters}
+          filterAnchor={filterAnchor}
+          open={filterOpen}
+          onClose={closeFilterPopover}
+        />
+      </ListFilterPopover>
+
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>

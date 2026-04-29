@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Button from '@mui/material/Button'
@@ -12,14 +12,25 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import Grid from '@mui/material/Grid'
+import Stack from '@mui/material/Stack'
 import CircularProgress from '@mui/material/CircularProgress'
 import { createColumnHelper, flexRender, getCoreRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
-import type { ColumnDef, FilterFn } from '@tanstack/react-table'
-import { rankItem } from '@tanstack/match-sorter-utils'
+import type { ColumnDef } from '@tanstack/react-table'
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { pharmaciesService } from '@/services/pharmacies.service'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
+import {
+  TableListSearchField,
+  TableListFilterIconButton,
+  ListFilterPopover,
+  DateAndCreatedByFilterPanel,
+  useDebouncedSearch,
+  emptyDateUserFilters,
+  countDateUserFilters,
+  appendDateUserParams,
+  type DateUserFilterState
+} from '@/components/standard-list-toolbar'
 import tableStyles from '@core/styles/table.module.css'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
@@ -36,12 +47,14 @@ type Pharmacy = {
   isActive: boolean
 }
 
-const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => { const r = rankItem(row.getValue(columnId), value); addMeta({ itemRank: r }); return r.passed }
 const columnHelper = createColumnHelper<Pharmacy>()
 
 const PharmacyListPage = () => {
   const [data, setData] = useState<Pharmacy[]>([])
-  const [globalFilter, setGlobalFilter] = useState('')
+  const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
+  const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
+  const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
+  const fetchSeq = useRef(0)
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<Pharmacy | null>(null)
   const [form, setForm] = useState({
@@ -63,17 +76,33 @@ const PharmacyListPage = () => {
 
   const isFormValid = form.name.trim() !== ''
 
+  const filterOpen = Boolean(filterAnchor)
+  const activeFilterCount = countDateUserFilters(appliedFilters)
+
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('pharmacies.create')
   const canEdit = hasPermission('pharmacies.edit')
   const canDelete = hasPermission('pharmacies.delete')
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
+    const seq = ++fetchSeq.current
     setLoading(true)
-    try { const { data: res } = await pharmaciesService.list({ limit: 100 }); setData(res.data || []) } catch (err) { showApiError(err, 'Failed to load pharmacies') }
-    finally { setLoading(false) }
-  }
-  useEffect(() => { fetchData() }, [])
+    try {
+      const params: Record<string, string> = { limit: '100' }
+      appendDateUserParams(params, appliedFilters, debouncedSearch)
+      const { data: res } = await pharmaciesService.list(params)
+      if (seq !== fetchSeq.current) return
+      setData(res.data || [])
+    } catch (err) {
+      if (seq === fetchSeq.current) showApiError(err, 'Failed to load pharmacies')
+    } finally {
+      if (seq === fetchSeq.current) setLoading(false)
+    }
+  }, [appliedFilters, debouncedSearch])
+
+  useEffect(() => {
+    void fetchData()
+  }, [fetchData])
 
   const handleOpen = (item?: Pharmacy) => {
     if (item) {
@@ -142,17 +171,47 @@ const PharmacyListPage = () => {
   ], [canEdit, canDelete])
 
   const table = useReactTable({
-    data, columns, filterFns: { fuzzy: fuzzyFilter }, state: { globalFilter }, globalFilterFn: fuzzyFilter, onGlobalFilterChange: setGlobalFilter,
-    getCoreRowModel: getCoreRowModel(), getFilteredRowModel: getFilteredRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel()
+    data,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel()
   })
+
+  const openFilterPopover = (e: MouseEvent<HTMLElement>) => setFilterAnchor(e.currentTarget)
+  const closeFilterPopover = () => setFilterAnchor(null)
 
   return (
     <Card>
       <CardHeader title='Pharmacies' />
       <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
-        <CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />
+        <Stack direction='row' spacing={1.5} alignItems='center' flexWrap='wrap' useFlexGap sx={{ flex: 1, minWidth: 0 }}>
+          <TableListSearchField
+            value={searchInput}
+            onChange={setSearchInput}
+            onClear={clearSearch}
+            placeholder='Search name, city, phone…'
+          />
+          <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
+        </Stack>
         {canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => handleOpen()}>Add Pharmacy</Button>}
       </div>
+
+      <ListFilterPopover open={filterOpen} anchorEl={filterAnchor} onClose={closeFilterPopover}>
+        <DateAndCreatedByFilterPanel
+          title='Filter pharmacies'
+          description='Narrow the list by when the pharmacy was created and who added it.'
+          dateSectionLabel='Created date'
+          createdByHelperText='Matches the teammate who created the pharmacy record.'
+          datePickerId='pharmacy-list-date-range-picker-months'
+          appliedFilters={appliedFilters}
+          onAppliedChange={setAppliedFilters}
+          filterAnchor={filterAnchor}
+          open={filterOpen}
+          onClose={closeFilterPopover}
+        />
+      </ListFilterPopover>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>{table.getHeaderGroups().map(hg => <tr key={hg.id}>{hg.headers.map(h => <th key={h.id}>{h.isPlaceholder ? null : <div className={h.column.getCanSort() ? 'cursor-pointer select-none' : ''} onClick={h.column.getToggleSortingHandler()}>{flexRender(h.column.columnDef.header, h.getContext())}{{ asc: ' 🔼', desc: ' 🔽' }[h.column.getIsSorted() as string] ?? null}</div>}</th>)}</tr>)}</thead>

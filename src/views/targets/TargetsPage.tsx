@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Button from '@mui/material/Button'
@@ -9,6 +9,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import Grid from '@mui/material/Grid'
+import Stack from '@mui/material/Stack'
 import MenuItem from '@mui/material/MenuItem'
 import LinearProgress from '@mui/material/LinearProgress'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -23,6 +24,17 @@ import { targetsService } from '@/services/targets.service'
 import { usersService } from '@/services/users.service'
 import { filterMedicalReps } from '@/utils/userLookups'
 import tableStyles from '@core/styles/table.module.css'
+import {
+  TableListSearchField,
+  TableListFilterIconButton,
+  ListFilterPopover,
+  DateAndCreatedByFilterPanel,
+  useDebouncedSearch,
+  emptyDateUserFilters,
+  countDateUserFilters,
+  appendDateUserParams,
+  type DateUserFilterState
+} from '@/components/standard-list-toolbar'
 
 type Target = { _id: string; medicalRepId: any; month: string; salesTarget: number; achievedSales: number; packsTarget: number; achievedPacks: number }
 const columnHelper = createColumnHelper<Target>()
@@ -43,6 +55,10 @@ const TargetsPage = () => {
   const canCreate = hasPermission('targets.create')
   const [data, setData] = useState<Target[]>([])
   const [users, setUsers] = useState<any[]>([])
+  const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
+  const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
+  const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
+  const fetchSeq = useRef(0)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ medicalRepId: '', month: '', salesTarget: 0, packsTarget: 0 })
   const [loading, setLoading] = useState(true)
@@ -51,18 +67,29 @@ const TargetsPage = () => {
   const hasAtLeastOneTarget = form.salesTarget > 0 || form.packsTarget > 0
   const isFormValid = form.medicalRepId !== '' && form.month.trim() !== '' && hasAtLeastOneTarget
 
-  const fetchData = async () => {
+  const filterOpen = Boolean(filterAnchor)
+  const activeFilterCount = countDateUserFilters(appliedFilters)
+
+  const fetchData = useCallback(async () => {
+    const seq = ++fetchSeq.current
     setLoading(true)
     try {
-      const [t, u] = await Promise.all([targetsService.list({ limit: 100 }), usersService.assignable()])
+      const params: Record<string, string> = { limit: '100' }
+      appendDateUserParams(params, appliedFilters, debouncedSearch)
+      const [t, u] = await Promise.all([targetsService.list(params), usersService.assignable()])
+      if (seq !== fetchSeq.current) return
       setData(t.data.data || [])
       setUsers(filterMedicalReps(u.data.data || []))
     } catch (err) {
-      showApiError(err, 'Failed to load targets')
+      if (seq === fetchSeq.current) showApiError(err, 'Failed to load targets')
+    } finally {
+      if (seq === fetchSeq.current) setLoading(false)
     }
-    finally { setLoading(false) }
-  }
-  useEffect(() => { fetchData() }, [])
+  }, [appliedFilters, debouncedSearch])
+
+  useEffect(() => {
+    void fetchData()
+  }, [fetchData])
 
   const handleSave = async () => {
     setSaving(true)
@@ -80,6 +107,9 @@ const TargetsPage = () => {
 
   const table = useReactTable({ data, columns, getCoreRowModel: getCoreRowModel(), getPaginationRowModel: getPaginationRowModel() })
 
+  const openFilterPopover = (e: MouseEvent<HTMLElement>) => setFilterAnchor(e.currentTarget)
+  const closeFilterPopover = () => setFilterAnchor(null)
+
   return (
     <Card>
       <CardHeader title='Targets' action={canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => {
@@ -91,6 +121,32 @@ const TargetsPage = () => {
               })
               setOpen(true)
             }}>Add Target</Button>} />
+      <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
+        <Stack direction='row' spacing={1.5} alignItems='center' flexWrap='wrap' useFlexGap sx={{ flex: 1, minWidth: 0 }}>
+          <TableListSearchField
+            value={searchInput}
+            onChange={setSearchInput}
+            onClear={clearSearch}
+            placeholder='Search rep, month (YYYY-MM)…'
+          />
+          <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
+        </Stack>
+      </div>
+
+      <ListFilterPopover open={filterOpen} anchorEl={filterAnchor} onClose={closeFilterPopover}>
+        <DateAndCreatedByFilterPanel
+          title='Filter targets'
+          description='Narrow sales targets by when the row was created and who added it.'
+          dateSectionLabel='Created date'
+          createdByHelperText='Matches the teammate who created the target.'
+          datePickerId='targets-list-date-range-picker-months'
+          appliedFilters={appliedFilters}
+          onAppliedChange={setAppliedFilters}
+          filterAnchor={filterAnchor}
+          open={filterOpen}
+          onClose={closeFilterPopover}
+        />
+      </ListFilterPopover>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>{table.getHeaderGroups().map(hg => <tr key={hg.id}>{hg.headers.map(h => <th key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</th>)}</tr>)}</thead>

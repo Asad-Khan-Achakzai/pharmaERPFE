@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
 import Link from 'next/link'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -13,6 +13,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import Grid from '@mui/material/Grid'
+import Stack from '@mui/material/Stack'
 import MenuItem from '@mui/material/MenuItem'
 import CircularProgress from '@mui/material/CircularProgress'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
@@ -26,14 +27,24 @@ import {
   getSortedRowModel,
   useReactTable
 } from '@tanstack/react-table'
-import type { ColumnDef, FilterFn } from '@tanstack/react-table'
-import { rankItem } from '@tanstack/match-sorter-utils'
+import type { ColumnDef } from '@tanstack/react-table'
 
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { supplierService } from '@/services/supplier.service'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import { normalizeDocs } from '@/utils/apiList'
+import {
+  TableListSearchField,
+  TableListFilterIconButton,
+  ListFilterPopover,
+  DateAndCreatedByFilterPanel,
+  useDebouncedSearch,
+  emptyDateUserFilters,
+  countDateUserFilters,
+  appendDateUserParams,
+  type DateUserFilterState
+} from '@/components/standard-list-toolbar'
 
 import tableStyles from '@core/styles/table.module.css'
 
@@ -51,18 +62,15 @@ type SupplierRow = {
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => {
-  const itemRank = rankItem(row.getValue(columnId), value)
-  addMeta({ itemRank })
-  return itemRank.passed
-}
-
 const columnHelper = createColumnHelper<SupplierRow>()
 
 const SupplierListPage = () => {
   const [data, setData] = useState<SupplierRow[]>([])
   const [payableById, setPayableById] = useState<Record<string, number>>({})
-  const [globalFilter, setGlobalFilter] = useState('')
+  const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
+  const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
+  const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
+  const fetchSeq = useRef(0)
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<SupplierRow | null>(null)
   const [form, setForm] = useState({
@@ -91,6 +99,9 @@ const SupplierListPage = () => {
 
   const isFormValid = form.name.trim() !== ''
 
+  const filterOpen = Boolean(filterAnchor)
+  const activeFilterCount = countDateUserFilters(appliedFilters)
+
   const { hasPermission } = useAuth()
   const canView = hasPermission('suppliers.view')
   const canManage = hasPermission('suppliers.manage')
@@ -111,26 +122,30 @@ const SupplierListPage = () => {
     }
   }, [])
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!canView) {
       setLoading(false)
       return
     }
+    const seq = ++fetchSeq.current
     setLoading(true)
     try {
-      const res = await supplierService.list({ limit: '100' })
+      const params: Record<string, string> = { limit: '100' }
+      appendDateUserParams(params, appliedFilters, debouncedSearch)
+      const res = await supplierService.list(params)
+      if (seq !== fetchSeq.current) return
       setData(normalizeDocs<SupplierRow>(res))
       await fetchPayables()
     } catch (err) {
-      showApiError(err, 'Failed to load suppliers')
+      if (seq === fetchSeq.current) showApiError(err, 'Failed to load suppliers')
     } finally {
-      setLoading(false)
+      if (seq === fetchSeq.current) setLoading(false)
     }
-  }
+  }, [canView, appliedFilters, debouncedSearch, fetchPayables])
 
   useEffect(() => {
-    fetchData()
-  }, [canView])
+    void fetchData()
+  }, [fetchData])
 
   const handleOpen = (item?: SupplierRow) => {
     if (item) {
@@ -314,15 +329,14 @@ const SupplierListPage = () => {
   const table = useReactTable({
     data,
     columns,
-    filterFns: { fuzzy: fuzzyFilter },
-    state: { globalFilter },
-    globalFilterFn: fuzzyFilter,
-    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel()
   })
+
+  const openFilterPopover = (e: MouseEvent<HTMLElement>) => setFilterAnchor(e.currentTarget)
+  const closeFilterPopover = () => setFilterAnchor(null)
 
   if (!canView) {
     return (
@@ -341,17 +355,36 @@ const SupplierListPage = () => {
         subheader='Create suppliers here, then select them on stock transfers to track payables. PURCHASE lines are liabilities only, not expenses.'
       />
       <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
-        <CustomTextField
-          value={globalFilter ?? ''}
-          onChange={e => setGlobalFilter(e.target.value)}
-          placeholder='Search...'
-        />
+        <Stack direction='row' spacing={1.5} alignItems='center' flexWrap='wrap' useFlexGap sx={{ flex: 1, minWidth: 0 }}>
+          <TableListSearchField
+            value={searchInput}
+            onChange={setSearchInput}
+            onClear={clearSearch}
+            placeholder='Search name, phone, notes…'
+          />
+          <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
+        </Stack>
         {canManage && (
           <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => handleOpen()}>
             Add supplier
           </Button>
         )}
       </div>
+
+      <ListFilterPopover open={filterOpen} anchorEl={filterAnchor} onClose={closeFilterPopover}>
+        <DateAndCreatedByFilterPanel
+          title='Filter suppliers'
+          description='Narrow the list by when the supplier was created and who added the record.'
+          dateSectionLabel='Created date'
+          createdByHelperText='Matches the teammate who created the supplier.'
+          datePickerId='supplier-list-date-range-picker-months'
+          appliedFilters={appliedFilters}
+          onAppliedChange={setAppliedFilters}
+          filterAnchor={filterAnchor}
+          open={filterOpen}
+          onClose={closeFilterPopover}
+        />
+      </ListFilterPopover>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>

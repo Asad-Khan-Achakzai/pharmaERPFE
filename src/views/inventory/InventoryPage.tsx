@@ -38,6 +38,7 @@ import { showApiError } from '@/utils/apiErrors'
 import { inventoryService } from '@/services/inventory.service'
 import { distributorsService } from '@/services/distributors.service'
 import { productsService } from '@/services/products.service'
+import { TableListSearchField, useDebouncedSearch } from '@/components/standard-list-toolbar'
 
 import tableStyles from '@core/styles/table.module.css'
 
@@ -110,7 +111,7 @@ const InventoryPage = () => {
   const [products, setProducts] = useState<any[]>([])
   const [filterDistributor, setFilterDistributor] = useState('')
   const [filterProduct, setFilterProduct] = useState('')
-  const [globalFilter, setGlobalFilter] = useState('')
+  const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
   const [loading, setLoading] = useState(true)
   const [viewDetail, setViewDetail] = useState<InventoryRow | null>(null)
   const [viewSummary, setViewSummary] = useState<SummaryRow | null>(null)
@@ -265,9 +266,12 @@ const InventoryPage = () => {
     data: detailData,
     columns: detailColumns,
     filterFns: { fuzzy: fuzzyFilter },
-    state: { globalFilter },
+    state: { globalFilter: debouncedSearch },
     globalFilterFn: fuzzyFilter,
-    onGlobalFilterChange: setGlobalFilter,
+    onGlobalFilterChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(debouncedSearch) : updater
+      setSearchInput(String(next ?? ''))
+    },
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -278,9 +282,12 @@ const InventoryPage = () => {
     data: summaryData,
     columns: summaryColumns,
     filterFns: { fuzzy: fuzzyFilter },
-    state: { globalFilter },
+    state: { globalFilter: debouncedSearch },
     globalFilterFn: fuzzyFilter,
-    onGlobalFilterChange: setGlobalFilter,
+    onGlobalFilterChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(debouncedSearch) : updater
+      setSearchInput(String(next ?? ''))
+    },
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -415,13 +422,11 @@ const InventoryPage = () => {
                 </CustomTextField>
               </Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
-                <CustomTextField
-                  fullWidth
-                  label='Search'
-                  value={globalFilter ?? ''}
-                  onChange={(e) => setGlobalFilter(e.target.value)}
-                  placeholder='Search...'
-                  size='small'
+                <TableListSearchField
+                  value={searchInput}
+                  onChange={setSearchInput}
+                  onClear={clearSearch}
+                  placeholder='Search product, distributor…'
                 />
               </Grid>
             </Grid>

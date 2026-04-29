@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Button from '@mui/material/Button'
@@ -11,6 +11,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import Grid from '@mui/material/Grid'
 import Chip from '@mui/material/Chip'
+import Stack from '@mui/material/Stack'
 import CircularProgress from '@mui/material/CircularProgress'
 import { useRouter } from 'next/navigation'
 import { showApiError } from '@/utils/apiErrors'
@@ -24,12 +25,21 @@ import {
   getSortedRowModel,
   useReactTable
 } from '@tanstack/react-table'
-import type { ColumnDef, FilterFn } from '@tanstack/react-table'
-import { rankItem } from '@tanstack/match-sorter-utils'
-import CustomTextField from '@core/components/mui/TextField'
+import type { ColumnDef } from '@tanstack/react-table'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { collectionsService } from '@/services/collections.service'
 import tableStyles from '@core/styles/table.module.css'
+import {
+  TableListSearchField,
+  TableListFilterIconButton,
+  ListFilterPopover,
+  DateAndCreatedByFilterPanel,
+  useDebouncedSearch,
+  emptyDateUserFilters,
+  countDateUserFilters,
+  appendDateUserParams,
+  type DateUserFilterState
+} from '@/components/standard-list-toolbar'
 
 type CollectionRow = {
   _id: string
@@ -42,11 +52,6 @@ type CollectionRow = {
   notes?: string
   referenceNumber?: string
 }
-const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => {
-  const r = rankItem(row.getValue(columnId), value)
-  addMeta({ itemRank: r })
-  return r.passed
-}
 const columnHelper = createColumnHelper<CollectionRow>()
 
 const collectorLabel = (t: string) =>
@@ -57,24 +62,35 @@ const PaymentListPage = () => {
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('payments.create')
   const [data, setData] = useState<CollectionRow[]>([])
-  const [globalFilter, setGlobalFilter] = useState('')
+  const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
+  const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
+  const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
+  const fetchSeq = useRef(0)
   const [loading, setLoading] = useState(true)
   const [viewItem, setViewItem] = useState<CollectionRow | null>(null)
 
-  useEffect(() => {
-    const f = async () => {
-      setLoading(true)
-      try {
-        const { data: r } = await collectionsService.list({ limit: 200 })
-        setData(r.data || [])
-      } catch (err) {
-        showApiError(err, 'Failed to load collections')
-      } finally {
-        setLoading(false)
-      }
+  const filterOpen = Boolean(filterAnchor)
+  const activeFilterCount = countDateUserFilters(appliedFilters)
+
+  const fetchData = useCallback(async () => {
+    const seq = ++fetchSeq.current
+    setLoading(true)
+    try {
+      const params: Record<string, string> = { limit: '200' }
+      appendDateUserParams(params, appliedFilters, debouncedSearch)
+      const { data: r } = await collectionsService.list(params)
+      if (seq !== fetchSeq.current) return
+      setData(r.data || [])
+    } catch (err) {
+      if (seq === fetchSeq.current) showApiError(err, 'Failed to load collections')
+    } finally {
+      if (seq === fetchSeq.current) setLoading(false)
     }
-    f()
-  }, [])
+  }, [appliedFilters, debouncedSearch])
+
+  useEffect(() => {
+    void fetchData()
+  }, [fetchData])
 
   const columns = useMemo<ColumnDef<CollectionRow, any>[]>(
     () => [
@@ -117,35 +133,49 @@ const PaymentListPage = () => {
   const table = useReactTable({
     data,
     columns,
-    filterFns: { fuzzy: fuzzyFilter },
-    state: { globalFilter },
-    globalFilterFn: fuzzyFilter,
-    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel()
   })
 
+  const openFilterPopover = (e: MouseEvent<HTMLElement>) => setFilterAnchor(e.currentTarget)
+  const closeFilterPopover = () => setFilterAnchor(null)
+
   return (
     <Card>
       <CardHeader title='Collections' subheader='Pharmacy receipts (company or distributor collector)' />
       <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
-        <CustomTextField
-          value={globalFilter ?? ''}
-          onChange={e => setGlobalFilter(e.target.value)}
-          placeholder='Search...'
-        />
+        <Stack direction='row' spacing={1.5} alignItems='center' flexWrap='wrap' useFlexGap sx={{ flex: 1, minWidth: 0 }}>
+          <TableListSearchField
+            value={searchInput}
+            onChange={setSearchInput}
+            onClear={clearSearch}
+            placeholder='Search reference, notes, pharmacy…'
+          />
+          <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
+        </Stack>
         {canCreate && (
-          <Button
-            variant='contained'
-            startIcon={<i className='tabler-plus' />}
-            onClick={() => router.push('/payments/add')}
-          >
+          <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => router.push('/payments/add')}>
             Record collection
           </Button>
         )}
       </div>
+
+      <ListFilterPopover open={filterOpen} anchorEl={filterAnchor} onClose={closeFilterPopover}>
+        <DateAndCreatedByFilterPanel
+          title='Filter collections'
+          description='Filter by collection date (business date) and who recorded the receipt.'
+          dateSectionLabel='Collection date'
+          createdByHelperText='Matches the teammate who saved the collection.'
+          datePickerId='collections-list-date-range-picker-months'
+          appliedFilters={appliedFilters}
+          onAppliedChange={setAppliedFilters}
+          filterAnchor={filterAnchor}
+          open={filterOpen}
+          onClose={closeFilterPopover}
+        />
+      </ListFilterPopover>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>
