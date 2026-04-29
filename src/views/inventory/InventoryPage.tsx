@@ -48,7 +48,7 @@ const formatPKR = (v: number) =>
 
 /** Catalog factory rate per unit (product casting); does not include receipt shipping baked into average cost. */
 const TOOLTIP_FACTORY_VALUE =
-  'Quantity × product factory rate (casting from the product master). This is the catalog cost price, not the weighted average stock cost. Stock “Avg cost / unit” can be higher when shipping was included on goods receipt or transfer.'
+  'Quantity × Standard Cost (Catalog) — product master casting. Not Inventory Cost (Avg); “Avg cost / unit” can be higher when shipping was included on goods receipt or transfer.'
 
 /** Cost-based stock value: includes landed cost; transfer shipping is spread across products on the same transfer. */
 const TOOLTIP_TOTAL_COST_VALUE =

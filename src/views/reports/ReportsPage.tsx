@@ -20,6 +20,7 @@ import { mapProfitFinancial } from '@/utils/financialMapper'
 import FinancialReportsSection from '@/views/reports/FinancialReportsSection'
 import ProfitCostManagementSection from '@/views/reports/ProfitCostManagementSection'
 import PageSkeleton from '@/components/skeletons/PageSkeleton'
+import { FIN_LABELS } from '@/constants/financialLabels'
 
 type ReportsOpsCache = {
   profit: any
@@ -257,8 +258,12 @@ const ReportsPage = () => {
                   <Card>
                     <CardHeader title='Profit summary' />
                     <CardContent>
-                      <Typography>Gross profit: {formatPKR(profit.grossProfit)}</Typography>
-                      <Typography>Net profit: {formatPKR(profit.netProfit)}</Typography>
+                      <Typography>
+                        {FIN_LABELS.salesMarginCustomerBasis} (period): {formatPKR(profit.grossProfit)}
+                      </Typography>
+                      <Typography>
+                        {FIN_LABELS.netProfitPeriod}: {formatPKR(profit.netProfit)}
+                      </Typography>
                     </CardContent>
                   </Card>
                 </Grid>

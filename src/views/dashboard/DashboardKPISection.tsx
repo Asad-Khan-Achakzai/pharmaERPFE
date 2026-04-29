@@ -9,6 +9,7 @@ import Typography from '@mui/material/Typography'
 import Skeleton from '@mui/material/Skeleton'
 import KPIGroup from './KPIGroup'
 import SectionHeader from './SectionHeader'
+import { FIN_LABELS, FIN_TOOLTIPS } from '@/constants/financialLabels'
 
 const DashboardKPISection = memo(function DashboardKPISection({
   dashboardDataLoading,
@@ -25,30 +26,44 @@ const DashboardKPISection = memo(function DashboardKPISection({
   const groups = data
     ? [
         {
-          title: 'Revenue',
-          value: formatPKR(data.totalSales),
-          helper: 'Total sales recorded for current snapshot',
-          icon: 'tabler-chart-line',
+          title: FIN_LABELS.grossSalesTpCumulative,
+          value: formatPKR(data.totalGrossSalesTp ?? 0),
+          helper: 'Sum of delivery TP subtotals (see Statistics tooltip).',
+          icon: 'tabler-currency-dollar',
           tone: 'primary' as const
         },
         {
-          title: 'Profit',
+          title: FIN_LABELS.netSalesCompanyCumulative,
+          value: formatPKR(data.totalNetSalesCompany ?? 0),
+          helper: FIN_TOOLTIPS.customerVsCompany,
+          icon: 'tabler-building-store',
+          tone: 'primary' as const
+        },
+        {
+          title: FIN_LABELS.netSalesCustomerCumulative,
+          value: formatPKR(data.totalSales),
+          helper: 'Posted sale/return transactions (pharmacy net).',
+          icon: 'tabler-receipt',
+          tone: 'info' as const
+        },
+        {
+          title: FIN_LABELS.netProfitLifetime,
           value: formatPKR(data.netProfit),
-          helper: `Gross ${formatPKR(data.grossProfit)} after costs`,
+          helper: `${FIN_LABELS.salesMarginCustomerBasis} (cumulative): ${formatPKR(data.grossProfit)}; ${FIN_TOOLTIPS.netProfitLifetime}`,
           icon: 'tabler-trending-up',
           tone: (data.netProfit || 0) >= 0 ? ('success' as const) : ('error' as const)
         },
         {
-          title: 'Cashflow',
+          title: FIN_LABELS.collectedLifetime,
           value: formatPKR(data.totalPaid),
-          helper: 'Collections already received',
+          helper: 'Sum of recorded collection amounts',
           icon: 'tabler-cash',
           tone: 'info' as const
         },
         {
-          title: 'Payables',
+          title: FIN_LABELS.outstandingPharmacies,
           value: formatPKR(data.totalOutstanding),
-          helper: `Expenses ${formatPKR(data.totalExpenses)}`,
+          helper: `Net pharmacy ledger balance. Operating expenses (non-salary) total ${formatPKR(data.totalExpenses)}.`,
           icon: 'tabler-alert-circle',
           tone: 'warning' as const
         }
@@ -62,12 +77,12 @@ const DashboardKPISection = memo(function DashboardKPISection({
           <CardContent sx={{ p: { xs: 2, md: 3 } }}>
             <SectionHeader
               title='Executive summary'
-              subtitle='Key financial snapshot. Values come from the same dashboard data as the rest of the app.'
+              subtitle='All-time KPIs from /reports/dashboard (not month-scoped). Aligns with Statistics when the same bundle loads.'
             />
             {dashboardDataLoading ? (
               <Grid container spacing={3}>
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Grid key={`kpi-skel-${i}`} size={{ xs: 12, sm: 6, lg: 3 }}>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Grid key={`kpi-skel-${i}`} size={{ xs: 12, sm: 6, lg: 4 }}>
                     <Card variant='outlined' sx={{ borderRadius: 3 }}>
                       <CardContent sx={{ p: 2.5 }}>
                         <Skeleton variant='rounded' width={90} height={24} animation='wave' />
@@ -85,7 +100,7 @@ const DashboardKPISection = memo(function DashboardKPISection({
                 <Box sx={{ display: { xs: 'none', md: 'block' } }}>
                   <Grid container spacing={3}>
                     {groups.map(group => (
-                      <Grid key={group.title} size={{ xs: 12, sm: 6, lg: 3 }}>
+                      <Grid key={group.title} size={{ xs: 12, sm: 6, lg: 4 }}>
                         <KPIGroup {...group} />
                       </Grid>
                     ))}

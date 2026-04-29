@@ -1,6 +1,6 @@
 /**
  * Single source of truth for /home section visibility and mode.
- * Executive (company financials) tier uses system Administrator role — not permission strings.
+ * Company-wide financial charts / supplier snapshots: `admin.access` (aligned with GET /reports/dashboard).
  */
 
 export type DashboardMode = 'execution' | 'monitoring' | 'hybrid'
@@ -16,13 +16,13 @@ export type DashboardLayoutSpec = {
 }
 
 /**
- * Legacy /home layout helper. `isFullDashboardUser` = system DEFAULT_ADMIN or SUPER_ADMIN (see dashboardExperience).
+ * Legacy /home layout helper. `isFullDashboardUser` kept for callers; company KPIs/charts use `admin.access`.
  */
 export function resolveDashboardLayout(
   has: (permission: string) => boolean,
-  isFullDashboardUser: boolean
+  _isFullDashboardUser: boolean
 ): DashboardLayoutSpec {
-  const canSeeCompanyFinancials = isFullDashboardUser
+  const canSeeCompanyFinancials = has('admin.access')
   const showExecutionPanel = has('weeklyPlans.view')
   /** Visits-first quick actions for field + hybrid; default order for monitoring-only. */
   const preferExecutionActionOrder = !canSeeCompanyFinancials || (canSeeCompanyFinancials && showExecutionPanel)

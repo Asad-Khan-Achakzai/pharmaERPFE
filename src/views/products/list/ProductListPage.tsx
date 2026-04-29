@@ -148,7 +148,7 @@ const ProductListPage = () => {
     if (canViewCostPrice) {
       base.push(
         columnHelper.accessor('casting', {
-          header: 'Cost price',
+          header: 'Standard Cost (Catalog)',
           cell: ({ row }) => `₨ ${row.original.casting != null ? row.original.casting.toFixed(2) : '—'}`
         })
       )
@@ -233,7 +233,7 @@ const ProductListPage = () => {
                 <CustomTextField
                   required
                   fullWidth
-                  label='Cost price'
+                  label='Standard Cost (Catalog)'
                   type='number'
                   value={form.casting}
                   onChange={e => setForm(p => ({ ...p, casting: +e.target.value }))}
@@ -259,7 +259,7 @@ const ProductListPage = () => {
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>TP</Typography><Typography>₨ {viewItem.tp?.toFixed(2)}</Typography></Grid>
               {canViewCostPrice && (
                 <Grid size={{ xs: 6 }}>
-                  <Typography variant='body2' color='text.secondary'>Cost price</Typography>
+                  <Typography variant='body2' color='text.secondary'>Standard Cost (Catalog)</Typography>
                   <Typography>₨ {(viewItem.casting ?? 0).toFixed(2)}</Typography>
                 </Grid>
               )}

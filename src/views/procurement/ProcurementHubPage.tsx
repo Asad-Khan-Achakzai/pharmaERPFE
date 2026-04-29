@@ -2700,7 +2700,7 @@ const ProcurementHubPage = () => {
                   <TableRow>
                     <TableCell>Product</TableCell>
                     <TableCell align='right'>Qty</TableCell>
-                    <TableCell align='right'>Unit cost</TableCell>
+                    <TableCell align='right'>Unit cost (landed)</TableCell>
                     <TableCell align='right'>Line total</TableCell>
                   </TableRow>
                 </TableHead>

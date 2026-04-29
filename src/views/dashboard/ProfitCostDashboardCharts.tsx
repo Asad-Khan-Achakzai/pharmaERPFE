@@ -25,6 +25,8 @@ import { productsService } from '@/services/products.service'
 import { distributorsService } from '@/services/distributors.service'
 import { usersService } from '@/services/users.service'
 import { mapSummaryFinancial, mapTrendsFinancial } from '@/utils/financialMapper'
+import { FIN_LABELS, FIN_TOOLTIPS } from '@/constants/financialLabels'
+import { FinInfoTip } from '@/components/financial/FinInfoTip'
 import Link from 'next/link'
 import ResponsiveChartWrapper from './ResponsiveChartWrapper'
 import { useExpandedOnDesktop } from '@/hooks/useExpandedOnDesktop'
@@ -169,9 +171,9 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
   const lineSeries = useMemo(() => {
     const s = trends?.series || []
     return [
-      { name: 'Revenue', data: s.map((x: any) => x.revenue) },
-      { name: 'Total cost', data: s.map((x: any) => x.totalCost) },
-      { name: 'Net profit', data: s.map((x: any) => x.netProfit) }
+      { name: `${FIN_LABELS.netSalesCustomer} (period)`, data: s.map((x: any) => x.revenue) },
+      { name: FIN_LABELS.totalCostsPeriod, data: s.map((x: any) => x.totalCost) },
+      { name: FIN_LABELS.netProfitPeriod, data: s.map((x: any) => x.netProfit) }
     ]
   }, [trends])
 
@@ -273,7 +275,7 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
 
   const barSeries = useMemo(() => {
     const rows = productRevenueRows
-    return [{ name: 'Revenue', data: rows.map((r: any) => r.revenue) }]
+    return [{ name: `${FIN_LABELS.netSalesCustomer} (deliveries)`, data: rows.map((r: any) => r.revenue) }]
   }, [productRevenueRows])
 
   const formatPKR = (v: number) =>
@@ -290,8 +292,8 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
     <Grid size={{ xs: 12 }}>
       <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
         <CardHeader
-          title='Revenue vs cost vs profit'
-          subheader='Primary executive trend view. Filters apply across analytics.'
+          title={`${FIN_LABELS.netSalesCustomer}, costs & ${FIN_LABELS.netProfitPeriod}`}
+          subheader={`Period-based. Home Statistics use cumulative dashboard totals (${FIN_TOOLTIPS.dashboardTotals}).`}
           action={
             <Button component={Link} href='/reports' size='small' variant='tonal'>
               Full reports
@@ -382,14 +384,22 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
               </div>
             )}
             <Typography variant='caption' color='text.secondary' display='block' className='mt-2'>
-              Revenue uses delivery/return transactions; payroll uses paid-on date.
+              Trends use posted transactions for {FIN_LABELS.netSalesCustomer}; payroll uses paid-on date.
             </Typography>
           </div>
 
           <Grid container spacing={3}>
             {summaryLoading
-              ? (['Revenue', 'Total cost', 'Net profit', 'Margin'] as const).map(label => (
-                  <Grid key={label} size={{ xs: 6, sm: 3 }}>
+              ? (
+                  [
+                    `${FIN_LABELS.netSalesCustomer} (period)`,
+                    `${FIN_LABELS.netSalesCompany} (period)`,
+                    FIN_LABELS.totalCostsPeriod,
+                    FIN_LABELS.netProfitPeriod,
+                    FIN_LABELS.profitMarginPct
+                  ] as const
+                ).map(label => (
+                  <Grid key={label} size={{ xs: 6, sm: 4 }}>
                     <Typography variant='caption' color='text.secondary'>
                       {label}
                     </Typography>
@@ -397,10 +407,28 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
                   </Grid>
                 ))
               : [
-                  { label: 'Revenue' as const, children: <Typography fontWeight={600}>{formatPKR(summary?.totalRevenue ?? 0)}</Typography> },
-                  { label: 'Total cost' as const, children: <Typography fontWeight={600}>{formatPKR(summary?.totalCost ?? 0)}</Typography> },
                   {
-                    label: 'Net profit' as const,
+                    label: (
+                      <span className='inline-flex items-center gap-0.5'>
+                        {FIN_LABELS.netSalesCustomer} (period) <FinInfoTip title={FIN_TOOLTIPS.salesMarginCustomerBasis} />
+                      </span>
+                    ),
+                    children: <Typography fontWeight={600}>{formatPKR(summary?.totalRevenue ?? 0)}</Typography>
+                  },
+                  {
+                    label: (
+                      <span className='inline-flex items-center gap-0.5'>
+                        {FIN_LABELS.netSalesCompany} (period) <FinInfoTip title={FIN_TOOLTIPS.grossProfitCompanyLine} />
+                      </span>
+                    ),
+                    children: <Typography fontWeight={600}>{formatPKR(summary?.totalNetSalesCompany ?? 0)}</Typography>
+                  },
+                  {
+                    label: FIN_LABELS.totalCostsPeriod,
+                    children: <Typography fontWeight={600}>{formatPKR(summary?.totalCost ?? 0)}</Typography>
+                  },
+                  {
+                    label: FIN_LABELS.netProfitPeriod,
                     children: (
                       <Typography
                         fontWeight={600}
@@ -411,16 +439,16 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
                     )
                   },
                   {
-                    label: 'Margin' as const,
+                    label: `${FIN_LABELS.profitMarginPct} (vs ${FIN_LABELS.netSalesCustomer})`,
                     children: (
                       <Typography fontWeight={600}>
                         {marginPct != null ? `${marginPct.toFixed(1)}%` : '—'}
                       </Typography>
                     )
                   }
-                ].map(row => (
-                  <Grid key={row.label} size={{ xs: 6, sm: 3 }}>
-                    <Typography variant='caption' color='text.secondary'>
+                ].map((row, idx) => (
+                  <Grid key={idx} size={{ xs: 6, sm: 4 }}>
+                    <Typography variant='caption' color='text.secondary' component='div'>
                       {row.label}
                     </Typography>
                     {row.children}
@@ -431,7 +459,10 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
           <Grid container spacing={3}>
             <Grid size={{ xs: 12, md: 8 }}>
               <Card variant='outlined' className='h-full'>
-                <CardHeader title='Revenue vs cost vs profit' subheader='By month (trends)' />
+                <CardHeader
+                  title={`${FIN_LABELS.netSalesCustomer}, ${FIN_LABELS.totalCostsPeriod} & ${FIN_LABELS.netProfitPeriod}`}
+                  subheader='By month (transactions + allocated costs)'
+                />
                 <CardContent>
                   {trendsLoading ? (
                     <Skeleton variant='rounded' width='100%' height={lineChartHeight} animation='wave' />
@@ -495,7 +526,10 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
               <Grid container spacing={3}>
                 <Grid size={{ xs: 12 }}>
                   <Card variant='outlined'>
-                    <CardHeader title='Top products by revenue (delivery lines)' />
+                    <CardHeader
+                      title={`Top products by ${FIN_LABELS.netSalesCustomer} (delivery line pharmacy net)`}
+                      subheader='Sum of linePharmacyNet on delivered qty in range; returns not netted in this ranking.'
+                    />
                     <CardContent>
                       {revenueLoading ? (
                         <Skeleton variant='rounded' width='100%' height={topProductsBarHeight} animation='wave' />

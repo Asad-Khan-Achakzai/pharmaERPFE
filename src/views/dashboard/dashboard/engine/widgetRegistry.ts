@@ -19,9 +19,9 @@ const InventoryChartsLazy = lazy(() =>
   import('./widgets/InventoryChartsWidget').then(m => ({ default: m.InventoryChartsWidget }))
 )
 
-/** KPI hero = full-dashboard tier only (system DEFAULT_ADMIN / SUPER_ADMIN), not permission strings */
-const gateKpiFullDashboard = (_has: (p: string) => boolean, ctx: { isFullDashboardUser: boolean }) =>
-  ctx.isFullDashboardUser
+/** Company Statistics card — tenant admins with company dashboard data (`admin.access` + `dashboard.view`). */
+const gateAdminCompanyKpis = (has: (p: string) => boolean, _ctx: { isFullDashboardUser: boolean }) =>
+  has('admin.access') && has('dashboard.view')
 
 const gateFullDashboardOnly = (_has: (p: string) => boolean, ctx: { isFullDashboardUser: boolean }) =>
   ctx.isFullDashboardUser
@@ -64,14 +64,14 @@ export const WIDGET_REGISTRY: EngineWidgetDefinition[] = [
     id: WIDGET_ID.KPI_WIDGET,
     component: KPIWidget,
     permissions: [],
-    gate: gateKpiFullDashboard,
-    allowedModes: ['MONITORING', 'HYBRID'],
+    gate: gateAdminCompanyKpis,
+    allowedModes: ['EXECUTION', 'MONITORING', 'HYBRID'],
     priority: 950,
     modeAxis: 'monitoring',
     grid: { xs: 12, md: 8, lg: 9 },
     dataKeys: ['kpis', 'kpiLoading'],
     bandByMode: {
-      EXECUTION: null,
+      EXECUTION: { band: 'HERO_SPLIT', zone: 'main', order: 0 },
       MONITORING: { band: 'HERO_SPLIT', zone: 'main', order: 0 },
       HYBRID: { band: 'HERO_SPLIT', zone: 'main', order: 0 }
     }

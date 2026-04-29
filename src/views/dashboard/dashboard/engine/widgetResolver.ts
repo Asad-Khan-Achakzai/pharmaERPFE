@@ -11,12 +11,13 @@ import type {
 } from './widgetTypes'
 
 /**
- * Dashboard mode from experience tier (`isFullDashboardUser`) + operational weeklyPlans — not permission proxies for executive UI.
+ * Dashboard mode: company shell (`admin.access`) + weekly execution — aligned with GET /dashboard/home.
  */
-export function resolveDashboardMode(has: (p: string) => boolean, isFullDashboardUser: boolean): DashboardMode {
+export function resolveDashboardMode(has: (p: string) => boolean, _isFullDashboardUser: boolean): DashboardMode {
   const hasWeekly = has('weeklyPlans.view')
-  if (isFullDashboardUser && hasWeekly) return 'HYBRID'
-  if (isFullDashboardUser) return 'MONITORING'
+  const companyShell = has('admin.access')
+  if (companyShell && hasWeekly) return 'HYBRID'
+  if (companyShell) return 'MONITORING'
   return 'EXECUTION'
 }
 

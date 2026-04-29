@@ -28,6 +28,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { isAdminLike } from '@/utils/roleHelpers'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import { isAxiosError } from 'axios'
+import { currentMonthRange } from '@/utils/currentMonthRange'
 import DashboardSnapshotKpis from '@/views/dashboard/DashboardSnapshotKpis'
 import DashboardWelcomeColumn from '@/views/dashboard/DashboardWelcomeColumn'
 import MyAttendanceCard from '@/views/dashboard/MyAttendanceCard'
@@ -86,9 +87,7 @@ const LegacyDashboardView = () => {
     if (!user) return { team: false }
     /** “Employees working today” is executive dashboard only; My attendance stays for everyone */
     return {
-      team:
-        isFullDashboardUser(user) &&
-        hasPermission('attendance.view')
+      team: hasPermission('admin.access') && hasPermission('attendance.view')
     }
   }, [user, hasPermission])
 
@@ -118,6 +117,8 @@ const LegacyDashboardView = () => {
 
   const canViewSuppliers = useMemo(() => hasPermission('suppliers.view'), [hasPermission])
 
+  const showStatsKpis = useMemo(() => hasPermission('dashboard.view'), [hasPermission])
+
   const [homeBundle, setHomeBundle] = useState<DashboardHomePayload | null>(null)
   const [homeBundleFailed, setHomeBundleFailed] = useState(false)
   const bundleLoading = USE_HOME_BUNDLE && Boolean(user) && !homeBundle && !homeBundleFailed
@@ -145,7 +146,7 @@ const LegacyDashboardView = () => {
     setHomeBundleFailed(false)
     setDashboardDataLoading(true)
     dashboardService
-      .home()
+      .home({ params: currentMonthRange() })
       .then(r => {
         if (cancelled) return
         const raw = (r.data as { data: DashboardHomePayload }).data
@@ -375,7 +376,7 @@ const LegacyDashboardView = () => {
       if (!homeBundle) return () => ac.abort()
       return () => ac.abort()
     }
-    if (!layout.canSeeCompanyFinancials) {
+    if (!showStatsKpis) {
       setData(null)
       setLoadError(false)
       setDashboardDataLoading(false)
@@ -395,7 +396,10 @@ const LegacyDashboardView = () => {
       setLoadError(false)
       let ok = false
       try {
-        const { data: res } = await reportsService.dashboard({ signal: ac.signal })
+        const { data: res } = await reportsService.dashboard({
+          params: currentMonthRange(),
+          signal: ac.signal
+        })
         if (ac.signal.aborted) return
         const mapped = mapDashboardFinancial(res.data)
         dashboardKpiCache = mapped
@@ -422,7 +426,7 @@ const LegacyDashboardView = () => {
     }
     void fetchKpis()
     return () => ac.abort()
-  }, [user, layout, homeBundle, homeBundleFailed])
+  }, [user, layout, homeBundle, homeBundleFailed, showStatsKpis])
 
   useEffect(() => {
     if (USE_HOME_BUNDLE && !homeBundleFailed) {
@@ -713,7 +717,7 @@ const LegacyDashboardView = () => {
   const businessHealthSummary = useMemo(() => {
     if (!layout) return 'Loading…'
     if (!layout.canSeeCompanyFinancials) {
-      return 'You’re on your execution dashboard: open visits, orders, and attendance from the shortcuts below.'
+      return 'Open visits, orders, and attendance from the shortcuts below. Net sales (TP) for this month is above.'
     }
     if (!data) return 'Loading current business health indicators.'
     const net = Number(data.netProfit || 0)
@@ -721,15 +725,25 @@ const LegacyDashboardView = () => {
     if (net >= 0 && outstanding <= Number(data.totalSales || 0) * 0.3) {
       return 'Profit is positive and outstanding exposure is within a stable range.'
     }
-    if (net < 0) return 'Revenue is active, but profitability is negative and needs attention.'
-    return 'Revenue is steady while cashflow pressure remains on outstanding balances.'
+    if (net < 0)
+      return 'Net sales are active, but net profit is negative and needs attention.'
+    return 'Net sales are steady while cashflow pressure remains on outstanding balances.'
   }, [data, layout, bundleLoading, dashboardDataLoading])
 
   const welcomeHighlight = useMemo(() => {
-    if (!layout?.canSeeCompanyFinancials) return undefined
-    if (data && !loadError) return formatPKR(Number(data.totalSales) || 0)
-    return undefined
-  }, [layout, data, loadError])
+    if (!showStatsKpis || !data || loadError) return undefined
+    const tp = Number(data.totalGrossSalesTp ?? 0)
+    return (
+      <>
+        <Typography variant='caption' color='text.secondary' display='block'>
+          Net sales (TP) · this month
+        </Typography>
+        <Typography variant='h4' color='primary.main' className='mbe-1'>
+          {formatPKR(tp)}
+        </Typography>
+      </>
+    )
+  }, [showStatsKpis, data, loadError])
 
   const quickActions = useMemo<QuickAction[]>(() => {
     if (!user || !layout) return []
@@ -773,8 +787,8 @@ const LegacyDashboardView = () => {
             greeting={greeting}
             name={user?.name || 'Team'}
             summary={
-              layout?.canSeeCompanyFinancials && (dashboardDataLoading || bundleLoading) && !data
-                ? 'Loading current business health…'
+              showStatsKpis && (dashboardDataLoading || bundleLoading) && !data
+                ? 'Loading this month’s sales…'
                 : businessHealthSummary
             }
             highlight={welcomeHighlight}
@@ -793,40 +807,42 @@ const LegacyDashboardView = () => {
         </Stack>
       </Grid>
       <Grid size={{ xs: 12, md: 8 }} sx={{ order: { xs: quickFirst ? 3 : 0, md: 0 } }}>
-        {layout?.canSeeCompanyFinancials ? (
-          <DashboardSnapshotKpis
-            dashboardDataLoading={Boolean(
-              (layout?.canSeeCompanyFinancials && (dashboardDataLoading || bundleLoading)) || false
-            )}
-            loadError={loadError}
-            data={data}
-            mobileCompact={USE_HOME_BUNDLE && isMobile}
-          />
-        ) : layout?.showExecutionPanel && user?._id ? (
-          bundleLoading ? (
+        <Stack spacing={2.5}>
+          {layout?.canSeeCompanyFinancials && showStatsKpis ? (
+            <DashboardSnapshotKpis
+              dashboardDataLoading={Boolean((dashboardDataLoading || bundleLoading) && !data)}
+              loadError={loadError}
+              data={data}
+              mobileCompact={USE_HOME_BUNDLE && isMobile}
+            />
+          ) : null}
+          {!layout?.canSeeCompanyFinancials && layout?.showExecutionPanel && user?._id ? (
+            bundleLoading ? (
+              <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
+                <CardContent>
+                  <Skeleton width='50%' height={32} />
+                  <Skeleton width='100%' height={120} sx={{ mt: 2 }} />
+                </CardContent>
+              </Card>
+            ) : (
+              <RepExecutionSection
+                repUserId={String(user._id)}
+                canViewTargets={hasPermission('targets.view')}
+                prefetch={repPrefetch}
+              />
+            )
+          ) : null}
+          {!showStatsKpis && !(layout?.showExecutionPanel && user?._id) ? (
             <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
-              <CardContent>
-                <Skeleton width='50%' height={32} />
-                <Skeleton width='100%' height={120} sx={{ mt: 2 }} />
+              <CardContent sx={{ py: 4 }}>
+                <Typography variant='body1' color='text.secondary'>
+                  Ask an administrator to grant <strong>dashboard (view)</strong> for your sales summary in the welcome
+                  card, or <strong>weekly plans (view)</strong> for today’s visits.
+                </Typography>
               </CardContent>
             </Card>
-          ) : (
-            <RepExecutionSection
-              repUserId={String(user._id)}
-              canViewTargets={hasPermission('targets.view')}
-              prefetch={repPrefetch}
-            />
-          )
-        ) : (
-          <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
-            <CardContent sx={{ py: 4 }}>
-              <Typography variant='body1' color='text.secondary'>
-                Your role has dashboard access. Ask an administrator to grant <strong>weekly plans (view)</strong> to see
-                today’s visit list here, or <strong>reports (view)</strong> for business-wide KPIs.
-              </Typography>
-            </CardContent>
-          </Card>
-        )}
+          ) : null}
+        </Stack>
       </Grid>
       {layout?.canSeeCompanyFinancials && layout?.showExecutionPanel && user?._id ? (
         <Grid size={{ xs: 12 }} sx={{ order: { xs: quickFirst ? 4 : 0, md: 0 } }}>

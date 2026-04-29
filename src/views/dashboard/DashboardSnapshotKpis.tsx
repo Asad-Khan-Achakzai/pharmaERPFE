@@ -7,73 +7,210 @@ import CardContent from '@mui/material/CardContent'
 import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
 import Skeleton from '@mui/material/Skeleton'
-import Divider from '@mui/material/Divider'
+import Paper from '@mui/material/Paper'
+import Stack from '@mui/material/Stack'
+import Box from '@mui/material/Box'
 import classnames from 'classnames'
 import CustomAvatar from '@core/components/mui/Avatar'
 import type { ThemeColor } from '@core/types'
-import DashboardMiniLineKpi from './DashboardMiniLineKpi'
+import { alpha, useTheme } from '@mui/material/styles'
+import { FIN_TOOLTIPS } from '@/constants/financialLabels'
+import { FinInfoTip } from '@/components/financial/FinInfoTip'
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-type StatItem = { title: string; stats: string; icon: string; color: ThemeColor }
+type StatItem = {
+  label: string
+  stats: string
+  icon: string
+  color: ThemeColor
+  tooltip?: string
+}
+
+function StatRow({ item }: { item: StatItem }) {
+  return (
+    <Stack direction='row' alignItems='center' spacing={1.75} sx={{ py: 1.25 }}>
+      <CustomAvatar color={item.color} variant='rounded' size={40} skin='light'>
+        <i className={classnames(item.icon, 'text-xl')} />
+      </CustomAvatar>
+      <div className='min-is-0 flex-1'>
+        <Typography
+          variant='h6'
+          sx={{
+            fontWeight: 700,
+            fontSize: { xs: '1rem', sm: '1.125rem' },
+            lineHeight: 1.25,
+            letterSpacing: '-0.02em'
+          }}
+          color='text.primary'
+        >
+          {item.stats}
+        </Typography>
+        <Typography
+          variant='body2'
+          color='text.secondary'
+          sx={{ fontSize: '0.8125rem', lineHeight: 1.35, mt: 0.25 }}
+          className='inline-flex items-center gap-1 flex-wrap'
+        >
+          {item.label}
+          {item.tooltip ? <FinInfoTip title={item.tooltip} /> : null}
+        </Typography>
+      </div>
+    </Stack>
+  )
+}
+
+type PanelProps = {
+  title: string
+  titleColor: 'primary' | 'success' | 'text.secondary'
+  items: StatItem[]
+}
+
+function MetricPanel({ title, titleColor, items }: PanelProps) {
+  const theme = useTheme()
+  const accent =
+    titleColor === 'primary'
+      ? theme.palette.primary.main
+      : titleColor === 'success'
+        ? theme.palette.success.main
+        : theme.palette.text.secondary
+
+  return (
+    <Paper
+      variant='outlined'
+      sx={{
+        height: '100%',
+        borderRadius: 2,
+        overflow: 'hidden',
+        borderColor: 'divider',
+        bgcolor: alpha(accent, 0.03),
+        boxShadow: 'none',
+        borderLeft: 3,
+        borderLeftColor: accent
+      }}
+    >
+      <Box sx={{ px: 2, pt: 1.75, pb: 0.5 }}>
+        <Typography
+          variant='overline'
+          sx={{
+            color: accent,
+            fontWeight: 800,
+            letterSpacing: '0.06em',
+            fontSize: '0.7rem',
+            lineHeight: 1.2
+          }}
+        >
+          {title}
+        </Typography>
+      </Box>
+      <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider', mx: 2 }} />} sx={{ px: 2, pb: 1.5 }}>
+        {items.map((item, index) => (
+          <StatRow key={index} item={item} />
+        ))}
+      </Stack>
+    </Paper>
+  )
+}
 
 /**
- * Ecommerce `StatisticsCard` (4 avatars) + 3× `LineChartProfit`-style minis, driven by the same `dashboard` payload.
+ * Company-wide dashboard KPIs (`admin.access` only). Data from GET /reports/dashboard (same month as greeting when range is passed).
  */
 const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
   dashboardDataLoading,
   loadError,
   data,
-  /** Mobile: show at most 2 hero stat cards and fold mini line charts to save vertical space. */
-  mobileCompact
+  mobileCompact: _mobileCompact
 }: {
   dashboardDataLoading: boolean
   loadError: boolean
   data: any
   mobileCompact?: boolean
 }) {
-  const statItems: StatItem[] = useMemo(() => {
+  const period = data?.period as { from: string; to: string } | undefined
+  const hasPeriod = Boolean(period?.from && period?.to)
+
+  const salesStats: StatItem[] = useMemo(() => {
     if (!data) return []
     return [
-      { title: 'Total sales', stats: formatPKR(data.totalSales), icon: 'tabler-chart-line', color: 'primary' },
-      { title: 'Net profit', stats: formatPKR(data.netProfit), icon: 'tabler-coin', color: (data.netProfit || 0) >= 0 ? 'success' : 'error' },
-      { title: 'Collected', stats: formatPKR(data.totalPaid), icon: 'tabler-cash', color: 'info' },
-      { title: 'Outstanding', stats: formatPKR(data.totalOutstanding), icon: 'tabler-alert-circle', color: 'warning' }
+      {
+        label: 'Gross sales (TP)',
+        stats: formatPKR(data.totalGrossSalesTp ?? 0),
+        icon: 'tabler-currency-dollar',
+        color: 'primary',
+        tooltip: FIN_TOOLTIPS.dashboardTotals
+      },
+      {
+        label: 'Net sales · Company',
+        stats: formatPKR(data.totalNetSalesCompany ?? 0),
+        icon: 'tabler-building-store',
+        color: 'primary',
+        tooltip: FIN_TOOLTIPS.customerVsCompany
+      },
+      {
+        label: 'Net sales · Customer',
+        stats: formatPKR(data.totalSales ?? 0),
+        icon: 'tabler-receipt',
+        color: 'info',
+        tooltip: FIN_TOOLTIPS.customerVsCompany
+      }
     ]
   }, [data])
 
-  const marginHint = useMemo(() => {
-    if (!data) return '—'
-    const ts = Number(data.totalSales || 0)
-    const net = Number(data.netProfit || 0)
-    if (ts > 0) return `Net margin ${((net / ts) * 100).toFixed(1)}%`
-    return 'Margin N/A'
+  const profitStats: StatItem[] = useMemo(() => {
+    if (!data) return []
+    const sm = Number(data.grossProfit ?? 0)
+    const np = Number(data.netProfit ?? 0)
+    return [
+      {
+        label: hasPeriod ? 'Sales margin (period)' : 'Sales margin (customer basis)',
+        stats: formatPKR(sm),
+        icon: 'tabler-chart-arcs',
+        color: sm >= 0 ? 'success' : 'error',
+        tooltip: FIN_TOOLTIPS.salesMarginCustomerBasis
+      },
+      {
+        label: hasPeriod ? 'Net profit (period)' : 'Net profit (lifetime)',
+        stats: formatPKR(np),
+        icon: 'tabler-coin',
+        color: np >= 0 ? 'success' : 'error',
+        tooltip: FIN_TOOLTIPS.netProfitLifetime
+      }
+    ]
+  }, [data, hasPeriod])
+
+  const cashStats: StatItem[] = useMemo(() => {
+    if (!data) return []
+    return [
+      {
+        label: 'Collected',
+        stats: formatPKR(data.totalPaid ?? 0),
+        icon: 'tabler-cash',
+        color: 'info'
+      },
+      {
+        label: 'Outstanding (pharmacies)',
+        stats: formatPKR(data.totalOutstanding ?? 0),
+        icon: 'tabler-alert-circle',
+        color: 'warning'
+      }
+    ]
   }, [data])
 
-  const payablesHint = useMemo(() => {
-    if (!data) return '—'
-    const paid = Number(data.totalPaid || 0)
-    const out = Number(data.totalOutstanding || 0)
-    const t = paid + out
-    if (t > 0) return `Payables ${((out / t) * 100).toFixed(0)}% of AR+OS`
-    return 'Payables'
-  }, [data])
+  const subheader = useMemo(() => {
+    if (hasPeriod) return `Company · ${period!.from} → ${period!.to}`
+    return 'Company-wide lifetime totals'
+  }, [hasPeriod, period])
 
   if (dashboardDataLoading) {
     return (
       <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
         <CardHeader title='Statistics' subheader='Loading…' />
-        <CardContent sx={{ p: 3, pt: 0 }}>
-          <Grid container spacing={3}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Grid key={i} size={{ xs: 6, sm: 3 }}>
-                <Skeleton variant='rounded' width='100%' height={64} />
-              </Grid>
-            ))}
+        <CardContent sx={{ p: 2.5, pt: 0 }}>
+          <Grid container spacing={2}>
             {Array.from({ length: 3 }).map((_, i) => (
-              <Grid key={`line-${i}`} size={{ xs: 12, sm: 4 }}>
-                <Skeleton variant='rounded' width='100%' height={200} />
+              <Grid key={i} size={{ xs: 12, md: 4 }}>
+                <Skeleton variant='rounded' width='100%' height={180} />
               </Grid>
             ))}
           </Grid>
@@ -82,102 +219,59 @@ const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
     )
   }
 
-  if (loadError || !data) {
+  if (loadError || !data || data.dashboardScope === 'self') {
     return (
       <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
         <CardContent>
           <Typography color='error' variant='body2'>
-            Summary metrics could not be loaded.
+            {data?.dashboardScope === 'self'
+              ? 'Company statistics are not available in this view.'
+              : 'Summary metrics could not be loaded.'}
           </Typography>
         </CardContent>
-      </Card>
+    </Card>
     )
   }
-
-  const visibleStats = mobileCompact ? statItems.slice(0, 2) : statItems
 
   return (
     <Card sx={{ boxShadow: 'var(--shadow-xs)' }} className='h-full flex flex-col'>
       <CardHeader
-        title='Statistics'
-        subheader='Dashboard snapshot'
-        action={
-          <Typography variant='subtitle2' color='text.disabled'>
-            Live data
+        title={
+          <Box className='flex items-center gap-1'>
+            Statistics
+            <FinInfoTip title={FIN_TOOLTIPS.dashboardTotals} />
+          </Box>
+        }
+        subheader={
+          <Typography variant='body2' color='text.secondary' sx={{ mt: 0.25 }}>
+            {subheader}
           </Typography>
         }
-        sx={{ px: { xs: 2.5, sm: 3.5 }, pt: { xs: 2.5, sm: 3 }, pb: 0.5 }}
+        action={
+          <Typography variant='caption' color='text.disabled' sx={{ whiteSpace: 'nowrap' }}>
+            Live
+          </Typography>
+        }
+        sx={{ px: { xs: 2, sm: 2.5 }, pt: { xs: 2, sm: 2.25 }, pb: 0, '& .MuiCardHeader-subheader': { mt: 0 } }}
       />
       <CardContent
-        className='flex flex-1 min-is-0 flex-col'
         sx={{
-          p: { xs: 2.5, sm: 3.5 },
-          pt: 1.5,
-          gap: 3.5,
-          '&:last-of-type': { pb: { xs: 3, sm: 3.5 } }
+          p: { xs: 2, sm: 2.5 },
+          pt: 1,
+          '&:last-of-type': { pb: { xs: 2, sm: 2.5 } }
         }}
       >
-        <div className='min-is-0 w-full'>
-          <Grid container rowSpacing={3.5} columnSpacing={2.5} sx={{ width: '100%' }}>
-            {visibleStats.map((item, index) => (
-              <Grid key={index} size={{ xs: 6, sm: 3 }} className='flex items-center gap-3.5 sm:gap-4'>
-                <CustomAvatar color={item.color} variant='rounded' size={44} skin='light'>
-                  <i className={classnames(item.icon, 'text-[1.5rem]')} />
-                </CustomAvatar>
-                <div className='flex min-is-0 flex-col gap-1.5'>
-                  <Typography
-                    variant='h5'
-                    className='text-base sm:text-xl leading-tight'
-                    color='text.primary'
-                    sx={{ fontWeight: 600, letterSpacing: '-0.01em' }}
-                  >
-                    {item.stats}
-                  </Typography>
-                  <Typography variant='body2' color='text.secondary' className='text-xs sm:text-sm' sx={{ lineHeight: 1.4 }}>
-                    {item.title}
-                  </Typography>
-                </div>
-              </Grid>
-            ))}
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <MetricPanel title='Sales' titleColor='primary' items={salesStats} />
           </Grid>
-        </div>
-
-        {mobileCompact ? null : <Divider flexItem className='max-is-full' />}
-
-        {mobileCompact ? null : (
-          <Grid container spacing={3} sx={{ width: '100%' }} rowSpacing={2.5}>
-            <Grid size={{ xs: 12, sm: 4 }}>
-              <DashboardMiniLineKpi
-                title='Revenue'
-                subheader='Snapshot'
-                valueLabel={formatPKR(data.totalSales)}
-                value={Number(data.totalSales) || 0}
-                deltaLabel={data.totalExpenses != null ? `Expenses ${formatPKR(data.totalExpenses)}` : '—'}
-                colorKey='primary'
-              />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 4 }}>
-              <DashboardMiniLineKpi
-                title='Net profit'
-                subheader='Snapshot'
-                valueLabel={formatPKR(data.netProfit)}
-                value={Number(data.netProfit) || 0}
-                deltaLabel={marginHint}
-                colorKey={(data.netProfit || 0) >= 0 ? 'success' : 'error'}
-              />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 4 }}>
-              <DashboardMiniLineKpi
-                title='Cash collected'
-                subheader='Snapshot'
-                valueLabel={formatPKR(data.totalPaid)}
-                value={Number(data.totalPaid) || 0}
-                deltaLabel={payablesHint}
-                colorKey='info'
-              />
-            </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <MetricPanel title='Profit' titleColor='success' items={profitStats} />
           </Grid>
-        )}
+          <Grid size={{ xs: 12, md: 4 }}>
+            <MetricPanel title='Receivables' titleColor='text.secondary' items={cashStats} />
+          </Grid>
+        </Grid>
       </CardContent>
     </Card>
   )

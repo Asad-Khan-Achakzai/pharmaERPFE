@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Grid from '@mui/material/Grid'
@@ -9,8 +10,8 @@ type DashboardWelcomeColumnProps = {
   greeting: string
   name: string
   summary: string
-  /** Optional one-line metric — same as ecommerce “$48.9k” hero number */
-  highlight?: string
+  /** Optional hero metric — string or richer layout (e.g. dual net sales). */
+  highlight?: ReactNode
 }
 
 /**
@@ -29,9 +30,13 @@ const DashboardWelcomeColumn = ({ greeting, name, summary, highlight }: Dashboar
               {summary}
             </Typography>
             {highlight ? (
-              <Typography variant='h4' color='primary.main' className='mbe-0'>
-                {highlight}
-              </Typography>
+              <div className='flex flex-col gap-0.5'>{typeof highlight === 'string' ? (
+                <Typography variant='h4' color='primary.main' className='mbe-0'>
+                  {highlight}
+                </Typography>
+              ) : (
+                highlight
+              )}</div>
             ) : null}
           </CardContent>
         </Grid>

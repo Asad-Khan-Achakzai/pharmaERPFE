@@ -20,7 +20,6 @@ import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
-import Tooltip from '@mui/material/Tooltip'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
@@ -28,25 +27,9 @@ import CustomTextField from '@core/components/mui/TextField'
 import { ordersService } from '@/services/orders.service'
 import { inventoryService } from '@/services/inventory.service'
 import { lineTotalQuantity } from '@/utils/bonus'
-
-const HELP_NET_SALES =
-  'Revenue after pharmacy discount and distributor commission. This is NOT profit.'
-const HELP_ESTIMATED_CASTING =
-  'Catalog cost used at order time. May differ from actual inventory cost.'
-const HELP_ESTIMATED_PROFIT =
-  'Calculated using current inventory average cost. Actual profit is confirmed at delivery.'
-const HELP_AVG_COST_LINE =
-  'Weighted average from current distributor stock (live). Differs from casting at order time; official cost is recorded on each delivery.'
-
-function InfoTip({ title }: { title: string }) {
-  return (
-    <Tooltip title={title} arrow leaveTouchDelay={4000}>
-      <span className='inline-flex align-middle cursor-help opacity-70' aria-label='More info'>
-        <i className='tabler-info-circle size-3.5' />
-      </span>
-    </Tooltip>
-  )
-}
+import { FinancialLayerSection } from '@/components/financial/FinancialLayerSection'
+import { FinInfoTip } from '@/components/financial/FinInfoTip'
+import { FIN_LABELS, FIN_TOOLTIPS } from '@/constants/financialLabels'
 
 const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'default'> = {
   PENDING: 'warning', PARTIALLY_DELIVERED: 'info', DELIVERED: 'success', PARTIALLY_RETURNED: 'warning', RETURNED: 'error', CANCELLED: 'default'
@@ -70,6 +53,8 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   const hasDeliverPerm = hasPermission('orders.deliver')
   const hasReturnPerm = hasPermission('orders.return')
   const hasEditPerm = hasPermission('orders.edit')
+  /** Order-level gross profit / margin — same gate as company financials elsewhere */
+  const canSeeOrderProfitLayer = hasPermission('admin.access')
 
   const fetchOrder = async () => {
     try {
@@ -126,7 +111,8 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   const profitEstimate = useMemo(() => {
     if (!order?.items?.length) {
       return {
-        netSales: 0,
+        netSalesCompany: 0,
+        netSalesCustomer: 0,
         missing: true,
         profit: null as number | null,
         marginPct: null as number | null,
@@ -137,14 +123,16 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
         loading: false
       }
     }
-    const netSales = Number(order.finalCompanyRevenue) || 0
+    const netSalesCompany = Number(order.finalCompanyRevenue) || 0
+    const netSalesCustomer = Number(order.amountAfterPharmacyDiscount) || 0
     const sumDelivered = order.items.reduce((s: number, i: any) => s + (Number(i.deliveredQty) || 0), 0)
     const useDeliveredBasis = sumDelivered > 0
     const basisLabel = useDeliveredBasis ? 'delivered quantity' : 'paid quantity'
 
     if (!invAvgLoaded) {
       return {
-        netSales,
+        netSalesCompany,
+        netSalesCustomer,
         missing: true,
         profit: null,
         marginPct: null,
@@ -179,14 +167,15 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
     if (eligibleUnits <= 0) missing = true
 
     const roundedCogs = Math.round(totalAvgCogs * 100) / 100
-    const profit = missing ? null : Math.round((netSales - roundedCogs) * 100) / 100
+    const profit = missing ? null : Math.round((netSalesCompany - roundedCogs) * 100) / 100
     const marginPct =
-      profit != null && netSales > 0 ? Math.round((profit / netSales) * 10000) / 100 : null
+      profit != null && netSalesCompany > 0 ? Math.round((profit / netSalesCompany) * 10000) / 100 : null
     const weightedAvgCost =
       eligibleUnits > 0 ? Math.round((roundedCogs / eligibleUnits) * 10000) / 10000 : null
 
     return {
-      netSales,
+      netSalesCompany,
+      netSalesCustomer,
       missing,
       profit,
       marginPct,
@@ -274,14 +263,6 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
     order.totalAmount != null
   const grossTotal = order.totalAmount ?? order.totalOrderedAmount
 
-  const snapSectionSx = {
-    p: 2,
-    mb: 2,
-    border: 1,
-    borderColor: 'divider',
-    borderRadius: 1
-  } as const
-
   const statRow = (label: ReactNode, value: ReactNode) => (
     <Stack direction='row' justifyContent='space-between' alignItems='flex-start' gap={1} sx={{ py: 0.5 }}>
       <Typography variant='body2' color='text.secondary' component='div' sx={{ flex: 1 }}>
@@ -336,37 +317,46 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                   Order financial snapshot (at order time)
                 </Typography>
                 <Stack spacing={2}>
-                  <Paper variant='outlined' sx={snapSectionSx}>
-                    <Typography variant='overline' color='primary' sx={{ letterSpacing: 0.6 }}>
-                      A. Sales summary
-                    </Typography>
-                    {statRow('Gross TP', pk(grossTotal))}
-                    {statRow('Pharmacy discount', pk(order.pharmacyDiscountAmount))}
-                    {statRow('Amount after pharmacy discount (before commission)', pk(order.amountAfterPharmacyDiscount))}
-                    {statRow('Distributor commission (on gross TP)', pk(order.distributorCommissionAmount))}
+                  <FinancialLayerSection layer='sales'>
                     {statRow(
-                      <span className='inline-flex items-center gap-0.5 flex-wrap'>
-                        Net Sales (After Pharmacy Discount & Distributor Commission)
-                        <InfoTip title={HELP_NET_SALES} />
-                      </span>,
+                      <>
+                        {FIN_LABELS.grossSalesTp} <FinInfoTip title={FIN_TOOLTIPS.customerVsCompany} />
+                      </>,
+                      pk(grossTotal)
+                    )}
+                    {statRow(FIN_LABELS.pharmacyDiscount, pk(order.pharmacyDiscountAmount))}
+                    {statRow(
+                      <>
+                        {FIN_LABELS.netSalesCustomer} <FinInfoTip title={FIN_TOOLTIPS.customerVsCompany} />
+                      </>,
+                      pk(order.amountAfterPharmacyDiscount)
+                    )}
+                    {statRow(FIN_LABELS.distributorCommission, pk(order.distributorCommissionAmount))}
+                    {statRow(
+                      <>
+                        {FIN_LABELS.netSalesCompany} <FinInfoTip title={FIN_TOOLTIPS.customerVsCompany} />
+                      </>,
                       <Typography component='span' fontWeight={600} color='primary.main'>
                         {pk(order.finalCompanyRevenue)}
                       </Typography>
                     )}
-                    {order.totalBonusQuantity != null && order.totalBonusQuantity > 0 &&
-                      statRow('Total bonus units (order)', order.totalBonusQuantity)}
-                  </Paper>
+                    {order.totalBonusQuantity != null &&
+                      order.totalBonusQuantity > 0 &&
+                      statRow(
+                        <>
+                          Bonus units (order) <FinInfoTip title={FIN_TOOLTIPS.bonusCostVsRevenue} />
+                        </>,
+                        order.totalBonusQuantity
+                      )}
+                  </FinancialLayerSection>
 
-                  <Paper variant='outlined' sx={snapSectionSx}>
-                    <Typography variant='overline' color='primary' sx={{ letterSpacing: 0.6 }}>
-                      B. Cost summary
-                    </Typography>
+                  <FinancialLayerSection layer='cost'>
                     {order.totalCastingCost != null ? (
                       statRow(
-                        <span className='inline-flex items-center gap-0.5 flex-wrap'>
-                          Estimated Product Cost (Catalog / Casting at Order Time)
-                          <InfoTip title={HELP_ESTIMATED_CASTING} />
-                        </span>,
+                        <>
+                          {FIN_LABELS.estimatedCostStandard}{' '}
+                          <FinInfoTip title={FIN_TOOLTIPS.standardVsAvg} />
+                        </>,
                         pk(order.totalCastingCost)
                       )
                     ) : (
@@ -375,10 +365,10 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                       </Typography>
                     )}
                     {statRow(
-                      <span className='inline-flex items-center gap-0.5 flex-wrap'>
-                        Avg cost basis ({profitEstimate.basisLabel || '—'})
-                        <InfoTip title={HELP_AVG_COST_LINE} />
-                      </span>,
+                      <>
+                        {FIN_LABELS.inventoryCostAvg} ({profitEstimate.basisLabel || '—'})
+                        <FinInfoTip title={FIN_TOOLTIPS.standardVsAvg} />
+                      </>,
                       profitEstimate.loading
                         ? '…'
                         : profitEstimate.missing || profitEstimate.weightedAvgCost == null
@@ -389,56 +379,66 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                       !profitEstimate.missing &&
                       profitEstimate.eligibleUnits > 0 && (
                         <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.5 }}>
-                          Extended COGS (avg × {profitEstimate.basisLabel}): {pk(profitEstimate.totalAvgCogs)}
+                          {FIN_LABELS.inventoryCostAvgCogs}: {pk(profitEstimate.totalAvgCogs)}
                         </Typography>
                       )}
-                  </Paper>
+                  </FinancialLayerSection>
 
-                  <Paper variant='outlined' sx={{ ...snapSectionSx, mb: 0 }}>
-                    <Typography variant='overline' color='primary' sx={{ letterSpacing: 0.6 }}>
-                      C. Profitability (estimated)
-                    </Typography>
-                    <Typography variant='subtitle2' className='mbe-1' sx={{ fontWeight: 600 }}>
-                      Estimated Profit (Real Cost Based)
-                    </Typography>
-                    <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
-                      Net Sales − (avg cost × {profitEstimate.basisLabel || 'quantity'}).
-                    </Typography>
-                    {profitEstimate.loading ? (
-                      <Typography variant='body2' color='text.secondary'>
-                        Loading inventory averages…
+                  {canSeeOrderProfitLayer ? (
+                    <FinancialLayerSection layer='profit'>
+                      <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+                        {FIN_LABELS.estimatedGrossProfitCompany}. {FIN_TOOLTIPS.estimatedGrossProfitCompany}
                       </Typography>
-                    ) : profitEstimate.missing ? (
-                      <Typography variant='body2' color='text.secondary'>
-                        Estimated Profit: Not available
-                      </Typography>
-                    ) : (
-                      <>
-                        {statRow(
-                          <span className='inline-flex items-center gap-0.5 flex-wrap'>
-                            Estimated profit
-                            <InfoTip title={HELP_ESTIMATED_PROFIT} />
-                          </span>,
-                          <Typography
-                            component='span'
-                            fontWeight={700}
-                            color={profitEstimate.profit != null && profitEstimate.profit < 0 ? 'error.main' : 'text.primary'}
-                          >
-                            {profitEstimate.profit != null ? pk(profitEstimate.profit) : '—'}
-                          </Typography>
-                        )}
-                        {statRow(
-                          'Estimated profit margin %',
-                          profitEstimate.marginPct != null ? `${profitEstimate.marginPct}%` : '—'
-                        )}
-                      </>
-                    )}
-                  </Paper>
+                      {profitEstimate.loading ? (
+                        <Typography variant='body2' color='text.secondary'>
+                          Loading inventory averages…
+                        </Typography>
+                      ) : profitEstimate.missing ? (
+                        <Typography variant='body2' color='text.secondary'>
+                          {FIN_LABELS.estimatedGrossProfitCompany}: Not available
+                        </Typography>
+                      ) : (
+                        <>
+                          {statRow(
+                            <>
+                              {FIN_LABELS.netSalesCompany}{' '}
+                              <FinInfoTip title={FIN_TOOLTIPS.estimatedGrossProfitCompany} />
+                            </>,
+                            pk(profitEstimate.netSalesCompany)
+                          )}
+                          {statRow(
+                            <>
+                              {FIN_LABELS.netSalesCustomer}{' '}
+                              <FinInfoTip title={FIN_TOOLTIPS.customerVsCompany} />
+                            </>,
+                            pk(profitEstimate.netSalesCustomer)
+                          )}
+                          {statRow(
+                            <>
+                              {FIN_LABELS.estimatedGrossProfitCompany}
+                              <FinInfoTip title={FIN_TOOLTIPS.estimatedGrossProfitCompany} />
+                            </>,
+                            <Typography
+                              component='span'
+                              fontWeight={700}
+                              color={profitEstimate.profit != null && profitEstimate.profit < 0 ? 'error.main' : 'text.primary'}
+                            >
+                              {profitEstimate.profit != null ? pk(profitEstimate.profit) : '—'}
+                            </Typography>
+                          )}
+                          {statRow(
+                            `Margin % (${FIN_LABELS.netSalesCompany} basis)`,
+                            profitEstimate.marginPct != null ? `${profitEstimate.marginPct}%` : '—'
+                          )}
+                        </>
+                      )}
+                    </FinancialLayerSection>
+                  ) : null}
                 </Stack>
               </Box>
             ) : (
               <Typography className='mbe-4'>
-                Total (gross TP): ₨ {order.totalOrderedAmount?.toFixed(2)}
+                {FIN_LABELS.grossSalesTp}: {pk(grossTotal)}
               </Typography>
             )}
             <Divider className='mbe-4' />
@@ -465,16 +465,23 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                       <Typography variant='body2'>
                         Delivered / returned: {item.deliveredQty} / {item.returnedQty}
                       </Typography>
-                      <Typography variant='body2'>TP: ₨ {item.tpAtTime?.toFixed(2)} · Casting: ₨ {item.castingAtTime?.toFixed(2)}</Typography>
+                      <Typography variant='body2'>
+                        TP: ₨ {item.tpAtTime?.toFixed(2)} · {FIN_LABELS.standardCostCatalog}: ₨{' '}
+                        {item.castingAtTime?.toFixed(2)}
+                      </Typography>
                       {hasOrderFinancialSnap && (
                         <>
                           <Divider sx={{ my: 1 }} />
-                          <Typography variant='body2'>Gross Sales Value: {pk(item.grossAmount)}</Typography>
-                          <Typography variant='body2'>Pharm. disc.: {pk(item.pharmacyDiscountAmount)}</Typography>
-                          <Typography variant='body2'>Net: {pk(item.netAfterPharmacy)}</Typography>
-                          <Typography variant='body2'>Dist. comm.: {pk(item.distributorCommissionAmount)}</Typography>
+                          <Typography variant='body2'>
+                            {FIN_LABELS.grossSalesTp}: {pk(item.grossAmount)}
+                          </Typography>
+                          <Typography variant='body2'>{FIN_LABELS.pharmacyDiscount}: {pk(item.pharmacyDiscountAmount)}</Typography>
+                          <Typography variant='body2'>
+                            {FIN_LABELS.netSalesCustomer}: {pk(item.netAfterPharmacy)}
+                          </Typography>
+                          <Typography variant='body2'>{FIN_LABELS.distributorCommission}: {pk(item.distributorCommissionAmount)}</Typography>
                           <Typography variant='body2' fontWeight={600}>
-                            Company: {pk(item.finalCompanyAmount)}
+                            {FIN_LABELS.netSalesCompany}: {pk(item.finalCompanyAmount)}
                           </Typography>
                         </>
                       )}
@@ -509,14 +516,14 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Delivered</th>
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Returned</th>
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>TP</th>
-                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Casting</th>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Std. cost (catalog)</th>
                   {hasOrderFinancialSnap && (
                     <>
-                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Gross Sales Value</th>
-                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Pharm. disc.</th>
-                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Net</th>
+                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>{FIN_LABELS.grossSalesTp}</th>
+                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>{FIN_LABELS.pharmacyDiscount}</th>
+                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>{FIN_LABELS.netSalesCustomer}</th>
                       <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Dist. comm.</th>
-                      <th style={{ padding: 8, whiteSpace: 'nowrap', minWidth: 112 }}>Company</th>
+                      <th style={{ padding: 8, whiteSpace: 'nowrap', minWidth: 120 }}>{FIN_LABELS.netSalesCompany}</th>
                     </>
                   )}
                 </tr>
@@ -559,7 +566,13 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
               {order.deliveries.map((d: any) => (
                 <div key={d._id} className='mbe-3 pbe-3' style={{ borderBottom: '1px solid #eee' }}>
                   <Typography fontWeight={500}>{d.invoiceNumber}</Typography>
-                  <Typography variant='body2'>Amount: ₨ {d.totalAmount?.toFixed(2)} | Profit: ₨ {d.totalProfit?.toFixed(2)}</Typography>
+                  <Typography variant='body2'>
+                    {FIN_LABELS.netSalesCustomer}: {pk(d.pharmacyNetPayable ?? d.totalAmount)} · {FIN_LABELS.netSalesCompany}:{' '}
+                    {pk(d.companyShareTotal)}
+                    {canSeeOrderProfitLayer
+                      ? ` · ${FIN_LABELS.salesMarginCustomerBasis}: ${pk(d.totalProfit)}`
+                      : null}
+                  </Typography>
                   <Typography variant='body2' color='text.secondary'>{new Date(d.deliveredAt).toLocaleString()} by {d.deliveredBy?.name}</Typography>
                   {d.pdfUrl && <Button size='small' href={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '')}${d.pdfUrl}`} target='_blank'>Download PDF</Button>}
                 </div>
@@ -573,7 +586,9 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
             <CardContent>
               {order.returns.map((r: any) => (
                 <div key={r._id} className='mbe-3 pbe-3' style={{ borderBottom: '1px solid #eee' }}>
-                  <Typography variant='body2'>Amount: ₨ {r.totalAmount?.toFixed(2)}</Typography>
+                  <Typography variant='body2'>
+                    {FIN_LABELS.netSalesCustomer} (return credit): {pk(r.totalAmount)}
+                  </Typography>
                   <Typography variant='body2' color='text.secondary'>{new Date(r.returnedAt).toLocaleString()} by {r.returnedBy?.name}</Typography>
                 </div>
               ))}

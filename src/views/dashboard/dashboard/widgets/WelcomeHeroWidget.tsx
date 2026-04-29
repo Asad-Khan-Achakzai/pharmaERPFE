@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import Typography from '@mui/material/Typography'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardWelcomeColumn from '@/views/dashboard/DashboardWelcomeColumn'
 import { useDashboardV3Data } from '../core/dashboardDataOrchestrator'
@@ -8,7 +9,7 @@ import { useDashboardV3Data } from '../core/dashboardDataOrchestrator'
 const formatPKR = (v: number) => `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 /**
- * Welcome copy + total sales highlight — data from orchestrator only.
+ * Welcome copy + **Net sales (TP) · this month** (from GET /reports/dashboard, calendar month).
  */
 export function WelcomeHeroWidget() {
   const d = useDashboardV3Data()
@@ -21,29 +22,46 @@ export function WelcomeHeroWidget() {
   }, [])
 
   const summary = useMemo(() => {
-    if (!d.canSeeCompanyFinancials) {
-      return 'You’re on your execution dashboard: open visits, orders, and attendance from the shortcuts below.'
+    if (d.canLoadDashboardKpis && !d.kpi && (d.kpiLoading || d.bundleLoading)) {
+      return 'Loading this month’s sales…'
     }
-    if (!d.kpi && (d.kpiLoading || d.bundleLoading)) return 'Loading current business health…'
-    if (!d.kpi) return 'Loading current business health indicators.'
+    if (!d.canSeeCompanyFinancials) {
+      return 'Open visits, orders, and attendance from the shortcuts below.'
+    }
+    if (!d.kpi && (d.kpiLoading || d.bundleLoading)) return 'Loading this month’s summary…'
+    if (!d.kpi) return 'Loading…'
     const data = d.kpi
     const net = Number(data.netProfit || 0)
     const outstanding = Number(data.totalOutstanding || 0)
     if (net >= 0 && outstanding <= Number(data.totalSales || 0) * 0.3) {
       return 'Profit is positive and outstanding exposure is within a stable range.'
     }
-    if (net < 0) return 'Revenue is active, but profitability is negative and needs attention.'
-    return 'Revenue is steady while cashflow pressure remains on outstanding balances.'
+    if (net < 0)
+      return 'Net sales are active, but net profit is negative and needs attention.'
+    return 'Net sales are steady while cashflow pressure remains on outstanding balances.'
   }, [d])
 
   const highlight = useMemo(() => {
-    if (!d.canSeeCompanyFinancials || d.kpiError) return undefined
-    if (d.kpi) return formatPKR(Number(d.kpi.totalSales) || 0)
-    return undefined
+    if (!d.canLoadDashboardKpis) return undefined
+    if (d.kpiError || !d.kpi) return undefined
+    const tp = Number(d.kpi.totalGrossSalesTp ?? 0)
+    const fmt = formatPKR
+    return (
+      <>
+        <Typography variant='caption' color='text.secondary' display='block'>
+          Net sales (TP) · this month
+        </Typography>
+        <Typography variant='h4' color='primary.main' className='mbe-1'>
+          {fmt(tp)}
+        </Typography>
+      </>
+    )
   }, [d])
 
   const sub = useMemo(() => {
-    if (d.canSeeCompanyFinancials && (d.kpiLoading || d.bundleLoading) && !d.kpi) return 'Loading current business health…'
+    if (d.canLoadDashboardKpis && (d.kpiLoading || d.bundleLoading) && !d.kpi) {
+      return 'Loading this month’s sales…'
+    }
     return summary
   }, [d, summary])
 

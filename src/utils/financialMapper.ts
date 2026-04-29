@@ -2,6 +2,9 @@ type FinancialEnvelope<T extends Record<string, any>> = T & {
   financialModel?: string
   scope?: 'snapshot' | 'period' | 'line' | string
   canonical?: Record<string, any>
+  /** From GET /reports/dashboard — rep’s own orders when not admin.company KPIs */
+  dashboardScope?: 'company' | 'self'
+  period?: { from: string; to: string }
 }
 
 const ERP_MODEL = 'ERP_STANDARD_V1'
@@ -19,7 +22,11 @@ export const mapDashboardFinancial = <T extends Record<string, any>>(data: unkno
     financialModel: payload.financialModel || ERP_MODEL,
     scope: payload.scope || 'snapshot',
     canonical,
+    dashboardScope: payload.dashboardScope,
+    period: payload.period,
     totalSales: payload.totalSales ?? canonical.revenueGross ?? 0,
+    totalGrossSalesTp: payload.totalGrossSalesTp ?? 0,
+    totalNetSalesCompany: payload.totalNetSalesCompany ?? 0,
     grossProfit: payload.grossProfit ?? canonical.profitGrossOperational ?? 0,
     netProfit: payload.netProfit ?? canonical.profitNetFinal ?? 0
   }
@@ -47,6 +54,7 @@ export const mapSummaryFinancial = <T extends Record<string, any>>(data: unknown
     scope: payload.scope || 'period',
     canonical,
     totalRevenue: payload.totalRevenue ?? canonical.revenueGross ?? 0,
+    totalNetSalesCompany: payload.totalNetSalesCompany ?? 0,
     grossProfit: payload.grossProfit ?? canonical.profitGrossOperational ?? 0,
     netProfit: payload.netProfit ?? canonical.profitNetFinal ?? 0
   }

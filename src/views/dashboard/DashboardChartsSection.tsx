@@ -55,7 +55,7 @@ const DashboardChartsSection = memo(function DashboardChartsSection({
           >
             <AccordionSummary expandIcon={<i className='tabler-chevron-down' />}>
               <Typography variant='subtitle1' sx={{ fontWeight: 700 }}>
-                Revenue &amp; profit charts
+                Revenue, costs & profit charts
               </Typography>
             </AccordionSummary>
             <AccordionDetails sx={{ px: { xs: 0, sm: 1 }, py: 1, pt: 0 }}>{profitBlock}</AccordionDetails>

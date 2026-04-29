@@ -18,6 +18,7 @@ import type { DashboardHomePayload } from '@/types/dashboardHome'
 import type { User } from '@/contexts/AuthContext'
 import type { TodayBoard } from '@/views/dashboard/dashboard.types'
 import { showApiError } from '@/utils/apiErrors'
+import { currentMonthRange } from '@/utils/currentMonthRange'
 import { resolveDashboardMode } from '../engine/widgetResolver'
 import type { DashboardMode } from './dashboardTypes'
 
@@ -32,13 +33,16 @@ function isAbort(e: unknown) {
 export type DashboardV3DataContextValue = {
   user: User
   hasPermission: (p: string) => boolean
-  /** System Administrator dashboard tier — not permission-based */
+  /** System Administrator dashboard tier — attendance team shell, etc. */
   isFullDashboardUser: boolean
   mode: DashboardMode
   kpi: ReturnType<typeof mapDashboardFinancial> | null
   kpiLoading: boolean
   kpiError: boolean
+  /** Charts, company supplier widgets, full P&L context — `admin.access` */
   canSeeCompanyFinancials: boolean
+  /** Dashboard slice (current month) for order counts + greeting TP — `dashboard.view` */
+  canLoadDashboardKpis: boolean
   home: DashboardHomePayload | null
   bundleFailed: boolean
   bundleLoading: boolean
@@ -80,20 +84,19 @@ export function DashboardV3DataProvider({
   isFullDashboardUser,
   children
 }: ProviderProps) {
-  const canSeeKpi = isFullDashboardUser
+  const canSeeCompanyFinancials = has('admin.access')
+  const canLoadDashboardKpis = has('dashboard.view')
   const canWeekly = has('weeklyPlans.view')
   const canTargets = has('targets.view')
-  /** Team “who’s in” is full-dashboard only — same as AttendanceTeam widget */
-  const canTeam = isFullDashboardUser && has('attendance.view')
+  /** Team “who’s in” — company admins with attendance visibility */
+  const canTeam = canSeeCompanyFinancials && has('attendance.view')
   /** Load “my today” for every signed-in user so the dashboard card can show read-only status without `attendance.mark`. */
   const canLoadMeToday = Boolean(user?._id)
-  const canSup = isFullDashboardUser && has('suppliers.view')
+  const canSup = canSeeCompanyFinancials && has('suppliers.view')
   const mode = useMemo(() => resolveDashboardMode(has, isFullDashboardUser), [has, isFullDashboardUser])
 
-  const [kpi, setKpi] = useState<ReturnType<typeof mapDashboardFinancial> | null>(() =>
-    canSeeKpi && kpiClientCache ? (kpiClientCache as ReturnType<typeof mapDashboardFinancial>) : null
-  )
-  const [kpiLoading, setKpiLoading] = useState(canSeeKpi && !kpiClientCache)
+  const [kpi, setKpi] = useState<ReturnType<typeof mapDashboardFinancial> | null>(null)
+  const [kpiLoading, setKpiLoading] = useState(canLoadDashboardKpis)
   const [kpiError, setKpiError] = useState(false)
   const [home, setHome] = useState<DashboardHomePayload | null>(null)
   const [bundleFailed, setBundleFailed] = useState(false)
@@ -111,30 +114,32 @@ export function DashboardV3DataProvider({
   const [nonCriticalReady, setNonCriticalReady] = useState(false)
   const gen = useRef(0)
 
-  const runLegacyBatch = useCallback(async (runId: number) => {
-    const settled = await Promise.allSettled([
-      canSeeKpi ? reportsService.dashboard() : Promise.resolve(null),
-      canWeekly ? planItemsService.listToday() : Promise.resolve(null),
-      canTargets && user?._id ? targetsService.getByRep(String(user._id)) : Promise.resolve(null),
-      canTeam ? attendanceService.today() : Promise.resolve(null),
-      canLoadMeToday ? attendanceService.meToday() : Promise.resolve(null)
-    ])
-    if (runId !== gen.current) return
+  const runLegacyBatch = useCallback(
+    async (runId: number) => {
+      const mp = currentMonthRange()
+      const settled = await Promise.allSettled([
+        canLoadDashboardKpis ? reportsService.dashboard({ params: mp }) : Promise.resolve(null),
+        canWeekly ? planItemsService.listToday() : Promise.resolve(null),
+        canTargets && user?._id ? targetsService.getByRep(String(user._id)) : Promise.resolve(null),
+        canTeam ? attendanceService.today() : Promise.resolve(null),
+        canLoadMeToday ? attendanceService.meToday() : Promise.resolve(null)
+      ])
+      if (runId !== gen.current) return
 
-    const kRes = settled[0]
-    if (kRes.status === 'fulfilled' && kRes.value && canSeeKpi) {
-      const ax = kRes.value as { data: { data?: unknown } & { success?: boolean } }
-      const raw = ax.data && 'data' in ax.data && ax.data.data != null ? ax.data.data : ax.data
-      const m = mapDashboardFinancial(raw)
-      kpiClientCache = m
-      setKpi(m)
-      setKpiError(false)
-    } else if (canSeeKpi) {
-      setKpiError(true)
-    } else {
-      setKpi(null)
-    }
-    setKpiLoading(false)
+      const kRes = settled[0]
+      if (kRes.status === 'fulfilled' && kRes.value && canLoadDashboardKpis) {
+        const ax = kRes.value as { data: { data?: unknown } & { success?: boolean } }
+        const raw = ax.data && 'data' in ax.data && ax.data.data != null ? ax.data.data : ax.data
+        const m = mapDashboardFinancial(raw)
+        kpiClientCache = m
+        setKpi(m)
+        setKpiError(false)
+      } else if (canLoadDashboardKpis) {
+        setKpiError(true)
+      } else {
+        setKpi(null)
+      }
+      setKpiLoading(false)
 
     if (settled[1].status === 'fulfilled' && settled[1].value) {
       const list = (settled[1].value as { data: { data: unknown[] } })?.data?.data
@@ -189,29 +194,39 @@ export function DashboardV3DataProvider({
     } else {
       setTimeout(() => setNonCriticalReady(true), 120)
     }
-  }, [canSeeKpi, canWeekly, canTargets, canTeam, canLoadMeToday, canSup, user?._id, isFullDashboardUser])
+    },
+    [canLoadDashboardKpis, canWeekly, canTargets, canTeam, canLoadMeToday, canSup, user?._id]
+  )
 
   const load = useCallback(async () => {
     const runId = ++gen.current
     setBundleFailed(false)
+    if (!canLoadDashboardKpis) {
+      setKpi(null)
+      setKpiLoading(false)
+      setKpiError(false)
+    }
     if (USE_UNIFIED_HOME) {
       setBundleLoading(true)
-      setKpiLoading(canSeeKpi)
-    } else {
-      setKpiLoading(canSeeKpi)
+      if (canLoadDashboardKpis) setKpiLoading(true)
+    } else if (canLoadDashboardKpis) {
+      setKpiLoading(true)
     }
     try {
       if (USE_UNIFIED_HOME) {
         try {
-          const r = await dashboardService.home()
+          const r = await dashboardService.home({ params: currentMonthRange() })
           if (runId !== gen.current) return
           const raw = (r.data as { data: DashboardHomePayload }).data
           setHome(raw)
-          if (canSeeKpi && raw.kpis) {
+          if (canLoadDashboardKpis && raw.kpis) {
             const m = mapDashboardFinancial(raw.kpis)
             kpiClientCache = m
             setKpi(m)
             setKpiError(false)
+          } else if (canLoadDashboardKpis) {
+            setKpi(null)
+            setKpiError(true)
           } else {
             setKpi(null)
           }
@@ -247,7 +262,7 @@ export function DashboardV3DataProvider({
     } catch (e) {
       if (!isAbort(e)) showApiError(e, 'Dashboard load')
     }
-  }, [canSeeKpi, canTeam, canSup, isFullDashboardUser, runLegacyBatch])
+  }, [canLoadDashboardKpis, canTeam, canSup, user?._id, runLegacyBatch])
 
   useEffect(() => {
     if (!user) return
@@ -266,7 +281,8 @@ export function DashboardV3DataProvider({
     kpi,
     kpiLoading,
     kpiError,
-    canSeeCompanyFinancials: canSeeKpi,
+    canSeeCompanyFinancials,
+    canLoadDashboardKpis,
     home,
     bundleFailed,
     bundleLoading,

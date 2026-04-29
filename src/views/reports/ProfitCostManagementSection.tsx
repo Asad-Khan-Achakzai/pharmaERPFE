@@ -13,6 +13,9 @@ import { showApiError } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
 import { mapSummaryFinancial } from '@/utils/financialMapper'
 import PageSkeleton from '@/components/skeletons/PageSkeleton'
+import { FinancialLayerSection } from '@/components/financial/FinancialLayerSection'
+import { FinInfoTip } from '@/components/financial/FinInfoTip'
+import { FIN_LABELS, FIN_TOOLTIPS } from '@/constants/financialLabels'
 
 let profitCostCache: { summary: any; products: any[] } | null = null
 
@@ -88,49 +91,70 @@ const ProfitCostManagementSection = () => {
         </Grid>
       ) : (
         <>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card>
-              <CardContent>
-                <Typography variant='body2' color='text.secondary'>
-                  Total revenue
-                </Typography>
-                <Typography variant='h5'>{formatPKR(summary?.totalRevenue ?? 0)}</Typography>
-              </CardContent>
-            </Card>
+          <Grid size={{ xs: 12 }}>
+            <FinancialLayerSection layer='sales'>
+              <Grid container spacing={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                  <Typography variant='body2' color='text.secondary' className='inline-flex items-center gap-0.5'>
+                    {FIN_LABELS.netSalesCustomer} (period){' '}
+                    <FinInfoTip title={FIN_TOOLTIPS.salesMarginCustomerBasis} />
+                  </Typography>
+                  <Typography variant='h5'>{formatPKR(summary?.totalRevenue ?? 0)}</Typography>
+                  <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 1 }}>
+                    Transaction basis (posted sales/returns in range).
+                  </Typography>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                  <Typography variant='body2' color='text.secondary' className='inline-flex items-center gap-0.5'>
+                    {FIN_LABELS.netSalesCompany} (period){' '}
+                    <FinInfoTip title={FIN_TOOLTIPS.grossProfitCompanyLine} />
+                  </Typography>
+                  <Typography variant='h5'>{formatPKR(summary?.totalNetSalesCompany ?? 0)}</Typography>
+                  <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 1 }}>
+                    Sum of company-share amounts on delivery/return lines (product profitability table).
+                  </Typography>
+                </Grid>
+              </Grid>
+            </FinancialLayerSection>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card>
-              <CardContent>
-                <Typography variant='body2' color='text.secondary'>
-                  Total cost
-                </Typography>
-                <Typography variant='h5'>{formatPKR(summary?.totalCost ?? 0)}</Typography>
-              </CardContent>
-            </Card>
+
+          <Grid size={{ xs: 12 }}>
+            <FinancialLayerSection layer='cost'>
+              <Typography variant='body2' color='text.secondary' className='inline-flex items-center gap-0.5'>
+                {FIN_LABELS.totalCostsPeriod} <FinInfoTip title={FIN_TOOLTIPS.standardVsAvg} />
+              </Typography>
+              <Typography variant='h5'>{formatPKR(summary?.totalCost ?? 0)}</Typography>
+              <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 1 }}>
+                COGS + distributor commission + payroll (paid) + doctor activities + other expenses (non-salary).
+              </Typography>
+            </FinancialLayerSection>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card>
-              <CardContent>
-                <Typography variant='body2' color='text.secondary'>
-                  Net profit
-                </Typography>
-                <Typography variant='h5' color={summary?.netProfit >= 0 ? 'success.main' : 'error.main'}>
-                  {formatPKR(summary?.netProfit ?? 0)}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-            <Card>
-              <CardContent>
-                <Typography variant='body2' color='text.secondary'>
-                  Profit margin
-                </Typography>
-                <Typography variant='h5'>
-                  {marginPct != null ? `${marginPct.toFixed(1)}%` : '—'}
-                </Typography>
-              </CardContent>
-            </Card>
+
+          <Grid size={{ xs: 12 }}>
+            <FinancialLayerSection layer='profit'>
+              <Grid container spacing={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                  <Typography variant='body2' color='text.secondary'>
+                    {FIN_LABELS.salesMarginCustomerBasis} (period)
+                  </Typography>
+                  <Typography variant='h5'>{formatPKR(summary?.grossProfit ?? 0)}</Typography>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                  <Typography variant='body2' color='text.secondary' className='inline-flex items-center gap-0.5'>
+                    {FIN_LABELS.netProfitPeriod} <FinInfoTip title={FIN_TOOLTIPS.netProfitLifetime} />
+                  </Typography>
+                  <Typography variant='h5' color={summary?.netProfit >= 0 ? 'success.main' : 'error.main'}>
+                    {formatPKR(summary?.netProfit ?? 0)}
+                  </Typography>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+                  <Typography variant='body2' color='text.secondary'>
+                    {FIN_LABELS.profitMarginPct} (vs {FIN_LABELS.netSalesCustomer} period)
+                  </Typography>
+                  <Typography variant='h5'>{marginPct != null ? `${marginPct.toFixed(1)}%` : '—'}</Typography>
+                </Grid>
+              </Grid>
+            </FinancialLayerSection>
           </Grid>
 
           <Grid size={{ xs: 12 }}>
@@ -211,7 +235,10 @@ const ProfitCostManagementSection = () => {
 
           <Grid size={{ xs: 12, md: 6 }}>
             <Card>
-              <CardHeader title='Top profitable products' />
+              <CardHeader
+                title='Top products by gross profit (company)'
+                subheader='Chip = Net Sales (Company) − COGS for the SKU in this month (delivery cost basis).'
+              />
               <CardContent className='flex flex-col gap-2'>
                 {topProfitable.map((p: any) => (
                   <div key={String(p.productId)} className='flex justify-between gap-2'>
@@ -231,8 +258,8 @@ const ProfitCostManagementSection = () => {
           <Grid size={{ xs: 12, md: 6 }}>
             <Card>
               <CardHeader
-                title='Lowest profit products'
-                subheader='Sorted by gross profit (revenue − COGS) ascending — not the same as “loss-making” unless profit is negative.'
+                title='Lowest gross profit (company) products'
+                subheader={`Sorted by ${FIN_LABELS.grossProfitCompany} ascending — not necessarily “loss-making” unless negative.`}
               />
               <CardContent className='flex flex-col gap-2'>
                 {lowestProfitable.map((p: any) => (
@@ -271,7 +298,7 @@ const ProfitCostManagementSection = () => {
               />
               <CardContent className='flex flex-wrap gap-4'>
                 <Typography variant='body2'>
-                  Revenue vs cost ratio:{' '}
+                  {FIN_LABELS.netSalesCustomer} vs {FIN_LABELS.totalCostsPeriod} ratio:{' '}
                   <strong>
                     {summary?.insights?.revenueVsCostRatio != null
                       ? summary.insights.revenueVsCostRatio.toFixed(2)
@@ -289,7 +316,7 @@ const ProfitCostManagementSection = () => {
             <Card>
               <CardHeader
                 title='Product profitability'
-                subheader='Revenue is company net (after distributor commission on TP). Line profit = that revenue − COGS. Summary Net profit also deducts payroll and other period costs where applicable. Total revenue on the cards is pharmacy invoice net from transactions (typically higher than the sum of company-net product revenue).'
+                subheader={`${FIN_LABELS.netSalesCompany} and ${FIN_LABELS.netSalesCustomer} are per delivery/return lines in the period. ${FIN_LABELS.grossProfitCompany} = company net − ${FIN_LABELS.inventoryCostAvgCogs}. Summary ${FIN_LABELS.netProfitPeriod} also deducts payroll and other period costs.`}
               />
               <CardContent className='overflow-x-auto'>
                 <table className='min-is-full text-sm'>
@@ -297,9 +324,10 @@ const ProfitCostManagementSection = () => {
                     <tr className='border-b'>
                       <th className='text-left p-2'>Product</th>
                       <th className='text-right p-2'>Sold</th>
-                      <th className='text-right p-2'>Revenue (company net)</th>
-                      <th className='text-right p-2'>COGS</th>
-                      <th className='text-right p-2'>Profit</th>
+                      <th className='text-right p-2'>{FIN_LABELS.netSalesCustomer}</th>
+                      <th className='text-right p-2'>{FIN_LABELS.netSalesCompany}</th>
+                      <th className='text-right p-2'>{FIN_LABELS.inventoryCostAvgCogs}</th>
+                      <th className='text-right p-2'>{FIN_LABELS.grossProfitCompany}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -307,6 +335,7 @@ const ProfitCostManagementSection = () => {
                       <tr key={String(p.productId)} className='border-b border-divider'>
                         <td className='p-2'>{p.productName}</td>
                         <td className='p-2 text-right'>{p.totalSold}</td>
+                        <td className='p-2 text-right'>{formatPKR(p.netSalesCustomer ?? 0)}</td>
                         <td className='p-2 text-right'>{formatPKR(p.revenue)}</td>
                         <td className='p-2 text-right'>{formatPKR(p.cost)}</td>
                         <td className='p-2 text-right'>{formatPKR(p.profit)}</td>
