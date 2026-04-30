@@ -39,7 +39,7 @@ function StatRow({ item }: { item: StatItem }) {
           variant='h6'
           sx={{
             fontWeight: 700,
-            fontSize: { xs: '1rem', sm: '1.125rem' },
+            fontSize: { xs: '0.95rem', sm: '1.02rem' },
             lineHeight: 1.25,
             letterSpacing: '-0.02em'
           }}
@@ -50,7 +50,7 @@ function StatRow({ item }: { item: StatItem }) {
         <Typography
           variant='body2'
           color='text.secondary'
-          sx={{ fontSize: '0.8125rem', lineHeight: 1.35, mt: 0.25 }}
+          sx={{ fontSize: '0.78rem', lineHeight: 1.35, mt: 0.2 }}
           className='inline-flex items-center gap-1 flex-wrap'
         >
           {item.label}
@@ -84,22 +84,16 @@ function MetricPanel({ title, titleColor, items }: PanelProps) {
         borderRadius: 2,
         overflow: 'hidden',
         borderColor: 'divider',
-        bgcolor: alpha(accent, 0.03),
+        bgcolor: 'background.paper',
         boxShadow: 'none',
         borderLeft: 3,
-        borderLeftColor: accent
+        borderLeftColor: 'divider'
       }}
     >
       <Box sx={{ px: 2, pt: 1.75, pb: 0.5 }}>
         <Typography
           variant='overline'
-          sx={{
-            color: accent,
-            fontWeight: 800,
-            letterSpacing: '0.06em',
-            fontSize: '0.7rem',
-            lineHeight: 1.2
-          }}
+          sx={{ color: accent, letterSpacing: 0.55, display: 'block', mb: 1, fontSize: '0.68rem' }}
         >
           {title}
         </Typography>
@@ -238,7 +232,9 @@ const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
       <CardHeader
         title={
           <Box className='flex items-center gap-1'>
-            Statistics
+            <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+              Statistics
+            </Typography>
             <FinInfoTip title={FIN_TOOLTIPS.dashboardTotals} />
           </Box>
         }
