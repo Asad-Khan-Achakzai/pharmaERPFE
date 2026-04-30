@@ -515,7 +515,10 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
             disableGutters
             expanded={analyticsAccordionExpanded}
             onChange={onAnalyticsAccordionChange}
-            sx={{ mt: 2, boxShadow: 'none', border: '1px solid var(--mui-palette-divider)', borderRadius: 3 }}
+            style={{
+              boxShadow: 'none',
+            }}
+            sx={{ mt: 2, boxShadow: 'none', border: '1px solid var(--mui-palette-divider)', borderRadius: 3, }}
           >
             <AccordionSummary expandIcon={<i className='tabler-chevron-down' />}>
               <Typography variant='subtitle1' sx={{ fontWeight: 700 }}>

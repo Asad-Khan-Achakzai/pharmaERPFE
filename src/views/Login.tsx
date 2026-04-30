@@ -109,10 +109,10 @@ const LoginV2 = ({ mode }: { mode: SystemMode }) => {
             <Button fullWidth variant='contained' type='submit' disabled={loading}>
               {loading ? 'Signing in...' : 'Login'}
             </Button>
-            <div className='flex justify-center items-center flex-wrap gap-2'>
+            {/* <div className='flex justify-center items-center flex-wrap gap-2'>
               <Typography>New on our platform?</Typography>
               <Typography component={Link} href='/register' color='primary.main'>Create an account</Typography>
-            </div>
+            </div> */}
           </form>
         </div>
       </div>

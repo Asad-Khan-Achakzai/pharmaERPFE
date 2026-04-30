@@ -1139,8 +1139,25 @@ const ProcurementHubPage = () => {
       <Card sx={{ borderRadius: 4, boxShadow: theme => theme.shadows[isMdUp ? 2 : 0] }}>
         <CardHeader
           title='Procurement'
+          sx={{
+            flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: { xs: 'flex-start', sm: 'center' },
+            '& .MuiCardHeader-content': { minWidth: 0 },
+            '& .MuiCardHeader-action': {
+              ml: { xs: 0, sm: 2 },
+              mt: { xs: 1.5, sm: 0 },
+              mr: 0,
+              width: { xs: '100%', sm: 'auto' }
+            }
+          }}
           action={
-            <Button variant='outlined' size='small' onClick={() => router.push('/suppliers/list')} startIcon={<i className='tabler-cash' />}>
+            <Button
+              variant='outlined'
+              size='small'
+              fullWidth={Boolean(!isMdUp)}
+              onClick={() => router.push('/suppliers/list')}
+              startIcon={<i className='tabler-cash' />}
+            >
               Go to suppliers — payments
             </Button>
           }
@@ -1411,11 +1428,29 @@ const ProcurementHubPage = () => {
                           po={p}
                           metrics={poExtras[p._id]}
                           printLoading={printingPoId === p._id}
+                          approveLoading={approvingPoId === p._id}
                           onPrint={() => void quickPrintSupplierOrder(p)}
                           onReceiveGoods={() => openReceiveGoodsForOrder(p)}
                           showReceiveGoods={canReceive && ['APPROVED', 'PARTIALLY_RECEIVED'].includes(p.status)}
                           onEditDraft={canCreate && p.status === 'DRAFT' ? () => void openEditPurchaseOrder(p) : undefined}
                           editDraftLoading={loadingEditPoId === p._id}
+                          onApprove={
+                            canApprovePo && p.status === 'DRAFT'
+                              ? async () => {
+                                  setApprovingPoId(p._id)
+                                  try {
+                                    await procurementService.approvePurchaseOrder(p._id)
+                                    showSuccess('Supplier order approved')
+                                    void refreshHub()
+                                  } catch (e) {
+                                    procurementShowError(e, 'Could not approve this order')
+                                  } finally {
+                                    setApprovingPoId(null)
+                                  }
+                                }
+                              : undefined
+                          }
+                          approveDisabled={Boolean(loadingEditPoId)}
                           onView={() => void openViewPo(p)}
                         />
                       ))}
@@ -2505,7 +2540,19 @@ function TabToolbar({ title, primary, children }: { title: string; primary?: Rea
 }
 
 function FilterRow({ children }: { children: React.ReactNode }) {
-  return <Box className='flex flex-wrap gap-3 items-center justify-end'>{children}</Box>
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 1.5,
+        alignItems: 'center',
+        justifyContent: { xs: 'flex-start', md: 'flex-end' }
+      }}
+    >
+      {children}
+    </Box>
+  )
 }
 
 function EmptyState({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
@@ -2538,6 +2585,9 @@ function MobilePoCard({
   onReceiveGoods,
   onEditDraft,
   editDraftLoading,
+  onApprove,
+  approveLoading,
+  approveDisabled,
   showReceiveGoods,
   printLoading
 }: {
@@ -2548,6 +2598,9 @@ function MobilePoCard({
   onReceiveGoods: () => void
   onEditDraft?: () => void
   editDraftLoading?: boolean
+  onApprove?: () => void | Promise<void>
+  approveLoading?: boolean
+  approveDisabled?: boolean
   showReceiveGoods: boolean
   printLoading?: boolean
 }) {
@@ -2587,6 +2640,18 @@ function MobilePoCard({
                 </IconButton>
               </span>
             </Tooltip>
+          )}
+          {onApprove && po.status === 'DRAFT' && (
+            <ProcurementBusyButton
+              size='small'
+              variant='tonal'
+              loadingLabel='Approving…'
+              loading={approveLoading}
+              disabled={approveDisabled}
+              onClick={() => void onApprove()}
+            >
+              Approve
+            </ProcurementBusyButton>
           )}
           {showReceiveGoods && (
             <Tooltip title='Receive goods'>
