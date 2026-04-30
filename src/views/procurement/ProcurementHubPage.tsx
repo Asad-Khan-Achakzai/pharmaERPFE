@@ -49,6 +49,7 @@ import { procurementService } from '@/services/procurement.service'
 import { supplierService } from '@/services/supplier.service'
 import { productsService } from '@/services/products.service'
 import { distributorsService } from '@/services/distributors.service'
+import { InvoiceFooter, InvoiceHeader, InvoiceItemsTable, InvoiceLayout, InvoiceTotals } from '@/components/invoice/InvoiceLayout'
 
 import { apiPayload, formatDate, formatPKR } from './utils'
 
@@ -69,16 +70,6 @@ type GrnRow = {
   /** Populated from list/get; _id needed for “receive more” on same order */
   purchaseOrderId?: { _id?: string; orderNumber?: string; status?: string }
   supplierId?: { name?: string }
-}
-
-type InvRow = {
-  _id: string
-  invoiceNumber: string
-  status: string
-  totalAmount: number
-  supplierId?: { name?: string }
-  grnIds?: unknown[]
-  createdAt?: string
 }
 
 /** Browser print / Save as PDF — supplier order or received goods slip */
@@ -180,10 +171,12 @@ const ProcurementHubPage = () => {
   const canPostInvoice = hasPermission('procurement.invoicePost')
 
   const [tab, setTab] = useState(0)
+  useEffect(() => {
+    if (tab > 1) setTab(1)
+  }, [tab])
   const [hubLoading, setHubLoading] = useState(true)
   const [pos, setPos] = useState<PoRow[]>([])
   const [grns, setGrns] = useState<GrnRow[]>([])
-  const [invoices, setInvoices] = useState<InvRow[]>([])
   const [poExtras, setPoExtras] = useState<
     Record<string, { ordered: number; received: number } | undefined>
   >({})
@@ -191,20 +184,17 @@ const ProcurementHubPage = () => {
   const [supplierFilter, setSupplierFilter] = useState('')
   const [poStatusFilter, setPoStatusFilter] = useState('')
   const [grnStatusFilter, setGrnStatusFilter] = useState('')
-  const [invStatusFilter, setInvStatusFilter] = useState('')
 
   const refreshHub = useCallback(async () => {
     if (!canView) return
     setHubLoading(true)
     try {
-      const [poRes, grnRes, invRes] = await Promise.all([
+      const [poRes, grnRes] = await Promise.all([
         procurementService.listPurchaseOrders({ limit: 100 }),
-        procurementService.listGoodsReceiptNotes({ limit: 100 }),
-        procurementService.listSupplierInvoices({ limit: 100 })
+        procurementService.listGoodsReceiptNotes({ limit: 100 })
       ])
       setPos(normalizeDocs<PoRow>(poRes))
       setGrns(normalizeDocs<GrnRow>(grnRes))
-      setInvoices(normalizeDocs<InvRow>(invRes))
     } catch (e) {
       procurementShowError(e, 'Failed to load procurement data')
     } finally {
@@ -251,7 +241,7 @@ const ProcurementHubPage = () => {
 
   const suppliersForFilter = useMemo(() => {
     const m = new Map<string, string>()
-    ;[...pos, ...grns, ...invoices].forEach(row => {
+    ;[...pos, ...grns].forEach(row => {
       const sid =
         typeof (row as any).supplierId === 'object'
           ? (row as any).supplierId?._id
@@ -263,7 +253,7 @@ const ProcurementHubPage = () => {
       if (sid && name) m.set(String(sid), String(name))
     })
     return Array.from(m.entries()).map(([id, name]) => ({ id, name }))
-  }, [pos, grns, invoices])
+  }, [pos, grns])
 
   const filteredPos = useMemo(() => {
     return pos.filter(p => {
@@ -286,17 +276,6 @@ const ProcurementHubPage = () => {
       return true
     })
   }, [grns, supplierFilter, grnStatusFilter])
-
-  const filteredInvoices = useMemo(() => {
-    return invoices.filter(inv => {
-      if (supplierFilter) {
-        const sid = typeof inv.supplierId === 'object' ? (inv.supplierId as any)?._id : inv.supplierId
-        if (String(sid) !== supplierFilter) return false
-      }
-      if (invStatusFilter && inv.status !== invStatusFilter) return false
-      return true
-    })
-  }, [invoices, supplierFilter, invStatusFilter])
 
   const [poOpen, setPoOpen] = useState(false)
   /** When set, save updates an existing draft PO instead of creating. */
@@ -329,7 +308,6 @@ const ProcurementHubPage = () => {
   /** When set, hydrating lines from PO is skipped — draft loaded from GRN. */
   const [grnEditingId, setGrnEditingId] = useState<string | null>(null)
   const [approvingPoId, setApprovingPoId] = useState<string | null>(null)
-  const [postingInvoiceId, setPostingInvoiceId] = useState<string | null>(null)
   const [postingGrnInFlight, setPostingGrnInFlight] = useState(false)
   const [loadingEditPoId, setLoadingEditPoId] = useState<string | null>(null)
   const [loadingEditGrnId, setLoadingEditGrnId] = useState<string | null>(null)
@@ -361,8 +339,6 @@ const ProcurementHubPage = () => {
   const [viewPoDetail, setViewPoDetail] = useState<any | null>(null)
   const [viewGrn, setViewGrn] = useState<GrnRow | null>(null)
   const [viewGrnDetail, setViewGrnDetail] = useState<any | null>(null)
-  const [viewInv, setViewInv] = useState<InvRow | null>(null)
-  const [viewInvDetail, setViewInvDetail] = useState<any | null>(null)
 
   useEffect(() => {
     ;(async () => {
@@ -1022,16 +998,6 @@ const ProcurementHubPage = () => {
     }
   }
 
-  const openInvDialog = () => {
-    setInvSupplierId('')
-    setInvSelectedGrns({})
-    setInvSub(0)
-    setInvTax(0)
-    setInvFreight(0)
-    setInvDisc(0)
-    setInvOpen(true)
-  }
-
   /** New supplier invoice draft: optional flow, anchored to one posted receipt. */
   const openSupplierInvoiceForGrn = (g: GrnRow) => {
     if (!canPostInvoice) {
@@ -1056,7 +1022,6 @@ const ProcurementHubPage = () => {
     setInvDisc(0)
     setInvSupplierId(sid)
     setInvSelectedGrns({ [g._id]: true })
-    setTab(2)
     setInvOpen(true)
   }
 
@@ -1088,7 +1053,7 @@ const ProcurementHubPage = () => {
       showSuccess('Supplier invoice draft saved')
       setInvOpen(false)
       void refreshHub()
-      setTab(2)
+      setTab(1)
     } catch (e) {
       procurementShowError(e, 'Create invoice failed')
     } finally {
@@ -1115,17 +1080,6 @@ const ProcurementHubPage = () => {
       setViewGrnDetail(apiPayload(r))
     } catch (e) {
       procurementShowError(e, 'Could not load receive goods')
-    }
-  }
-
-  const openViewInv = async (row: InvRow) => {
-    setViewInv(row)
-    setViewInvDetail(null)
-    try {
-      const r = await procurementService.getSupplierInvoice(row._id)
-      setViewInvDetail(apiPayload(r))
-    } catch (e) {
-      procurementShowError(e, 'Could not load invoice')
     }
   }
 
@@ -1196,7 +1150,6 @@ const ProcurementHubPage = () => {
             <Tabs value={tab} onChange={(_, v) => setTab(v)} variant='scrollable' allowScrollButtonsMobile>
               <Tab label='Supplier orders' />
               <Tab label='Receive goods' />
-              <Tab label='Supplier invoice (optional)' />
             </Tabs>
           </Box>
 
@@ -1286,55 +1239,6 @@ const ProcurementHubPage = () => {
                 </CustomTextField>
               </FilterRow>
             </TabToolbar>
-          )}
-
-          {tab === 2 && (
-            <TabToolbar
-              title='Supplier invoice (optional)'
-              primary={
-                canCreate && (
-                  <Button variant='outlined' onClick={openInvDialog}>
-                    New supplier invoice
-                  </Button>
-                )
-              }
-            >
-              <FilterRow>
-                <CustomTextField
-                  select
-                  size='small'
-                  label='Supplier'
-                  value={supplierFilter}
-                  onChange={e => setSupplierFilter(e.target.value)}
-                  sx={{ minWidth: 180 }}
-                >
-                  <MenuItem value=''>All suppliers</MenuItem>
-                  {suppliersForFilter.map(s => (
-                    <MenuItem key={s.id} value={s.id}>
-                      {s.name}
-                    </MenuItem>
-                  ))}
-                </CustomTextField>
-                <CustomTextField
-                  select
-                  size='small'
-                  label='Status'
-                  value={invStatusFilter}
-                  onChange={e => setInvStatusFilter(e.target.value)}
-                  sx={{ minWidth: 140 }}
-                >
-                  <MenuItem value=''>All</MenuItem>
-                  <MenuItem value='DRAFT'>Draft</MenuItem>
-                  <MenuItem value='POSTED'>Posted</MenuItem>
-                </CustomTextField>
-              </FilterRow>
-            </TabToolbar>
-          )}
-
-          {tab === 2 && (
-            <Alert severity='info' sx={{ borderRadius: 3, mb: 2 }}>
-              Optional — use only if your supplier invoice amount or lines differ from what you received into stock.
-            </Alert>
           )}
 
           {hubLoading ? (
@@ -1612,26 +1516,6 @@ const ProcurementHubPage = () => {
                                       </IconButton>
                                     </Tooltip>
                                   )}
-                                  {canPostInvoice && (
-                                    <Tooltip
-                                      title={
-                                        g.status !== 'POSTED'
-                                          ? 'Post this receipt first — supplier invoice links posted receipts only'
-                                          : 'Supplier invoice (optional)'
-                                      }
-                                    >
-                                      <span>
-                                        <IconButton
-                                          size='small'
-                                          onClick={() => openSupplierInvoiceForGrn(g)}
-                                          aria-label='Supplier invoice for this receipt'
-                                          disabled={g.status !== 'POSTED'}
-                                        >
-                                          <i className='tabler-file-invoice' />
-                                        </IconButton>
-                                      </span>
-                                    </Tooltip>
-                                  )}
                                   <Tooltip title='View'>
                                     <IconButton size='small' onClick={() => void openViewGrn(g)} aria-label='View'>
                                       <i className='tabler-eye' />
@@ -1681,10 +1565,8 @@ const ProcurementHubPage = () => {
                             grn={g}
                             printLoading={printingGrnId === g._id}
                             showReceiveMore={showRecvMore}
-                            canPostInvoice={canPostInvoice}
                             onPrint={() => void quickPrintGoodsReceipt(g)}
                             onReceiveMore={() => openReceiveGoodsFromGrnRow(g)}
-                            onSupplierInvoice={() => openSupplierInvoiceForGrn(g)}
                             onView={() => void openViewGrn(g)}
                             onEditDraft={
                               canCreate && g.status === 'DRAFT' ? () => void openEditGoodsReceipt(g) : undefined
@@ -1695,101 +1577,6 @@ const ProcurementHubPage = () => {
                           />
                         )
                       })}
-                    </StackedCards>
-                  )}
-                </>
-              )}
-
-              {tab === 2 && (
-                <>
-                  {invoices.length > 0 && filteredInvoices.length === 0 ? (
-                    <Alert severity='info' sx={{ borderRadius: 3 }}>
-                      No supplier invoices match your filters. Adjust or clear filters above.
-                    </Alert>
-                  ) : !filteredInvoices.length ? (
-                    <EmptyState icon='tabler-file-invoice' title='No supplier invoices yet' subtitle='Optional — add one if the supplier bill differs from received goods.' />
-                  ) : isMdUp ? (
-                    <TableContainer component={Paper} variant='outlined' sx={{ borderRadius: 3 }}>
-                      <Table size='small'>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>Invoice #</TableCell>
-                            <TableCell>Supplier</TableCell>
-                            <TableCell>Linked receipts</TableCell>
-                            <TableCell>Match preview</TableCell>
-                            <TableCell align='right'>Amount</TableCell>
-                            <TableCell>Status</TableCell>
-                            <TableCell align='right'>Actions</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {filteredInvoices.map(inv => (
-                              <TableRow key={inv._id} hover>
-                              <TableCell sx={{ fontWeight: 700 }}>{inv.invoiceNumber}</TableCell>
-                              <TableCell>
-                                <TruncWithTip
-                                  text={
-                                    typeof inv.supplierId === 'object'
-                                      ? String((inv.supplierId as any)?.name ?? '')
-                                      : '—'
-                                  }
-                                />
-                              </TableCell>
-                              <TableCell>
-                                {Array.isArray(inv.grnIds) ? inv.grnIds.length : 0}{' '}
-                                {Array.isArray(inv.grnIds) && inv.grnIds.length ? 'receipt(s)' : ''}
-                              </TableCell>
-                              <TableCell>
-                                {inv.status === 'DRAFT' && (
-                                  <Typography variant='caption' color='text.secondary'>
-                                    Post to reconcile vs receipts
-                                  </Typography>
-                                )}
-                                {inv.status === 'POSTED' && (
-                                  <Chip size='small' color='success' label='Recorded' variant='outlined' />
-                                )}
-                              </TableCell>
-                              <TableCell align='right'>{formatPKR(inv.totalAmount ?? 0)}</TableCell>
-                              <TableCell>
-                                <Chip size='small' label={inv.status} {...statusChipSx(inv.status)} />
-                              </TableCell>
-                              <TableCell align='right'>
-                                <IconButton size='small' onClick={() => void openViewInv(inv)}>
-                                  <i className='tabler-eye' />
-                                </IconButton>
-                                {canPostInvoice && inv.status === 'DRAFT' && (
-                                  <ProcurementBusyButton
-                                    size='small'
-                                    variant='contained'
-                                    loadingLabel='Posting…'
-                                    loading={postingInvoiceId === inv._id}
-                                    onClick={async () => {
-                                      setPostingInvoiceId(inv._id)
-                                      try {
-                                        await procurementService.postSupplierInvoice(inv._id)
-                                        showSuccess('Invoice posted — ledger adjusted if needed')
-                                        void refreshHub()
-                                      } catch (e) {
-                                        procurementShowError(e, 'Could not post this invoice')
-                                      } finally {
-                                        setPostingInvoiceId(null)
-                                      }
-                                    }}
-                                  >
-                                    Post
-                                  </ProcurementBusyButton>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                  ) : (
-                    <StackedCards>
-                      {filteredInvoices.map(inv => (
-                        <MobileInvCard key={inv._id} inv={inv} onView={() => void openViewInv(inv)} />
-                      ))}
                     </StackedCards>
                   )}
                 </>
@@ -2610,122 +2397,88 @@ const ProcurementHubPage = () => {
         </DialogActions>
       </Dialog>
 
-      {/* View Invoice */}
-      <Dialog open={Boolean(viewInv)} onClose={() => { setViewInv(null); setViewInvDetail(null) }} maxWidth='sm' fullWidth>
-        <DialogTitle>Invoice {viewInvDetail?.invoiceNumber ?? viewInv?.invoiceNumber}</DialogTitle>
-        <DialogContent>
-          {!viewInvDetail ? (
-            <Box className='flex justify-center py-10'>
-              <CircularProgress size={28} aria-label='Loading invoice' />
-            </Box>
-          ) : (
-            <Box className='space-y-2'>
-              <Typography variant='body2'>
-                Supplier: {viewInvDetail.supplierId?.name ?? (viewInv?.supplierId as any)?.name ?? '—'}
-              </Typography>
-              <Typography variant='body2'>Total: {formatPKR(viewInvDetail.totalAmount ?? 0)}</Typography>
-              <Typography variant='body2'>Status: {viewInvDetail.status}</Typography>
-              <Typography variant='body2' color='text.secondary'>
-                Linked receipts:{' '}
-                {Array.isArray(viewInvDetail.grnIds) ? `${viewInvDetail.grnIds.length} selected` : '—'}
-              </Typography>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setViewInv(null); setViewInvDetail(null) }}>Close</Button>
-        </DialogActions>
-      </Dialog>
-
       {/* Print — hidden on screen unless printing */}
       {hubPrintDoc ? (
         <Box id='procurement-hub-print-root' component='article'>
-          {hubPrintDoc.kind === 'supplierOrder' ? (
-            <>
-              <Typography variant='h6' gutterBottom sx={{ fontWeight: 700 }}>
-                Supplier order
-              </Typography>
-              <Typography variant='body2' color='text.secondary' gutterBottom>
-                {hubPrintDoc.orderNumber}
-              </Typography>
-              <Typography variant='body1' className='mbe-4'>
-                Supplier: <strong>{hubPrintDoc.supplierName}</strong>
-              </Typography>
-              <Table size='small' sx={{ minWidth: 400 }}>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Product</TableCell>
-                    <TableCell align='right'>Qty</TableCell>
-                    <TableCell align='right'>Unit price</TableCell>
-                    <TableCell align='right'>Line total</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {hubPrintDoc.lines.map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{row.name}</TableCell>
-                      <TableCell align='right'>{row.qty}</TableCell>
-                      <TableCell align='right'>{formatPKR(row.unitPrice)}</TableCell>
-                      <TableCell align='right'>{formatPKR(row.qty * row.unitPrice)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <Typography variant='body2' className='mbs-4'>
-                Expected total:{' '}
-                <strong>
-                  {formatPKR(hubPrintDoc.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0))}
-                </strong>
-              </Typography>
-            </>
-          ) : (
-            <>
-              <Typography variant='h6' gutterBottom sx={{ fontWeight: 700 }}>
-                Received goods
-              </Typography>
-              <Typography variant='body2' color='text.secondary' gutterBottom>
-                {hubPrintDoc.receiptNumber}
-              </Typography>
-              <Typography variant='body2' className='mbe-1'>
-                Supplier order: <strong>{hubPrintDoc.supplierOrderNumber}</strong>
-              </Typography>
-              <Typography variant='body1' className='mbe-2'>
-                Supplier: <strong>{hubPrintDoc.supplierName}</strong>
-              </Typography>
-              <Typography variant='body2' color='text.secondary' className='mbe-4'>
-                Received: {hubPrintDoc.receivedDate}
-              </Typography>
-              <Table size='small' sx={{ minWidth: 400 }}>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Product</TableCell>
-                    <TableCell align='right'>Qty</TableCell>
-                    <TableCell align='right'>Unit cost (landed)</TableCell>
-                    <TableCell align='right'>Line total</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {hubPrintDoc.lines.map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{row.name}</TableCell>
-                      <TableCell align='right'>{row.qty}</TableCell>
-                      <TableCell align='right'>{formatPKR(row.unitCost)}</TableCell>
-                      <TableCell align='right'>{formatPKR(row.qty * row.unitCost)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <Typography variant='body2' className='mbs-4'>
-                Total:{' '}
-                <strong>
-                  {formatPKR(hubPrintDoc.lines.reduce((s, l) => s + l.qty * l.unitCost, 0))}
-                </strong>
-              </Typography>
-            </>
-          )}
-          <Typography variant='caption' color='text.secondary'>
-            Generated from {new Date().toLocaleDateString('en-GB')}
-          </Typography>
+          <InvoiceLayout>
+            {hubPrintDoc.kind === 'supplierOrder' ? (
+              <>
+                <InvoiceHeader
+                  title='Supplier Order'
+                  documentId={hubPrintDoc.orderNumber}
+                  issuedDate={new Date().toLocaleDateString('en-GB')}
+                  left={
+                    <Box>
+                      <Typography variant='body2' color='text.secondary'>
+                        Supplier
+                      </Typography>
+                      <Typography variant='body1' fontWeight={700}>
+                        {hubPrintDoc.supplierName}
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <InvoiceItemsTable
+                  columns={['Product', 'Qty', 'Unit Price', 'Line Total']}
+                  rows={hubPrintDoc.lines.map(row => [
+                    row.name,
+                    row.qty,
+                    formatPKR(row.unitPrice),
+                    formatPKR(row.qty * row.unitPrice)
+                  ])}
+                />
+                <InvoiceTotals
+                  rows={[
+                    {
+                      label: 'Net Sales (Company)',
+                      value: formatPKR(hubPrintDoc.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0))
+                    }
+                  ]}
+                  highlightLabel='Net Sales (Company)'
+                />
+              </>
+            ) : (
+              <>
+                <InvoiceHeader
+                  title='Receive Goods Note'
+                  documentId={hubPrintDoc.receiptNumber}
+                  issuedDate={hubPrintDoc.receivedDate}
+                  left={
+                    <Box>
+                      <Typography variant='body2' color='text.secondary'>
+                        Supplier
+                      </Typography>
+                      <Typography variant='body1' fontWeight={700}>
+                        {hubPrintDoc.supplierName}
+                      </Typography>
+                      <Typography variant='body2' color='text.secondary' sx={{ mt: 1 }}>
+                        Supplier Order: {hubPrintDoc.supplierOrderNumber}
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <InvoiceItemsTable
+                  columns={['Product', 'Qty', 'Unit Cost (Landed)', 'Line Total']}
+                  rows={hubPrintDoc.lines.map(row => [
+                    row.name,
+                    row.qty,
+                    formatPKR(row.unitCost),
+                    formatPKR(row.qty * row.unitCost)
+                  ])}
+                />
+                <InvoiceTotals
+                  rows={[
+                    {
+                      label: 'Net Sales (Company)',
+                      value: formatPKR(hubPrintDoc.lines.reduce((s, l) => s + l.qty * l.unitCost, 0))
+                    }
+                  ]}
+                  highlightLabel='Net Sales (Company)'
+                />
+              </>
+            )}
+            <InvoiceFooter>Generated on {new Date().toLocaleDateString('en-GB')}</InvoiceFooter>
+          </InvoiceLayout>
         </Box>
       ) : null}
     </>
@@ -2859,10 +2612,8 @@ function MobileGrnCard({
   onReceiveMore,
   onEditDraft,
   editDraftLoading,
-  onSupplierInvoice,
   printLoading,
   showReceiveMore,
-  canPostInvoice,
   canPost
 }: {
   grn: GrnRow
@@ -2872,10 +2623,8 @@ function MobileGrnCard({
   onReceiveMore: () => void
   onEditDraft?: () => void
   editDraftLoading?: boolean
-  onSupplierInvoice: () => void
   printLoading?: boolean
   showReceiveMore: boolean
-  canPostInvoice: boolean
   canPost: boolean
 }) {
   return (
@@ -2902,26 +2651,6 @@ function MobileGrnCard({
             </IconButton>
           </Tooltip>
         )}
-        {canPostInvoice && (
-          <Tooltip
-            title={
-              grn.status !== 'POSTED'
-                ? 'Post receipt first — invoice links posted receipts only'
-                : 'Supplier invoice (optional)'
-            }
-          >
-            <span>
-              <IconButton
-                size='small'
-                onClick={onSupplierInvoice}
-                aria-label='Supplier invoice for this receipt'
-                disabled={grn.status !== 'POSTED'}
-              >
-                <i className='tabler-file-invoice' />
-              </IconButton>
-            </span>
-          </Tooltip>
-        )}
         <Button size='small' onClick={onView}>
           View
         </Button>
@@ -2936,30 +2665,6 @@ function MobileGrnCard({
           </Button>
         )}
       </Box>
-    </Paper>
-  )
-}
-
-function MobileInvCard({ inv, onView }: { inv: InvRow; onView: () => void }) {
-  return (
-    <Paper variant='outlined' sx={{ p: 2, borderRadius: 3 }}>
-      <div className='flex justify-between'>
-        <div>
-          <Typography variant='subtitle2' fontWeight={700}>
-            {inv.invoiceNumber}
-          </Typography>
-          <Typography variant='caption' color='text.secondary'>
-            {(inv.supplierId as any)?.name}
-          </Typography>
-        </div>
-        <Chip label={inv.status} size='small' {...statusChipSx(inv.status)} />
-      </div>
-      <Typography variant='body2' className='mt-4'>
-        {formatPKR(inv.totalAmount)}
-      </Typography>
-      <Button size='small' className='mt-5' fullWidth variant='tonal' onClick={onView}>
-        View detail
-      </Button>
     </Paper>
   )
 }
