@@ -52,17 +52,16 @@ const MetricLabelWithHint = ({ label, hint }: { label: string; hint: ReactNode }
 )
 
 const FP_TOOLTIPS = {
-  /** “Cash in hand” style question — this is an implied / derived balance */
-  impliedCash: (
+  companyCashFlow: (
     <>
-      This is the app’s <strong>estimate of money you can think of as “with you”</strong> right now. It is{' '}
-      <strong>not</strong> the same as opening a safe and counting notes unless every payment is recorded
-      here.
-      <br />
-      <br />
-      We start from the <strong>opening</strong> amount (what you or your office entered as “how much you
-      started with”), then we add what came in and subtract what went out—based only on this system’s
-      data.
+      Company-only cash movements: includes distributor remittances received, minus settlements paid to
+      distributors, supplier payments, and expenses, starting from opening balance.
+    </>
+  ),
+  ecosystemCashFlow: (
+    <>
+      System-wide movement including pharmacy-to-distributor collections. This may double count flows and
+      does not represent actual company cash in hand.
     </>
   ),
   openingLine: (
@@ -188,9 +187,16 @@ const FinancialPositionSection = () => {
 
   const lineSeries = useMemo(() => {
     const series = flow?.series || []
+    const hasCompanyFlow = series.some((x: any) => x?.companyInflow != null || x?.companyOutflow != null)
     return [
-      { name: 'Inflow', data: series.map((x: any) => x.inflow) },
-      { name: 'Outflow', data: series.map((x: any) => x.outflow) }
+      {
+        name: hasCompanyFlow ? 'Company inflow' : 'Inflow',
+        data: series.map((x: any) => (hasCompanyFlow ? (x.companyInflow ?? x.inflow ?? 0) : (x.inflow ?? 0)))
+      },
+      {
+        name: hasCompanyFlow ? 'Company outflow' : 'Outflow',
+        data: series.map((x: any) => (hasCompanyFlow ? (x.companyOutflow ?? x.outflow ?? 0) : (x.outflow ?? 0)))
+      }
     ]
   }, [flow])
 
@@ -236,17 +242,17 @@ const FinancialPositionSection = () => {
     <Grid container spacing={4} sx={{ alignItems: 'stretch' }}>
       <Grid size={{ xs: 12 }}>
         <Typography variant='body2' color='text.secondary' className='mbe-2'>
-          Implied cash uses collections, settlements, expenses (including payroll), and supplier payments. Supplier{' '}
-          <strong>PURCHASE</strong> lines affect payables only, not PnL. Delivery profit is unchanged.
+          Company cash flow is the primary KPI. Ecosystem cash flow keeps legacy system-wide movement
+          logic for continuity. Supplier <strong>PURCHASE</strong> lines affect payables only, not PnL.
         </Typography>
       </Grid>
 
       <Grid size={{ xs: 12, sm: 6, md: 4 }} sx={metricGridSx}>
-        <Card sx={metricCardSx}>
+        <Card sx={{ ...metricCardSx, border: theme => `1px solid ${theme.palette.success.main}` }}>
           <CardContent sx={metricCardContentSx}>
-            <MetricLabelWithHint label='Implied cash balance' hint={FP_TOOLTIPS.impliedCash} />
-            <Typography variant='h5' sx={{ mt: 0.5 }}>
-              {formatPKR(summary?.cashBalance ?? 0)}
+            <MetricLabelWithHint label='Company Cash Flow (Derived)' hint={FP_TOOLTIPS.companyCashFlow} />
+            <Typography variant='h5' color='success.main' sx={{ mt: 0.5 }}>
+              {formatPKR(summary?.companyCashFlow ?? summary?.cashBalance ?? 0)}
             </Typography>
             <Box
               className='mts-2 flex items-center flex-wrap gap-0.5'
@@ -274,6 +280,18 @@ const FinancialPositionSection = () => {
           </CardContent>
         </Card>
       </Grid>
+      {summary?.companyCashFlow != null ? (
+        <Grid size={{ xs: 12, sm: 6, md: 4 }} sx={metricGridSx}>
+          <Card sx={{ ...metricCardSx, opacity: 0.92 }}>
+            <CardContent sx={metricCardContentSx}>
+              <MetricLabelWithHint label='Ecosystem Cash Flow (Derived)' hint={FP_TOOLTIPS.ecosystemCashFlow} />
+              <Typography variant='h5' sx={{ mt: 0.5 }}>
+                {formatPKR(summary?.ecosystemCashFlow ?? summary?.cashBalance ?? 0)}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+      ) : null}
       <Grid size={{ xs: 12, sm: 6, md: 4 }} sx={metricGridSx}>
         <Card sx={metricCardSx}>
           <CardContent sx={metricCardContentSx}>
@@ -338,9 +356,12 @@ const FinancialPositionSection = () => {
         </Grid>
       )}
 
+      {/* Keep both charts on a dedicated next row, separate from KPI cards */}
+      <Grid size={{ xs: 12 }} />
+
       <Grid size={{ xs: 12, md: 6 }}>
         <Card>
-          <CardHeader title='Cash inflow vs outflow (12 months)' />
+          <CardHeader title='Company Cash Flow (Derived) — inflow vs outflow (12 months)' />
           <CardContent>
             {flowLoading ? (
               <Skeleton variant='rounded' width='100%' height={320} animation='wave' />
