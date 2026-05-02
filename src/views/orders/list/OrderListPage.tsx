@@ -10,7 +10,16 @@ import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import CircularProgress from '@mui/material/CircularProgress'
 import Stack from '@mui/material/Stack'
-import { showApiError } from '@/utils/apiErrors'
+import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
+import MenuItem from '@mui/material/MenuItem'
+import CustomTextField from '@core/components/mui/TextField'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import Tooltip from '@mui/material/Tooltip'
+import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   createColumnHelper,
@@ -59,6 +68,18 @@ const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'd
 
 const columnHelper = createColumnHelper<Order>()
 
+/** '' = default (API omits status → backend excludes CANCELLED). ALL = every status. */
+const ORDER_LIST_STATUS_FILTER = [
+  { value: '', label: 'Active (hide cancelled)' },
+  { value: 'ALL', label: 'All statuses' },
+  { value: 'PENDING', label: 'Pending' },
+  { value: 'PARTIALLY_DELIVERED', label: 'Partially delivered' },
+  { value: 'DELIVERED', label: 'Delivered' },
+  { value: 'PARTIALLY_RETURNED', label: 'Partially returned' },
+  { value: 'RETURNED', label: 'Returned' },
+  { value: 'CANCELLED', label: 'Cancelled' }
+] as const
+
 const OrderListPage = () => {
   const router = useRouter()
   const { hasPermission } = useAuth()
@@ -70,9 +91,13 @@ const OrderListPage = () => {
   const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
   const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
   const fetchSeq = useRef(0)
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
+  const [cancelling, setCancelling] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<string>('')
 
   const filterOpen = Boolean(filterAnchor)
-  const activeFilterCount = countDateUserFilters(appliedFilters)
+  const activeFilterCount =
+    countDateUserFilters(appliedFilters) + (statusFilter !== '' ? 1 : 0)
 
   const fetchOrders = useCallback(async () => {
     const seq = ++fetchSeq.current
@@ -80,6 +105,8 @@ const OrderListPage = () => {
     try {
       const params: Record<string, string> = { limit: '100' }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
+      if (statusFilter === 'ALL') params.status = 'ALL'
+      else if (statusFilter !== '') params.status = statusFilter
       const { data: res } = await ordersService.list(params)
       if (seq !== fetchSeq.current) return
       setData(Array.isArray(res?.data) ? res.data : [])
@@ -88,7 +115,7 @@ const OrderListPage = () => {
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch])
+  }, [appliedFilters, debouncedSearch, statusFilter])
 
   useEffect(() => {
     fetchOrders()
@@ -98,6 +125,21 @@ const OrderListPage = () => {
     setFilterAnchor(e.currentTarget)
   }
   const closeFilterPopover = () => setFilterAnchor(null)
+
+  const handleCancelOrder = async () => {
+    if (!cancelTarget) return
+    setCancelling(true)
+    try {
+      await ordersService.cancel(cancelTarget._id)
+      showSuccess('Order cancelled')
+      setCancelTarget(null)
+      fetchOrders()
+    } catch (err) {
+      showApiError(err, 'Failed to cancel order')
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   const columns = useMemo<ColumnDef<Order, any>[]>(
     () => [
@@ -153,17 +195,37 @@ const OrderListPage = () => {
         cell: ({ row }) => (
           <div className='flex items-center'>
             {canEdit && row.original.status === 'PENDING' && (
+              <>
+                <Tooltip title='Edit'>
+                  <IconButton
+                    size='small'
+                    aria-label='Edit order'
+                    onClick={() => router.push(`/orders/${row.original._id}/edit`)}
+                  >
+                    <i className='tabler-edit text-textSecondary' />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title='Cancel order'>
+                  <IconButton
+                    size='small'
+                    color='error'
+                    aria-label='Cancel order'
+                    onClick={() => setCancelTarget(row.original)}
+                  >
+                    <i className='tabler-trash text-textSecondary' />
+                  </IconButton>
+                </Tooltip>
+              </>
+            )}
+            <Tooltip title='View'>
               <IconButton
                 size='small'
-                aria-label='Edit order'
-                onClick={() => router.push(`/orders/${row.original._id}/edit`)}
+                aria-label='View order'
+                onClick={() => router.push(`/orders/${row.original._id}`)}
               >
-                <i className='tabler-edit text-textSecondary' />
+                <i className='tabler-eye text-textSecondary' />
               </IconButton>
-            )}
-            <IconButton size='small' aria-label='View order' onClick={() => router.push(`/orders/${row.original._id}`)}>
-              <i className='tabler-eye text-textSecondary' />
-            </IconButton>
+            </Tooltip>
           </div>
         )
       })
@@ -201,8 +263,34 @@ const OrderListPage = () => {
       </div>
 
       <ListFilterPopover open={filterOpen} anchorEl={filterAnchor} onClose={closeFilterPopover}>
+        <Box sx={{ px: 2.5, pt: 2.5, pb: 0 }}>
+          <Typography
+            variant='overline'
+            sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: '0.08em', display: 'block', mb: 1 }}
+          >
+            Status
+          </Typography>
+          <CustomTextField
+            select
+            fullWidth
+            size='small'
+            label='Order status'
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+          >
+            {ORDER_LIST_STATUS_FILTER.map(opt => (
+              <MenuItem key={opt.value || 'default'} value={opt.value}>
+                {opt.label}
+              </MenuItem>
+            ))}
+          </CustomTextField>
+          <Typography variant='caption' color='text.secondary' sx={{ display: 'block', mt: 1, lineHeight: 1.5 }}>
+            Default hides cancelled orders. Choose &quot;All statuses&quot; or &quot;Cancelled&quot; to include them.
+          </Typography>
+        </Box>
+        <Divider sx={{ my: 1 }} />
         <DateAndCreatedByFilterPanel
-          title='Filter orders'
+          title='More filters'
           description='Narrow the list by date and who created the order.'
           dateSectionLabel='Order date'
           createdByHelperText='Matches the teammate who saved the order. Older rows may not have this set.'
@@ -212,6 +300,7 @@ const OrderListPage = () => {
           filterAnchor={filterAnchor}
           open={filterOpen}
           onClose={closeFilterPopover}
+          onClearAllExtras={() => setStatusFilter('')}
         />
       </ListFilterPopover>
 
@@ -262,6 +351,25 @@ const OrderListPage = () => {
         </table>
       </div>
       <TablePaginationComponent table={table as any} />
+
+      <Dialog open={Boolean(cancelTarget)} onClose={() => !cancelling && setCancelTarget(null)} maxWidth='xs' fullWidth>
+        <DialogTitle>Cancel order?</DialogTitle>
+        <DialogContent>
+          <Typography variant='body2' color='text.secondary'>
+            {cancelTarget
+              ? `This will cancel ${cancelTarget.orderNumber}. This action cannot be undone from the list.`
+              : null}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCancelTarget(null)} disabled={cancelling}>
+            No, keep it
+          </Button>
+          <Button color='error' variant='contained' onClick={handleCancelOrder} disabled={cancelling}>
+            {cancelling ? 'Cancelling…' : 'Yes, cancel order'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   )
 }

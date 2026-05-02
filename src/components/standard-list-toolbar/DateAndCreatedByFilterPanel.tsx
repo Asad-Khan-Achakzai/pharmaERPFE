@@ -69,6 +69,8 @@ type PanelProps = {
   filterAnchor: HTMLElement | null
   open: boolean
   onClose: () => void
+  /** Runs after date/user filters are reset (e.g. reset extra list filters like order status). */
+  onClearAllExtras?: () => void
 }
 
 export function DateAndCreatedByFilterPanel({
@@ -82,7 +84,8 @@ export function DateAndCreatedByFilterPanel({
   onAppliedChange,
   filterAnchor,
   open,
-  onClose
+  onClose,
+  onClearAllExtras
 }: PanelProps) {
   const theme = useTheme()
   const isCompactCalendarViewport = useMediaQuery(theme.breakpoints.down('sm'))
@@ -136,6 +139,7 @@ export function DateAndCreatedByFilterPanel({
   const clearAll = () => {
     setDraft(emptyDateUserFilters)
     onAppliedChange(emptyDateUserFilters)
+    onClearAllExtras?.()
     onClose()
   }
 
