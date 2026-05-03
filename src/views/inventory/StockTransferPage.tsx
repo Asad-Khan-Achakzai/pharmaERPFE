@@ -9,7 +9,6 @@ import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
-import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
@@ -34,6 +33,7 @@ import TablePaginationComponent from '@components/TablePaginationComponent'
 import { inventoryService } from '@/services/inventory.service'
 import { distributorsService } from '@/services/distributors.service'
 import { productsService } from '@/services/products.service'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 
 import tableStyles from '@core/styles/table.module.css'
 import {
@@ -80,14 +80,14 @@ const columnHelper = createColumnHelper<Transfer>()
 const StockTransferPage = () => {
   const { hasPermission } = useAuth()
   const canTransfer = hasPermission('inventory.transfer')
-  const [distributors, setDistributors] = useState<any[]>([])
-  const [products, setProducts] = useState<any[]>([])
+  const [selectedFromDistributor, setSelectedFromDistributor] = useState<any | null>(null)
+  const [selectedToDistributor, setSelectedToDistributor] = useState<any | null>(null)
+  const [productPickCache, setProductPickCache] = useState<any[]>([])
   const [fromDistributorId, setFromDistributorId] = useState('')
   const [distributorId, setDistributorId] = useState('')
   const [items, setItems] = useState([{ productId: '', quantity: 1 }])
   const [totalShippingCost, setTotalShippingCost] = useState(0)
   const [saving, setSaving] = useState(false)
-  const [loadingData, setLoadingData] = useState(true)
 
   const [transfers, setTransfers] = useState<Transfer[]>([])
   const [loadingHistory, setLoadingHistory] = useState(true)
@@ -106,21 +106,19 @@ const StockTransferPage = () => {
     distributorId !== '' &&
     fromDistributorId !== distributorId
 
-  const fetchLookups = async () => {
-    setLoadingData(true)
-    try {
-      const [d, p] = await Promise.all([
-        distributorsService.lookup({ limit: 100 }),
-        productsService.lookup({ limit: 100 })
-      ])
-      setDistributors(d.data.data || [])
-      setProducts(p.data.data || [])
-    } catch (err) {
-      showApiError(err, 'Failed to load data')
-    } finally {
-      setLoadingData(false)
-    }
-  }
+  const mergeProduct = useCallback((p: any) => {
+    if (!p?._id) return
+    setProductPickCache(prev => (prev.some(x => String(x._id) === String(p._id)) ? prev : [...prev, p]))
+  }, [])
+
+  const productOptionLabel = useCallback(
+    (p: any) => {
+      const avail = fromDistributorId ? stockByProductId[String(p._id)] : undefined
+      if (fromDistributorId && !loadingStock && avail !== undefined) return `${p.name ?? ''} (available: ${avail})`
+      return p.name ?? ''
+    },
+    [fromDistributorId, loadingStock, stockByProductId]
+  )
 
   const filterOpen = Boolean(filterAnchor)
   const activeFilterCount = countDateUserFilters(appliedFilters)
@@ -148,10 +146,6 @@ const StockTransferPage = () => {
       if (seq === fetchSeq.current) setLoadingHistory(false)
     }
   }, [appliedFilters])
-
-  useEffect(() => {
-    fetchLookups()
-  }, [])
 
   useEffect(() => {
     fetchHistory()
@@ -204,7 +198,9 @@ const StockTransferPage = () => {
       showSuccess('Stock transferred successfully')
       setItems([{ productId: '', quantity: 1 }])
       setTotalShippingCost(0)
+      setSelectedFromDistributor(null)
       setFromDistributorId('')
+      setProductPickCache([])
       fetchHistory()
     } catch (err) { showApiError(err, 'Transfer failed') }
     finally { setSaving(false) }
@@ -277,114 +273,136 @@ const StockTransferPage = () => {
         <Card>
           <CardHeader title='Stock Transfer' />
           <CardContent>
-            {loadingData ? (
-              <div className='flex justify-center p-12'><CircularProgress /></div>
-            ) : (
-              <Grid container spacing={4}>
-                <Grid size={{ xs: 12 }}>
-                  <Typography variant='body2' color='text.secondary' className='mbe-2'>
-                    Transfer type
-                  </Typography>
-                  {/*
+            <Grid container spacing={4}>
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary' className='mbe-2'>
+                  Transfer type
+                </Typography>
+                {/*
                     From company → distributor (tab) hidden for now — only between-distributors transfers.
                   <ToggleButtonGroup exclusive ...>
                     <ToggleButton value='company'>From company to distributor</ToggleButton>
                     <ToggleButton value='between'>Between distributors</ToggleButton>
                   </ToggleButtonGroup>
                   */}
-                  <Typography variant='body1' fontWeight={600}>
-                    Between distributors
-                  </Typography>
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                    <CustomTextField
-                      required
-                      select
-                      fullWidth
-                      label='From distributor'
-                      value={fromDistributorId}
-                      onChange={e => setFromDistributorId(e.target.value)}
-                      helperText={
-                        loadingStock
-                          ? 'Loading stock…'
-                          : fromDistributorId
-                            ? 'Available quantities appear next to each product'
-                            : undefined
-                      }
-                    >
-                      {distributors.map(d => <MenuItem key={d._id} value={d._id}>{d.name}</MenuItem>)}
-                    </CustomTextField>
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <CustomTextField
-                    required
-                    select
-                    fullWidth
-                    label='To distributor'
-                    value={distributorId}
-                    onChange={e => setDistributorId(e.target.value)}
-                  >
-                    {distributors.filter(d => d._id !== fromDistributorId).map(d => (
-                      <MenuItem key={d._id} value={d._id}>
-                        {d.name}
-                      </MenuItem>
-                    ))}
-                  </CustomTextField>
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <CustomTextField
-                    fullWidth
-                    label='Total Shipping Cost (PKR)'
-                    type='number'
-                    value={totalShippingCost}
-                    onChange={e => setTotalShippingCost(+e.target.value)}
-                    helperText={items.reduce((s, i) => s + i.quantity, 0) > 0
-                      ? `≈ ₨ ${(totalShippingCost / items.reduce((s, i) => s + i.quantity, 0)).toFixed(2)} per unit across ${items.reduce((s, i) => s + i.quantity, 0)} units`
-                      : undefined}
-                  />
-                </Grid>
-                <Grid size={{ xs: 12 }}>
-                  {items.map((item, i) => (
-                    <Grid container spacing={3} key={i} className='mbe-3'>
-                      <Grid size={{ xs: 12, sm: 5 }}>
-                        <CustomTextField required select fullWidth label='Product' value={item.productId} onChange={e => updateItem(i, 'productId', e.target.value)}>
-                          {products.map(p => {
-                            const avail = stockByProductId[p._id]
-                            const label =
-                              fromDistributorId && !loadingStock ? `${p.name} (available: ${avail ?? 0})` : p.name
-                            return <MenuItem key={p._id} value={p._id}>{label}</MenuItem>
-                          })}
-                        </CustomTextField>
-                      </Grid>
-                      <Grid size={{ xs: 10, sm: 5 }}>
-                        <CustomTextField
-                          required
-                          fullWidth
-                          label='Quantity'
-                          type='number'
-                          value={item.quantity}
-                          onChange={e => updateItem(i, 'quantity', +e.target.value)}
-                          helperText={
-                            item.productId && stockByProductId[item.productId] !== undefined
-                              ? `Max available: ${stockByProductId[item.productId]}`
-                              : undefined
-                          }
-                        />
-                      </Grid>
-                      <Grid size={{ xs: 2, sm: 2 }} className='flex items-center'>
-                        {items.length > 1 && <IconButton onClick={() => removeItem(i)}><i className='tabler-trash text-error' /></IconButton>}
-                      </Grid>
-                    </Grid>
-                  ))}
-                  <Button variant='outlined' onClick={addItem} startIcon={<i className='tabler-plus' />}>Add Item</Button>
-                </Grid>
-                <Grid size={{ xs: 12 }}>
-                  <Button variant='contained' onClick={handleSubmit} disabled={saving || !canTransfer || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>
-                    {saving ? 'Transferring...' : 'Transfer Stock'}
-                  </Button>
-                </Grid>
+                <Typography variant='body1' fontWeight={600}>
+                  Between distributors
+                </Typography>
               </Grid>
-            )}
+              <Grid size={{ xs: 12, md: 6 }}>
+                <LookupAutocomplete
+                  value={selectedFromDistributor}
+                  onChange={v => {
+                    setSelectedFromDistributor(v)
+                    setFromDistributorId(v ? String(v._id) : '')
+                  }}
+                  fetchOptions={search =>
+                    distributorsService
+                      .lookup({ limit: 25, ...(search ? { search } : {}) })
+                      .then(r => r.data.data || [])
+                  }
+                  label='From distributor'
+                  placeholder='Type to search'
+                  required
+                  helperText={
+                    loadingStock
+                      ? 'Loading stock…'
+                      : fromDistributorId
+                        ? 'Available quantities appear next to each product'
+                        : undefined
+                  }
+                  fetchErrorMessage='Failed to load distributors'
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <LookupAutocomplete
+                  value={selectedToDistributor}
+                  onChange={v => {
+                    setSelectedToDistributor(v)
+                    setDistributorId(v ? String(v._id) : '')
+                  }}
+                  fetchOptions={search =>
+                    distributorsService
+                      .lookup({ limit: 25, ...(search ? { search } : {}) })
+                      .then(r => r.data.data || [])
+                  }
+                  label='To distributor'
+                  placeholder='Type to search'
+                  required
+                  fetchErrorMessage='Failed to load distributors'
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <CustomTextField
+                  fullWidth
+                  label='Total Shipping Cost (PKR)'
+                  type='number'
+                  value={totalShippingCost}
+                  onChange={e => setTotalShippingCost(+e.target.value)}
+                  helperText={items.reduce((s, i) => s + i.quantity, 0) > 0
+                    ? `≈ ₨ ${(totalShippingCost / items.reduce((s, i) => s + i.quantity, 0)).toFixed(2)} per unit across ${items.reduce((s, i) => s + i.quantity, 0)} units`
+                    : undefined}
+                />
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                {items.map((item, i) => (
+                  <Grid container spacing={3} key={i} className='mbe-3'>
+                    <Grid size={{ xs: 12, sm: 5 }}>
+                      <LookupAutocomplete
+                        value={productPickCache.find(p => String(p._id) === item.productId) ?? null}
+                        onChange={v => {
+                          updateItem(i, 'productId', v ? String(v._id) : '')
+                          if (v) mergeProduct(v)
+                        }}
+                        fetchOptions={search =>
+                          productsService.lookup({ limit: 25, ...(search ? { search } : {}) }).then(r => r.data.data || [])
+                        }
+                        getOptionLabel={productOptionLabel}
+                        label='Product'
+                        placeholder='Type to search'
+                        required
+                        fetchErrorMessage='Failed to load products'
+                      />
+                    </Grid>
+                    <Grid size={{ xs: 10, sm: 5 }}>
+                      <CustomTextField
+                        required
+                        fullWidth
+                        label='Quantity'
+                        type='number'
+                        value={item.quantity}
+                        onChange={e => updateItem(i, 'quantity', +e.target.value)}
+                        helperText={
+                          item.productId && stockByProductId[item.productId] !== undefined
+                            ? `Max available: ${stockByProductId[item.productId]}`
+                            : undefined
+                        }
+                      />
+                    </Grid>
+                    <Grid size={{ xs: 2, sm: 2 }} className='flex items-center'>
+                      {items.length > 1 && (
+                        <IconButton onClick={() => removeItem(i)}>
+                          <i className='tabler-trash text-error' />
+                        </IconButton>
+                      )}
+                    </Grid>
+                  </Grid>
+                ))}
+                <Button variant='outlined' onClick={addItem} startIcon={<i className='tabler-plus' />}>
+                  Add Item
+                </Button>
+              </Grid>
+              <Grid size={{ xs: 12 }}>
+                <Button
+                  variant='contained'
+                  onClick={handleSubmit}
+                  disabled={saving || !canTransfer || !isFormValid}
+                  startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}
+                >
+                  {saving ? 'Transferring...' : 'Transfer Stock'}
+                </Button>
+              </Grid>
+            </Grid>
           </CardContent>
         </Card>
       </Grid>

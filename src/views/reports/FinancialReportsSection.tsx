@@ -27,12 +27,11 @@ import CustomTextField from '@core/components/mui/TextField'
 import { reportsService } from '@/services/reports.service'
 import { pharmaciesService } from '@/services/pharmacies.service'
 import { distributorsService } from '@/services/distributors.service'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import FinancialPositionSection from '@/views/reports/FinancialPositionSection'
 import TableSkeleton from '@/components/skeletons/TableSkeleton'
 
 let financialReportsCache: {
-  pharmacies: any[]
-  distributors: any[]
   pharmacyBal: any
   distBal: any
   periodData: any
@@ -54,11 +53,10 @@ const FinancialReportsSection = () => {
   const [to, setTo] = useState(getLocalDateISO)
   const [pharmacyFilter, setPharmacyFilter] = useState('')
   const [distributorFilter, setDistributorFilter] = useState('')
+  const [selectedPharmacyFilter, setSelectedPharmacyFilter] = useState<any | null>(null)
+  const [selectedDistributorFilter, setSelectedDistributorFilter] = useState<any | null>(null)
   const [collectorType, setCollectorType] = useState('')
   const [settlementDirection, setSettlementDirection] = useState('')
-
-  const [pharmacies, setPharmacies] = useState<any[]>(financialReportsCache?.pharmacies ?? [])
-  const [distributors, setDistributors] = useState<any[]>(financialReportsCache?.distributors ?? [])
 
   const [pharmacyBal, setPharmacyBal] = useState<any>(financialReportsCache?.pharmacyBal ?? null)
   const [distBal, setDistBal] = useState<any>(financialReportsCache?.distBal ?? null)
@@ -80,8 +78,6 @@ const FinancialReportsSection = () => {
         reportsService.distributorBalances()
       ])
       const next = {
-        pharmacies: financialReportsCache?.pharmacies ?? [],
-        distributors: financialReportsCache?.distributors ?? [],
         pharmacyBal: pb.data.data,
         distBal: db.data.data,
         periodData: financialReportsCache?.periodData ?? null
@@ -100,31 +96,6 @@ const FinancialReportsSection = () => {
     loadBalances()
   }, [loadBalances])
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        if (financialReportsCache?.pharmacies && financialReportsCache?.distributors) return
-        const [pr, dr] = await Promise.all([
-          pharmaciesService.lookup({ limit: 500 }),
-          distributorsService.lookup({ limit: 500, isActive: 'true' })
-        ])
-        const next = {
-          pharmacies: pr.data.data || [],
-          distributors: dr.data.data || [],
-          pharmacyBal: financialReportsCache?.pharmacyBal ?? null,
-          distBal: financialReportsCache?.distBal ?? null,
-          periodData: financialReportsCache?.periodData ?? null
-        }
-        financialReportsCache = next
-        setPharmacies(next.pharmacies)
-        setDistributors(next.distributors)
-      } catch {
-        /* optional */
-      }
-    }
-    load()
-  }, [])
-
   const loadPeriod = async () => {
     setLoadingPeriod(true)
     try {
@@ -138,8 +109,6 @@ const FinancialReportsSection = () => {
 
       const res = await reportsService.financialOverview(params)
       const next = {
-        pharmacies: financialReportsCache?.pharmacies ?? pharmacies,
-        distributors: financialReportsCache?.distributors ?? distributors,
         pharmacyBal: financialReportsCache?.pharmacyBal ?? pharmacyBal,
         distBal: financialReportsCache?.distBal ?? distBal,
         periodData: res.data.data
@@ -352,34 +321,40 @@ const FinancialReportsSection = () => {
                 onChange={e => setTo(e.target.value)}
                 slotProps={{ inputLabel: { shrink: true } }}
               />
-              <CustomTextField
-                select
-                label='Pharmacy (collections filter)'
-                value={pharmacyFilter}
-                onChange={e => setPharmacyFilter(e.target.value)}
-                sx={{ minWidth: 200 }}
-              >
-                <MenuItem value=''>All</MenuItem>
-                {pharmacies.map(p => (
-                  <MenuItem key={p._id} value={p._id}>
-                    {p.name}
-                  </MenuItem>
-                ))}
-              </CustomTextField>
-              <CustomTextField
-                select
-                label='Distributor (settlements filter)'
-                value={distributorFilter}
-                onChange={e => setDistributorFilter(e.target.value)}
-                sx={{ minWidth: 200 }}
-              >
-                <MenuItem value=''>All</MenuItem>
-                {distributors.map(d => (
-                  <MenuItem key={d._id} value={d._id}>
-                    {d.name}
-                  </MenuItem>
-                ))}
-              </CustomTextField>
+              <div className='min-is-[220px] flex-1'>
+                <LookupAutocomplete
+                  value={selectedPharmacyFilter}
+                  onChange={v => {
+                    setSelectedPharmacyFilter(v)
+                    setPharmacyFilter(v ? String(v._id) : '')
+                  }}
+                  fetchOptions={search =>
+                    pharmaciesService.lookup({ limit: 25, ...(search ? { search } : {}) }).then(r => r.data.data || [])
+                  }
+                  label='Pharmacy (collections filter)'
+                  placeholder='All pharmacies'
+                  helperText='Optional — narrow collections by pharmacy'
+                  fetchErrorMessage='Failed to load pharmacies'
+                />
+              </div>
+              <div className='min-is-[220px] flex-1'>
+                <LookupAutocomplete
+                  value={selectedDistributorFilter}
+                  onChange={v => {
+                    setSelectedDistributorFilter(v)
+                    setDistributorFilter(v ? String(v._id) : '')
+                  }}
+                  fetchOptions={search =>
+                    distributorsService
+                      .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
+                      .then(r => r.data.data || [])
+                  }
+                  label='Distributor (settlements filter)'
+                  placeholder='All distributors'
+                  helperText='Optional — narrow settlements by distributor'
+                  fetchErrorMessage='Failed to load distributors'
+                />
+              </div>
               <CustomTextField select label='Collector' value={collectorType} onChange={e => setCollectorType(e.target.value)} sx={{ minWidth: 140 }}>
                 <MenuItem value=''>Any</MenuItem>
                 <MenuItem value='COMPANY'>Company</MenuItem>

@@ -1,18 +1,17 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Grid from '@mui/material/Grid'
-import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { useAuth } from '@/contexts/AuthContext'
 import { ordersService } from '@/services/orders.service'
 import { usersService } from '@/services/users.service'
@@ -33,6 +32,8 @@ type LineItem = {
   manualBonus: boolean
 }
 
+type RepOption = { _id: string; name?: string; email?: string; role?: string }
+
 const defaultLineItem = (distDisc: number, pharmDisc: number, buy: number, get: number): LineItem => ({
   productId: '',
   quantity: 1,
@@ -42,25 +43,30 @@ const defaultLineItem = (distDisc: number, pharmDisc: number, buy: number, get: 
   manualBonus: false
 })
 
+const repOptionLabel = (u: RepOption) =>
+  `${u.name ?? ''}${u.role ? ` · ${String(u.role).replace(/_/g, ' ')}` : ''}`
+
 const CreateOrderPage = () => {
   const router = useRouter()
   const { user } = useAuth()
-  const [pharmacies, setPharmacies] = useState<any[]>([])
-  const [distributors, setDistributors] = useState<any[]>([])
-  const [products, setProducts] = useState<any[]>([])
-  /** Full list for the doctor dropdown (API max 100 per page) */
-  const [allDoctors, setAllDoctors] = useState<any[]>([])
-  const [assignableReps, setAssignableReps] = useState<any[]>([])
-  const [pharmacyId, setPharmacyId] = useState('')
-  const [distributorId, setDistributorId] = useState('')
-  const [doctorId, setDoctorId] = useState('')
-  const [medicalRepId, setMedicalRepId] = useState('')
+  const [selectedPharmacy, setSelectedPharmacy] = useState<any | null>(null)
+  const [selectedDistributor, setSelectedDistributor] = useState<any | null>(null)
+  const [selectedDoctor, setSelectedDoctor] = useState<any | null>(null)
+  const [selectedRep, setSelectedRep] = useState<RepOption | null>(null)
+  const [productCatalog, setProductCatalog] = useState<any[]>([])
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState<LineItem[]>([defaultLineItem(0, 0, 0, 0)])
-  const [loadingData, setLoadingData] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  /** After first pharmacy sync, changing pharmacy uses strict “first linked” default */
   const pharmacyDoctorGateRef = useRef<'initial' | 'ready'>('initial')
+
+  const pharmacyId = selectedPharmacy ? String(selectedPharmacy._id) : ''
+  const distributorId = selectedDistributor ? String(selectedDistributor._id) : ''
+  const doctorId = selectedDoctor ? String(selectedDoctor._id) : ''
+  const medicalRepId = selectedRep ? String(selectedRep._id) : ''
+
+  const mergeIntoProductCatalog = useCallback((p: any) => {
+    setProductCatalog(prev => (prev.some(x => String(x._id) === String(p._id)) ? prev : [...prev, p]))
+  }, [])
 
   const isFormValid =
     pharmacyId !== '' &&
@@ -70,100 +76,74 @@ const CreateOrderPage = () => {
     items.every(i => i.productId !== '' && i.quantity > 0)
 
   useEffect(() => {
-    const fetch = async () => {
-      setLoadingData(true)
-      try {
-        const [ph, di, pr, reps, docRes] = await Promise.all([
-          pharmaciesService.lookup({ limit: 100 }),
-          distributorsService.lookup({ limit: 100 }),
-          productsService.lookup({ limit: 100 }),
-          usersService.assignable(),
-          doctorsService.lookup({ limit: 100, isActive: 'true' })
-        ])
-        setPharmacies(ph.data.data || [])
-        setDistributors(di.data.data || [])
-        setProducts(pr.data.data || [])
-        setAssignableReps(reps.data.data || [])
-        const docRaw = docRes.data.data || []
-        setAllDoctors(
-          [...docRaw].sort((a: any, b: any) =>
-            (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
-          )
-        )
-      } catch (err) { showApiError(err, 'Failed to load data') }
-      finally { setLoadingData(false) }
-    }
-    fetch()
-  }, [])
-
-  useEffect(() => {
-    if (user?._id) setMedicalRepId(prev => (prev ? prev : user._id))
+    if (user?._id)
+      setSelectedRep(prev => prev ?? { _id: user._id, name: user.name, role: user.role })
   }, [user])
 
-  /** Default doctor from pharmacy-linked list; dropdown still lists all doctors */
+  /** Default doctor from pharmacy-linked list; search still lists all doctors */
   useEffect(() => {
-    if (!pharmacyId) {
-      setDoctorId('')
+    if (!selectedPharmacy) {
+      setSelectedDoctor(null)
       return
     }
+    const pid = String(selectedPharmacy._id)
     let cancelled = false
     ;(async () => {
       try {
-        const res = await doctorsService.lookup({ pharmacyId, limit: 100, isActive: 'true' })
+        const res = await doctorsService.lookup({ pharmacyId: pid, limit: 100, isActive: 'true' })
         const raw = res.data.data || []
         const list = [...raw].sort((a: any, b: any) =>
           (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
         )
         if (cancelled) return
-        setDoctorId(prev => {
+        setSelectedDoctor((prev: any | null) => {
           const ids = new Set(list.map((d: any) => String(d._id)))
+          const prevId = prev ? String(prev._id) : ''
           if (pharmacyDoctorGateRef.current === 'initial') {
             pharmacyDoctorGateRef.current = 'ready'
-            if (prev && ids.has(String(prev))) return prev
-            if (prev) return prev
-            return list[0]?._id ? String(list[0]._id) : ''
+            if (prevId && ids.has(prevId)) return prev
+            if (prevId) return prev
+            return list[0] ?? null
           }
-          if (prev && ids.has(String(prev))) return prev
-          return list[0]?._id ? String(list[0]._id) : ''
+          if (prevId && ids.has(prevId)) return prev
+          return list[0] ?? null
         })
       } catch {
-        if (!cancelled) setDoctorId('')
+        if (!cancelled) setSelectedDoctor(null)
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [pharmacyId])
+  }, [selectedPharmacy])
 
   const getDiscountDefaults = () => {
-    const ph = pharmacies.find(p => p._id === pharmacyId)
-    const dist = distributors.find(d => d._id === distributorId)
-    return { d: dist?.discountOnTP ?? 0, p: ph?.discountOnTP ?? 0 }
+    const d = selectedDistributor?.discountOnTP ?? 0
+    const p = selectedPharmacy?.discountOnTP ?? 0
+    return { d, p }
   }
 
-  const getBonusScheme = () => {
-    const ph = pharmacies.find(p => p._id === pharmacyId)
-    return { buy: ph?.bonusScheme?.buyQty ?? 0, get: ph?.bonusScheme?.getQty ?? 0 }
-  }
+  const getBonusScheme = () => ({
+    buy: selectedPharmacy?.bonusScheme?.buyQty ?? 0,
+    get: selectedPharmacy?.bonusScheme?.getQty ?? 0
+  })
 
-  /** When pharmacy or distributor changes, refill discounts and auto bonus from scheme */
   useEffect(() => {
-    if (!pharmacyId || !distributorId) return
-    const ph = pharmacies.find(p => p._id === pharmacyId)
-    const dist = distributors.find(d => d._id === distributorId)
-    if (!ph || !dist) return
-    const d = dist.discountOnTP ?? 0
-    const p = ph.discountOnTP ?? 0
-    const buy = ph.bonusScheme?.buyQty ?? 0
-    const get = ph.bonusScheme?.getQty ?? 0
-    setItems(prev => prev.map(it => ({
-      ...it,
-      distributorDiscount: d,
-      clinicDiscount: p,
-      manualBonus: false,
-      bonusQuantity: calculateBonus(it.quantity, buy, get)
-    })))
-  }, [pharmacyId, distributorId, pharmacies, distributors])
+    if (!selectedPharmacy || !selectedDistributor) return
+    const d = selectedDistributor.discountOnTP ?? 0
+    const p = selectedPharmacy.discountOnTP ?? 0
+    const buy = selectedPharmacy.bonusScheme?.buyQty ?? 0
+    const get = selectedPharmacy.bonusScheme?.getQty ?? 0
+    setItems(prev =>
+      prev.map(it => ({
+        ...it,
+        distributorDiscount: d,
+        clinicDiscount: p,
+        manualBonus: false,
+        bonusQuantity: calculateBonus(it.quantity, buy, get)
+      }))
+    )
+  }, [selectedPharmacy, selectedDistributor])
 
   const addItem = () => {
     const { d, p } = getDiscountDefaults()
@@ -174,29 +154,40 @@ const CreateOrderPage = () => {
 
   const updateItem = (i: number, field: string, value: any) => {
     const { buy, get } = getBonusScheme()
-    setItems(prev => prev.map((item, idx) => {
-      if (idx !== i) return item
-      if (field === 'quantity') {
-        const q = +value
-        return {
-          ...item,
-          quantity: q,
-          manualBonus: false,
-          bonusQuantity: calculateBonus(q, buy, get)
+    setItems(prev =>
+      prev.map((item, idx) => {
+        if (idx !== i) return item
+        if (field === 'quantity') {
+          const q = +value
+          return {
+            ...item,
+            quantity: q,
+            manualBonus: false,
+            bonusQuantity: calculateBonus(q, buy, get)
+          }
         }
-      }
-      if (field === 'bonusQuantity') {
-        const b = Math.max(0, +value)
-        return { ...item, bonusQuantity: b, manualBonus: true }
-      }
-      return { ...item, [field]: value }
-    }))
+        if (field === 'bonusQuantity') {
+          const b = Math.max(0, +value)
+          return { ...item, bonusQuantity: b, manualBonus: true }
+        }
+        return { ...item, [field]: value }
+      })
+    )
   }
 
   const handleSubmit = async () => {
-    if (!pharmacyId || !distributorId) { showApiError(null, 'Select pharmacy and distributor'); return }
-    if (!medicalRepId) { showApiError(null, 'Select medical rep'); return }
-    if (items.some(i => !i.productId || i.quantity < 1)) { showApiError(null, 'Fill all items'); return }
+    if (!pharmacyId || !distributorId) {
+      showApiError(null, 'Select pharmacy and distributor')
+      return
+    }
+    if (!medicalRepId) {
+      showApiError(null, 'Select medical rep')
+      return
+    }
+    if (items.some(i => !i.productId || i.quantity < 1)) {
+      showApiError(null, 'Fill all items')
+      return
+    }
     setSubmitting(true)
     try {
       const payloadItems = items.map(({ manualBonus: _m, ...rest }) => rest)
@@ -210,89 +201,103 @@ const CreateOrderPage = () => {
       })
       showSuccess('Order created')
       router.push('/orders/list')
-    } catch (err) { showApiError(err, 'Failed to create order') }
-    finally { setSubmitting(false) }
+    } catch (err) {
+      showApiError(err, 'Failed to create order')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const { d: previewDistDisc, p: previewPharmDisc } = pharmacyId && distributorId ? getDiscountDefaults() : { d: 0, p: 0 }
+  const { d: previewDistDisc, p: previewPharmDisc } =
+    selectedPharmacy && selectedDistributor ? getDiscountDefaults() : { d: 0, p: 0 }
   const { buy: schemeBuy, get: schemeGet } = getBonusScheme()
-  const distributor = distributors.find(d => d._id === distributorId)
-  const financePreview = buildPreviewFromFormItems(items, products, distributor)
-  const repOptions =
-    assignableReps.length > 0
-      ? assignableReps
-      : user
-        ? [{ _id: user._id, name: user.name, role: user.role }]
-        : []
+  const financePreview = buildPreviewFromFormItems(items, productCatalog, selectedDistributor ?? undefined)
 
   return (
     <Card>
       <CardHeader title='Create Order' />
-      {loadingData ? (
-        <CardContent className='flex justify-center items-center min-bs-[240px]'>
-          <CircularProgress />
-        </CardContent>
-      ) : (
       <CardContent>
         <Grid container spacing={4}>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <CustomTextField required select fullWidth label='Pharmacy' value={pharmacyId} onChange={e => setPharmacyId(e.target.value)}>
-              {pharmacies.map(p => <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>)}
-            </CustomTextField>
+            <LookupAutocomplete
+              value={selectedPharmacy}
+              onChange={setSelectedPharmacy}
+              fetchOptions={search =>
+                pharmaciesService
+                  .lookup({ limit: 25, ...(search ? { search } : {}) })
+                  .then(r => r.data.data || [])
+              }
+              label='Pharmacy'
+              placeholder='Type to search'
+              helperText='Type to search by pharmacy name or city'
+              required
+              fetchErrorMessage='Failed to load pharmacies'
+            />
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <CustomTextField required select fullWidth label='Distributor' value={distributorId} onChange={e => setDistributorId(e.target.value)}>
-              {distributors.map(d => <MenuItem key={d._id} value={d._id}>{d.name}</MenuItem>)}
-            </CustomTextField>
+            <LookupAutocomplete
+              value={selectedDistributor}
+              onChange={setSelectedDistributor}
+              fetchOptions={search =>
+                distributorsService
+                  .lookup({ limit: 25, ...(search ? { search } : {}) })
+                  .then(r => r.data.data || [])
+              }
+              label='Distributor'
+              placeholder='Type to search'
+              helperText='Type to search by name'
+              required
+              fetchErrorMessage='Failed to load distributors'
+            />
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <CustomTextField
-              select
-              fullWidth
+            <LookupAutocomplete
+              value={selectedDoctor}
+              onChange={setSelectedDoctor}
+              fetchOptions={search =>
+                doctorsService
+                  .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
+                  .then(r => r.data.data || [])
+              }
               label='Doctor (optional)'
-              value={doctorId}
-              onChange={e => setDoctorId(e.target.value)}
-              disabled={!pharmacyId}
+              placeholder='Type to search'
+              disabled={!selectedPharmacy}
               helperText={
-                pharmacyId
-                  ? 'List shows all doctors. Default picks the first linked to this pharmacy when you change pharmacy; choose None or any doctor.'
+                selectedPharmacy
+                  ? 'Search all doctors. Default picks the first linked to this pharmacy when you change pharmacy.'
                   : 'Select a pharmacy first'
               }
-            >
-              <MenuItem value=''>None</MenuItem>
-              {allDoctors.map(d => (
-                <MenuItem key={d._id} value={d._id}>
-                  {d.name}
-                </MenuItem>
-              ))}
-            </CustomTextField>
+              fetchErrorMessage='Failed to load doctors'
+            />
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <CustomTextField
-              required
-              select
-              fullWidth
+            <LookupAutocomplete<RepOption>
+              value={selectedRep}
+              onChange={setSelectedRep}
+              fetchOptions={search =>
+                usersService
+                  .assignable({ limit: 25, ...(search ? { search } : {}) })
+                  .then(r => r.data.data || [])
+              }
+              getOptionLabel={repOptionLabel}
               label='Medical rep (assigned to order)'
-              value={medicalRepId}
-              onChange={e => setMedicalRepId(e.target.value)}
+              placeholder='Type to search'
+              required
               helperText='Defaults to you. Change if this order is for another rep.'
-            >
-              {repOptions.map((u: any) => (
-                <MenuItem key={u._id} value={u._id}>
-                  {u.name}
-                  {u.role ? ` · ${String(u.role).replace(/_/g, ' ')}` : ''}
-                </MenuItem>
-              ))}
-            </CustomTextField>
+              fetchErrorMessage='Failed to load users'
+            />
           </Grid>
 
           {pharmacyId && distributorId && (
             <Grid size={{ xs: 12 }}>
               <Typography variant='body2' color='text.secondary'>
-                Default discounts (on TP): distributor {previewDistDisc}% · pharmacy {previewPharmDisc}% — applied to all lines; you can override per line below.
+                Default discounts (on TP): distributor {previewDistDisc}% · pharmacy {previewPharmDisc}% — applied to
+                all lines; you can override per line below.
               </Typography>
               <Typography variant='body2' color='text.secondary' className='mts-1'>
-                Bonus scheme (Buy X Get Y): {schemeBuy > 0 && schemeGet > 0 ? `${schemeBuy} + ${schemeGet}` : 'None'} — bonus units are free (no TP); inventory cost uses paid + bonus.
+                Bonus scheme (Buy X Get Y):{' '}
+                {schemeBuy > 0 && schemeGet > 0 ? `${schemeBuy} + ${schemeGet}` : 'None'} — bonus units are free (no
+                TP); inventory cost uses paid + bonus.
               </Typography>
             </Grid>
           )}
@@ -300,39 +305,99 @@ const CreateOrderPage = () => {
           {items.map((item, i) => (
             <Grid container spacing={3} key={i} size={{ xs: 12 }}>
               <Grid size={{ xs: 12, sm: 3 }}>
-                <CustomTextField required select fullWidth label='Product' value={item.productId} onChange={e => updateItem(i, 'productId', e.target.value)}>
-                  {products.map(p => <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>)}
-                </CustomTextField>
+                <LookupAutocomplete
+                  value={
+                    item.productId
+                      ? productCatalog.find(p => String(p._id) === item.productId) ?? null
+                      : null
+                  }
+                  onChange={v => {
+                    updateItem(i, 'productId', v ? String(v._id) : '')
+                    if (v) mergeIntoProductCatalog(v)
+                  }}
+                  fetchOptions={search =>
+                    productsService
+                      .lookup({ limit: 25, ...(search ? { search } : {}) })
+                      .then(r => r.data.data || [])
+                  }
+                  label='Product'
+                  placeholder='Type to search'
+                  required
+                  fetchErrorMessage='Failed to load products'
+                />
               </Grid>
               <Grid size={{ xs: 4, sm: 2 }}>
-                <CustomTextField required fullWidth label='Paid qty' type='number' value={item.quantity} onChange={e => updateItem(i, 'quantity', +e.target.value)} />
+                <CustomTextField
+                  required
+                  fullWidth
+                  label='Paid qty'
+                  type='number'
+                  value={item.quantity}
+                  onChange={e => updateItem(i, 'quantity', +e.target.value)}
+                />
               </Grid>
               <Grid size={{ xs: 4, sm: 2 }}>
-                <CustomTextField fullWidth label='Bonus qty' type='number' value={item.bonusQuantity} onChange={e => updateItem(i, 'bonusQuantity', +e.target.value)} helperText={schemeBuy > 0 && schemeGet > 0 ? `Scheme ${schemeBuy}+${schemeGet}` : 'No scheme'} />
+                <CustomTextField
+                  fullWidth
+                  label='Bonus qty'
+                  type='number'
+                  value={item.bonusQuantity}
+                  onChange={e => updateItem(i, 'bonusQuantity', +e.target.value)}
+                  helperText={
+                    schemeBuy > 0 && schemeGet > 0 ? `Scheme ${schemeBuy}+${schemeGet}` : 'No scheme'
+                  }
+                />
               </Grid>
               <Grid size={{ xs: 4, sm: 2 }}>
-                <CustomTextField fullWidth label='Dist. Disc. % (on TP)' type='number' value={item.distributorDiscount} onChange={e => updateItem(i, 'distributorDiscount', +e.target.value)} helperText='From distributor' />
+                <CustomTextField
+                  fullWidth
+                  label='Dist. Disc. % (on TP)'
+                  type='number'
+                  value={item.distributorDiscount}
+                  onChange={e => updateItem(i, 'distributorDiscount', +e.target.value)}
+                  helperText='From distributor'
+                />
               </Grid>
               <Grid size={{ xs: 6, sm: 2 }}>
-                <CustomTextField fullWidth label='Pharmacy Disc. % (on TP)' type='number' value={item.clinicDiscount} onChange={e => updateItem(i, 'clinicDiscount', +e.target.value)} helperText='After distributor discount' />
+                <CustomTextField
+                  fullWidth
+                  label='Pharmacy Disc. % (on TP)'
+                  type='number'
+                  value={item.clinicDiscount}
+                  onChange={e => updateItem(i, 'clinicDiscount', +e.target.value)}
+                  helperText='After distributor discount'
+                />
               </Grid>
               <Grid size={{ xs: 6, sm: 1 }} className='flex items-center'>
-                {items.length > 1 && <IconButton onClick={() => removeItem(i)}><i className='tabler-trash text-error' /></IconButton>}
+                {items.length > 1 && (
+                  <IconButton onClick={() => removeItem(i)}>
+                    <i className='tabler-trash text-error' />
+                  </IconButton>
+                )}
               </Grid>
             </Grid>
           ))}
 
-          <Grid size={{ xs: 12 }}><Button variant='outlined' onClick={addItem} startIcon={<i className='tabler-plus' />}>Add Item</Button></Grid>
+          <Grid size={{ xs: 12 }}>
+            <Button variant='outlined' onClick={addItem} startIcon={<i className='tabler-plus' />}>
+              Add Item
+            </Button>
+          </Grid>
           {pharmacyId && distributorId && (
             <Grid size={{ xs: 12 }}>
               <OrderFormFinanceSummary preview={financePreview} />
             </Grid>
           )}
-          <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Notes' multiline rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Grid>
-          <Grid size={{ xs: 12 }}><Button variant='contained' onClick={handleSubmit} disabled={submitting || !isFormValid}>{submitting ? 'Creating...' : 'Create Order'}</Button></Grid>
+          <Grid size={{ xs: 12 }}>
+            <CustomTextField fullWidth label='Notes' multiline rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
+          </Grid>
+          <Grid size={{ xs: 12 }}>
+            <Button variant='contained' onClick={handleSubmit} disabled={submitting || !isFormValid}>
+              {submitting ? 'Creating...' : 'Create Order'}
+            </Button>
+          </Grid>
         </Grid>
       </CardContent>
-      )}
     </Card>
   )
 }

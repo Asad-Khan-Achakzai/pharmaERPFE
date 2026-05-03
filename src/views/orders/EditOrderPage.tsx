@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, use } from 'react'
+import { useState, useEffect, useRef, use, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -9,11 +9,10 @@ import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Grid from '@mui/material/Grid'
-import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
-import { useAuth } from '@/contexts/AuthContext'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { ordersService } from '@/services/orders.service'
 import { usersService } from '@/services/users.service'
 import { pharmaciesService } from '@/services/pharmacies.service'
@@ -33,6 +32,8 @@ type LineItem = {
   manualBonus: boolean
 }
 
+type RepOption = { _id: string; name?: string; email?: string; role?: string }
+
 const defaultLineItem = (distDisc: number, pharmDisc: number, buy: number, get: number): LineItem => ({
   productId: '',
   quantity: 1,
@@ -42,32 +43,52 @@ const defaultLineItem = (distDisc: number, pharmDisc: number, buy: number, get: 
   manualBonus: false
 })
 
+const repOptionLabel = (u: RepOption) =>
+  `${u.name ?? ''}${u.role ? ` · ${String(u.role).replace(/_/g, ' ')}` : ''}`
+
+const dedupeCatalogById = (rows: any[]) => {
+  const seen = new Set<string>()
+  const out: any[] = []
+  for (const r of rows) {
+    const id = String(r._id)
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push(r)
+  }
+  return out
+}
+
 const EditOrderPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string }> }) => {
   const params = use(paramsPromise)
   const router = useRouter()
-  const { user } = useAuth()
-  const [pharmacies, setPharmacies] = useState<any[]>([])
-  const [distributors, setDistributors] = useState<any[]>([])
-  const [products, setProducts] = useState<any[]>([])
-  /** Full list for the doctor dropdown (API max 100 per page); order’s doctor merged in if missing */
-  const [allDoctors, setAllDoctors] = useState<any[]>([])
-  const [assignableReps, setAssignableReps] = useState<any[]>([])
-  const [pharmacyId, setPharmacyId] = useState('')
-  const [distributorId, setDistributorId] = useState('')
-  const [doctorId, setDoctorId] = useState('')
-  const [medicalRepId, setMedicalRepId] = useState('')
-  /** If current order’s rep is not in assignable list (e.g. deactivated), show label in dropdown */
-  const [fallbackRepName, setFallbackRepName] = useState('')
+  const [selectedPharmacy, setSelectedPharmacy] = useState<any | null>(null)
+  const [selectedDistributor, setSelectedDistributor] = useState<any | null>(null)
+  const [selectedDoctor, setSelectedDoctor] = useState<any | null>(null)
+  const [selectedRep, setSelectedRep] = useState<RepOption | null>(null)
+  const [productCatalog, setProductCatalog] = useState<any[]>([])
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState<LineItem[]>([defaultLineItem(0, 0, 0, 0)])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  /** After first pharmacy sync for this order, changing pharmacy uses strict “first linked” default */
   const pharmacyDoctorGateRef = useRef<'initial' | 'ready'>('initial')
+
+  const selectedPharmacyRef = useRef<any | null>(null)
+  const selectedDistributorRef = useRef<any | null>(null)
+  selectedPharmacyRef.current = selectedPharmacy
+  selectedDistributorRef.current = selectedDistributor
 
   useEffect(() => {
     pharmacyDoctorGateRef.current = 'initial'
   }, [params.id])
+
+  const pharmacyId = selectedPharmacy ? String(selectedPharmacy._id) : ''
+  const distributorId = selectedDistributor ? String(selectedDistributor._id) : ''
+  const doctorId = selectedDoctor ? String(selectedDoctor._id) : ''
+  const medicalRepId = selectedRep ? String(selectedRep._id) : ''
+
+  const mergeIntoProductCatalog = useCallback((p: any) => {
+    setProductCatalog(prev => (prev.some(x => String(x._id) === String(p._id)) ? prev : [...prev, p]))
+  }, [])
 
   const isFormValid =
     pharmacyId !== '' &&
@@ -77,19 +98,17 @@ const EditOrderPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string 
     items.every(i => i.productId !== '' && i.quantity > 0)
 
   const getDiscountDefaults = () => {
-    const ph = pharmacies.find(p => p._id === pharmacyId)
-    const dist = distributors.find(d => d._id === distributorId)
-    return { d: dist?.discountOnTP ?? 0, p: ph?.discountOnTP ?? 0 }
+    const d = selectedDistributor?.discountOnTP ?? 0
+    const p = selectedPharmacy?.discountOnTP ?? 0
+    return { d, p }
   }
 
-  const getBonusScheme = () => {
-    const ph = pharmacies.find(p => p._id === pharmacyId)
-    return { buy: ph?.bonusScheme?.buyQty ?? 0, get: ph?.bonusScheme?.getQty ?? 0 }
-  }
+  const getBonusScheme = () => ({
+    buy: selectedPharmacy?.bonusScheme?.buyQty ?? 0,
+    get: selectedPharmacy?.bonusScheme?.getQty ?? 0
+  })
 
-  const applyDiscountsForPharmacyAndDistributor = (nextPharmacyId: string, nextDistributorId: string) => {
-    const ph = pharmacies.find(p => p._id === nextPharmacyId)
-    const dist = distributors.find(d => d._id === nextDistributorId)
+  const applyDiscountsForPharmacyAndDistributor = (ph: any, dist: any) => {
     const dDisc = dist?.discountOnTP ?? 0
     const pDisc = ph?.discountOnTP ?? 0
     const buy = ph?.bonusScheme?.buyQty ?? 0
@@ -109,19 +128,7 @@ const EditOrderPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string 
     const run = async () => {
       setLoading(true)
       try {
-        const [ph, di, pr, reps, docRes, orderRes] = await Promise.all([
-          pharmaciesService.lookup({ limit: 100 }),
-          distributorsService.lookup({ limit: 100 }),
-          productsService.lookup({ limit: 100 }),
-          usersService.assignable(),
-          doctorsService.lookup({ limit: 100, isActive: 'true' }),
-          ordersService.getById(params.id)
-        ])
-        setPharmacies(ph.data.data || [])
-        setDistributors(di.data.data || [])
-        setProducts(pr.data.data || [])
-        setAssignableReps(reps.data.data || [])
-
+        const orderRes = await ordersService.getById(params.id)
         const order = orderRes.data?.data
         if (!order) {
           showApiError(null, 'Order not found')
@@ -135,36 +142,69 @@ const EditOrderPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string 
         }
 
         const phId = String(order.pharmacyId?._id || order.pharmacyId)
-        const phRow = (order.pharmacyId && typeof order.pharmacyId === 'object' ? order.pharmacyId : null) as any
+        const phRow = order.pharmacyId && typeof order.pharmacyId === 'object' ? order.pharmacyId : null
         const schemeBuy = phRow?.bonusScheme?.buyQty ?? 0
         const schemeGet = phRow?.bonusScheme?.getQty ?? 0
 
-        const docRaw = docRes.data.data || []
-        let doctorOptions = [...docRaw].sort((a: any, b: any) =>
-          (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+        setSelectedPharmacy(
+          phRow
+            ? {
+                _id: phId,
+                name: phRow.name,
+                discountOnTP: phRow.discountOnTP,
+                bonusScheme: phRow.bonusScheme
+              }
+            : { _id: phId, name: 'Pharmacy' }
         )
-        const orderDocId = order.doctorId ? String(order.doctorId._id || order.doctorId) : ''
-        if (orderDocId && !doctorOptions.some((d: any) => String(d._id) === orderDocId)) {
-          const row =
-            order.doctorId && typeof order.doctorId === 'object'
-              ? order.doctorId
-              : { _id: orderDocId, name: 'Doctor' }
-          doctorOptions.push(row as any)
-          doctorOptions = [...doctorOptions].sort((a: any, b: any) =>
-            (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
-          )
-        }
-        setAllDoctors(doctorOptions)
 
-        setPharmacyId(phId)
-        setDistributorId(String(order.distributorId?._id || order.distributorId))
-        setDoctorId(order.doctorId ? String(order.doctorId._id || order.doctorId) : '')
-        const repOid = String(order.medicalRepId?._id || order.medicalRepId || '')
-        setMedicalRepId(repOid)
-        setFallbackRepName(
-          order.medicalRepId && typeof order.medicalRepId === 'object' ? order.medicalRepId.name || '' : ''
+        const distId = String(order.distributorId?._id || order.distributorId)
+        const distRow = order.distributorId && typeof order.distributorId === 'object' ? order.distributorId : null
+        setSelectedDistributor(
+          distRow
+            ? {
+                _id: distId,
+                name: distRow.name,
+                discountOnTP: distRow.discountOnTP,
+                commissionPercentOnTP: distRow.commissionPercentOnTP
+              }
+            : { _id: distId, name: 'Distributor' }
         )
+
+        const orderDocId = order.doctorId ? String(order.doctorId._id || order.doctorId) : ''
+        if (orderDocId) {
+          const dRow = order.doctorId && typeof order.doctorId === 'object' ? order.doctorId : null
+          setSelectedDoctor(
+            dRow
+              ? { _id: orderDocId, name: dRow.name, pharmacyId: (dRow as any).pharmacyId }
+              : { _id: orderDocId, name: 'Doctor' }
+          )
+        } else {
+          setSelectedDoctor(null)
+        }
+
+        const repOid = String(order.medicalRepId?._id || order.medicalRepId || '')
+        const repRow = order.medicalRepId && typeof order.medicalRepId === 'object' ? order.medicalRepId : null
+        const repName = repRow?.name || 'Assigned rep'
+        setSelectedRep(repOid ? { _id: repOid, name: repName, role: (repRow as any)?.role } : null)
+
         setNotes(order.notes || '')
+
+        const catalogFromLines: any[] = []
+        for (const it of order.items || []) {
+          const p = it.productId
+          if (p && typeof p === 'object') {
+            catalogFromLines.push({
+              _id: String(p._id),
+              name: p.name,
+              composition: p.composition,
+              mrp: p.mrp,
+              tp: p.tp,
+              casting: p.casting
+            })
+          }
+        }
+        setProductCatalog(dedupeCatalogById(catalogFromLines))
+
         setItems(
           order.items.map((it: any) => {
             const q = it.quantity
@@ -190,40 +230,42 @@ const EditOrderPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string 
     run()
   }, [params.id, router])
 
-  /** Default doctor from pharmacy-linked list; dropdown still lists all doctors */
+  /** Default doctor from pharmacy-linked list; search still lists all doctors */
   useEffect(() => {
-    if (!pharmacyId) {
-      setDoctorId('')
+    if (!selectedPharmacy) {
+      setSelectedDoctor(null)
       return
     }
+    const pid = String(selectedPharmacy._id)
     let cancelled = false
     ;(async () => {
       try {
-        const res = await doctorsService.lookup({ pharmacyId, limit: 100, isActive: 'true' })
+        const res = await doctorsService.lookup({ pharmacyId: pid, limit: 100, isActive: 'true' })
         const raw = res.data.data || []
         const list = [...raw].sort((a: any, b: any) =>
           (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
         )
         if (cancelled) return
-        setDoctorId(prev => {
+        setSelectedDoctor((prev: any | null) => {
           const ids = new Set(list.map((d: any) => String(d._id)))
+          const prevId = prev ? String(prev._id) : ''
           if (pharmacyDoctorGateRef.current === 'initial') {
             pharmacyDoctorGateRef.current = 'ready'
-            if (prev && ids.has(String(prev))) return prev
-            if (prev) return prev
-            return list[0]?._id ? String(list[0]._id) : ''
+            if (prevId && ids.has(prevId)) return prev
+            if (prevId) return prev
+            return list[0] ?? null
           }
-          if (prev && ids.has(String(prev))) return prev
-          return list[0]?._id ? String(list[0]._id) : ''
+          if (prevId && ids.has(prevId)) return prev
+          return list[0] ?? null
         })
       } catch {
-        if (!cancelled) setDoctorId('')
+        if (!cancelled) setSelectedDoctor(null)
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [pharmacyId])
+  }, [selectedPharmacy])
 
   const addItem = () => {
     const { d, p } = getDiscountDefaults()
@@ -288,33 +330,22 @@ const EditOrderPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string 
     }
   }
 
-  const { d: previewDistDisc, p: previewPharmDisc } = pharmacyId && distributorId ? getDiscountDefaults() : { d: 0, p: 0 }
+  const { d: previewDistDisc, p: previewPharmDisc } =
+    selectedPharmacy && selectedDistributor ? getDiscountDefaults() : { d: 0, p: 0 }
   const { buy: schemeBuy, get: schemeGet } = getBonusScheme()
-  const distributor = distributors.find(d => d._id === distributorId)
-  const financePreview = buildPreviewFromFormItems(items, products, distributor)
-
-  let repOptions =
-    assignableReps.length > 0
-      ? assignableReps
-      : user
-        ? [{ _id: user._id, name: user.name, role: user.role }]
-        : []
-  if (
-    medicalRepId &&
-    !repOptions.some((u: any) => String(u._id) === String(medicalRepId))
-  ) {
-    repOptions = [
-      { _id: medicalRepId, name: fallbackRepName || 'Assigned rep' },
-      ...repOptions
-    ]
-  }
+  const financePreview = buildPreviewFromFormItems(items, productCatalog, selectedDistributor ?? undefined)
 
   return (
     <Card>
       <CardHeader
         title={
           <div className='flex items-center gap-1'>
-            <IconButton aria-label='Back to order' onClick={() => router.push(`/orders/${params.id}`)} size='small' className='-mis-1'>
+            <IconButton
+              aria-label='Back to order'
+              onClick={() => router.push(`/orders/${params.id}`)}
+              size='small'
+              className='-mis-1'
+            >
               <i className='tabler-arrow-left' />
             </IconButton>
             <Typography component='span' variant='h5'>
@@ -331,91 +362,88 @@ const EditOrderPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string 
         <CardContent>
           <Grid container spacing={4}>
             <Grid size={{ xs: 12, sm: 4 }}>
-              <CustomTextField
-                required
-                select
-                fullWidth
+              <LookupAutocomplete
+                value={selectedPharmacy}
+                onChange={v => {
+                  setSelectedPharmacy(v)
+                  const d = selectedDistributorRef.current
+                  if (v && d) applyDiscountsForPharmacyAndDistributor(v, d)
+                }}
+                fetchOptions={search =>
+                  pharmaciesService
+                    .lookup({ limit: 25, ...(search ? { search } : {}) })
+                    .then(r => r.data.data || [])
+                }
                 label='Pharmacy'
-                value={pharmacyId}
-                onChange={e => {
-                  const v = e.target.value
-                  setPharmacyId(v)
-                  applyDiscountsForPharmacyAndDistributor(v, distributorId)
-                }}
-              >
-                {pharmacies.map(p => (
-                  <MenuItem key={p._id} value={p._id}>
-                    {p.name}
-                  </MenuItem>
-                ))}
-              </CustomTextField>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 4 }}>
-              <CustomTextField
+                placeholder='Type to search'
+                helperText='Type to search by pharmacy name or city'
                 required
-                select
-                fullWidth
-                label='Distributor'
-                value={distributorId}
-                onChange={e => {
-                  const v = e.target.value
-                  setDistributorId(v)
-                  applyDiscountsForPharmacyAndDistributor(pharmacyId, v)
-                }}
-              >
-                {distributors.map(d => (
-                  <MenuItem key={d._id} value={d._id}>
-                    {d.name}
-                  </MenuItem>
-                ))}
-              </CustomTextField>
+                fetchErrorMessage='Failed to load pharmacies'
+              />
             </Grid>
             <Grid size={{ xs: 12, sm: 4 }}>
-              <CustomTextField
-                select
-                fullWidth
+              <LookupAutocomplete
+                value={selectedDistributor}
+                onChange={v => {
+                  setSelectedDistributor(v)
+                  const p = selectedPharmacyRef.current
+                  if (v && p) applyDiscountsForPharmacyAndDistributor(p, v)
+                }}
+                fetchOptions={search =>
+                  distributorsService
+                    .lookup({ limit: 25, ...(search ? { search } : {}) })
+                    .then(r => r.data.data || [])
+                }
+                label='Distributor'
+                placeholder='Type to search'
+                helperText='Type to search by name'
+                required
+                fetchErrorMessage='Failed to load distributors'
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <LookupAutocomplete
+                value={selectedDoctor}
+                onChange={setSelectedDoctor}
+                fetchOptions={search =>
+                  doctorsService
+                    .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
+                    .then(r => r.data.data || [])
+                }
                 label='Doctor (optional)'
-                value={doctorId}
-                onChange={e => setDoctorId(e.target.value)}
-                disabled={!pharmacyId}
+                placeholder='Type to search'
+                disabled={!selectedPharmacy}
                 helperText={
-                  pharmacyId
-                    ? 'List shows all doctors. Default picks the first linked to this pharmacy when you change pharmacy; choose None or any doctor.'
+                  selectedPharmacy
+                    ? 'Search all doctors. Default picks the first linked to this pharmacy when you change pharmacy.'
                     : 'Select a pharmacy first'
                 }
-              >
-                <MenuItem value=''>None</MenuItem>
-                {allDoctors.map(d => (
-                  <MenuItem key={d._id} value={d._id}>
-                    {d.name}
-                  </MenuItem>
-                ))}
-              </CustomTextField>
+                fetchErrorMessage='Failed to load doctors'
+              />
             </Grid>
             <Grid size={{ xs: 12, sm: 4 }}>
-              <CustomTextField
-                required
-                select
-                fullWidth
+              <LookupAutocomplete<RepOption>
+                value={selectedRep}
+                onChange={setSelectedRep}
+                fetchOptions={search =>
+                  usersService
+                    .assignable({ limit: 25, ...(search ? { search } : {}) })
+                    .then(r => r.data.data || [])
+                }
+                getOptionLabel={repOptionLabel}
                 label='Medical rep (assigned to order)'
-                value={medicalRepId}
-                onChange={e => setMedicalRepId(e.target.value)}
+                placeholder='Type to search'
+                required
                 helperText='Change who is credited for this order.'
-              >
-                {repOptions.map((u: any) => (
-                  <MenuItem key={u._id} value={u._id}>
-                    {u.name}
-                    {u.role ? ` · ${String(u.role).replace(/_/g, ' ')}` : ''}
-                  </MenuItem>
-                ))}
-              </CustomTextField>
+                fetchErrorMessage='Failed to load users'
+              />
             </Grid>
 
             {pharmacyId && distributorId && (
               <Grid size={{ xs: 12 }}>
                 <Typography variant='body2' color='text.secondary'>
-                  Default discounts (on TP): distributor {previewDistDisc}% · pharmacy {previewPharmDisc}% — applied when you change pharmacy or
-                  distributor; override per line below.
+                  Default discounts (on TP): distributor {previewDistDisc}% · pharmacy {previewPharmDisc}% — applied when
+                  you change pharmacy or distributor; override per line below.
                 </Typography>
                 <Typography variant='body2' color='text.secondary' className='mts-1'>
                   Bonus scheme: {schemeBuy > 0 && schemeGet > 0 ? `${schemeBuy} + ${schemeGet}` : 'None'}
@@ -426,16 +454,36 @@ const EditOrderPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string 
             {items.map((item, i) => (
               <Grid container spacing={3} key={i} size={{ xs: 12 }}>
                 <Grid size={{ xs: 12, sm: 3 }}>
-                  <CustomTextField required select fullWidth label='Product' value={item.productId} onChange={e => updateItem(i, 'productId', e.target.value)}>
-                    {products.map(p => (
-                      <MenuItem key={p._id} value={p._id}>
-                        {p.name}
-                      </MenuItem>
-                    ))}
-                  </CustomTextField>
+                  <LookupAutocomplete
+                    value={
+                      item.productId
+                        ? productCatalog.find(p => String(p._id) === item.productId) ?? null
+                        : null
+                    }
+                    onChange={v => {
+                      updateItem(i, 'productId', v ? String(v._id) : '')
+                      if (v) mergeIntoProductCatalog(v)
+                    }}
+                    fetchOptions={search =>
+                      productsService
+                        .lookup({ limit: 25, ...(search ? { search } : {}) })
+                        .then(r => r.data.data || [])
+                    }
+                    label='Product'
+                    placeholder='Type to search'
+                    required
+                    fetchErrorMessage='Failed to load products'
+                  />
                 </Grid>
                 <Grid size={{ xs: 4, sm: 2 }}>
-                  <CustomTextField required fullWidth label='Paid qty' type='number' value={item.quantity} onChange={e => updateItem(i, 'quantity', +e.target.value)} />
+                  <CustomTextField
+                    required
+                    fullWidth
+                    label='Paid qty'
+                    type='number'
+                    value={item.quantity}
+                    onChange={e => updateItem(i, 'quantity', +e.target.value)}
+                  />
                 </Grid>
                 <Grid size={{ xs: 4, sm: 2 }}>
                   <CustomTextField
@@ -444,7 +492,9 @@ const EditOrderPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string 
                     type='number'
                     value={item.bonusQuantity}
                     onChange={e => updateItem(i, 'bonusQuantity', +e.target.value)}
-                    helperText={schemeBuy > 0 && schemeGet > 0 ? `Scheme ${schemeBuy}+${schemeGet}` : 'No scheme'}
+                    helperText={
+                      schemeBuy > 0 && schemeGet > 0 ? `Scheme ${schemeBuy}+${schemeGet}` : 'No scheme'
+                    }
                   />
                 </Grid>
                 <Grid size={{ xs: 4, sm: 2 }}>
@@ -488,7 +538,14 @@ const EditOrderPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string 
               </Grid>
             )}
             <Grid size={{ xs: 12 }}>
-              <CustomTextField fullWidth label='Notes' multiline rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
+              <CustomTextField
+                fullWidth
+                label='Notes'
+                multiline
+                rows={2}
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+              />
             </Grid>
             <Grid size={{ xs: 12 }}>
               <Button variant='contained' onClick={handleSubmit} disabled={submitting || !isFormValid}>

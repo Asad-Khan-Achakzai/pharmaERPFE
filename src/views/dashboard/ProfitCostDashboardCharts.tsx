@@ -14,9 +14,9 @@ import Skeleton from '@mui/material/Skeleton'
 import Accordion from '@mui/material/Accordion'
 import AccordionSummary from '@mui/material/AccordionSummary'
 import AccordionDetails from '@mui/material/AccordionDetails'
-import MenuItem from '@mui/material/MenuItem'
 import type { ApexOptions } from 'apexcharts'
 import CustomTextField from '@core/components/mui/TextField'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import AppReactDatepicker from '@/libs/styles/AppReactDatepicker'
 import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
 import { showApiError } from '@/utils/apiErrors'
@@ -57,16 +57,15 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
   const [productId, setProductId] = useState('')
   const [distributorId, setDistributorId] = useState('')
   const [employeeId, setEmployeeId] = useState('')
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null)
+  const [selectedDistributor, setSelectedDistributor] = useState<any | null>(null)
+  const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null)
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [trendsLoading, setTrendsLoading] = useState(true)
   const [revenueLoading, setRevenueLoading] = useState(true)
   const [summary, setSummary] = useState<any>(null)
   const [trends, setTrends] = useState<any>(null)
   const [revBreakdown, setRevBreakdown] = useState<any>(null)
-  const [productOptions, setProductOptions] = useState<any[]>([])
-  const [distributorOptions, setDistributorOptions] = useState<any[]>([])
-  const [employeeOptions, setEmployeeOptions] = useState<any[]>([])
-  const [lookupsLoading, setLookupsLoading] = useState(true)
 
   const params = useMemo(() => {
     const p: Record<string, string> = { startDate, endDate }
@@ -117,28 +116,6 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
     if (!deferFetch) return
     load()
   }, [deferFetch, load])
-
-  useEffect(() => {
-    if (!deferFetch) return
-    const fetchLookups = async () => {
-      setLookupsLoading(true)
-      try {
-        const [pr, di, us] = await Promise.all([
-          productsService.lookup({ limit: 200 }),
-          distributorsService.lookup({ limit: 200 }),
-          usersService.assignable()
-        ])
-        setProductOptions(pr.data.data || [])
-        setDistributorOptions(di.data.data || [])
-        setEmployeeOptions(us.data.data || [])
-      } catch (e) {
-        showApiError(e, 'Failed to load filter options')
-      } finally {
-        setLookupsLoading(false)
-      }
-    }
-    fetchLookups()
-  }, [deferFetch])
 
   const lineOptions: ApexOptions = useMemo(() => {
     const s = trends?.series || []
@@ -305,84 +282,81 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
             <Typography variant='subtitle2' color='text.secondary' className='mbe-2'>
               Filters
             </Typography>
-            {lookupsLoading ? (
-              <div className='flex flex-wrap gap-4 items-end'>
-                <Skeleton variant='rounded' width={200} height={56} animation='wave' />
-                <Skeleton variant='rounded' width={200} height={56} animation='wave' />
-                <Skeleton variant='rounded' width={220} height={56} animation='wave' />
-                <Skeleton variant='rounded' width={220} height={56} animation='wave' />
-                <Skeleton variant='rounded' width={220} height={56} animation='wave' />
-                <Skeleton variant='rounded' width={88} height={36} animation='wave' />
-              </div>
-            ) : (
-              <div className='flex flex-wrap gap-4 items-end'>
-                <AppReactDatepicker
-                  selected={parseYyyyMmDd(startDate) ?? null}
-                  id='dash-pl-start'
-                  dateFormat='yyyy-MM-dd'
-                  onChange={(d: Date | null) => setStartDate(d ? formatYyyyMmDd(d) : '')}
-                  placeholderText='Start'
-                  customInput={<CustomTextField label='Start' sx={{ minWidth: 200 }} />}
-                />
-                <AppReactDatepicker
-                  selected={parseYyyyMmDd(endDate) ?? null}
-                  id='dash-pl-end'
-                  dateFormat='yyyy-MM-dd'
-                  onChange={(d: Date | null) => setEndDate(d ? formatYyyyMmDd(d) : '')}
-                  placeholderText='End'
-                  customInput={<CustomTextField label='End' sx={{ minWidth: 200 }} />}
-                />
-                <CustomTextField
-                  select
+            <div className='flex flex-wrap gap-4 items-end'>
+              <AppReactDatepicker
+                selected={parseYyyyMmDd(startDate) ?? null}
+                id='dash-pl-start'
+                dateFormat='yyyy-MM-dd'
+                onChange={(d: Date | null) => setStartDate(d ? formatYyyyMmDd(d) : '')}
+                placeholderText='Start'
+                customInput={<CustomTextField label='Start' sx={{ minWidth: 200 }} />}
+              />
+              <AppReactDatepicker
+                selected={parseYyyyMmDd(endDate) ?? null}
+                id='dash-pl-end'
+                dateFormat='yyyy-MM-dd'
+                onChange={(d: Date | null) => setEndDate(d ? formatYyyyMmDd(d) : '')}
+                placeholderText='End'
+                customInput={<CustomTextField label='End' sx={{ minWidth: 200 }} />}
+              />
+              <div className='min-is-[220px]'>
+                <LookupAutocomplete
+                  value={selectedProduct}
+                  onChange={v => {
+                    setSelectedProduct(v)
+                    setProductId(v ? String(v._id) : '')
+                  }}
+                  fetchOptions={search =>
+                    productsService.lookup({ limit: 25, ...(search ? { search } : {}) }).then(r => r.data.data || [])
+                  }
                   label='Product'
-                  value={productId}
-                  onChange={e => setProductId(e.target.value)}
-                  sx={{ minWidth: 220 }}
-                >
-                  <MenuItem value=''>All products</MenuItem>
-                  {productOptions.map((p: any) => (
-                    <MenuItem key={p._id} value={p._id}>
-                      {p.name}
-                    </MenuItem>
-                  ))}
-                </CustomTextField>
-                <CustomTextField
-                  select
-                  label='Distributor'
-                  value={distributorId}
-                  onChange={e => setDistributorId(e.target.value)}
-                  sx={{ minWidth: 220 }}
-                >
-                  <MenuItem value=''>All distributors</MenuItem>
-                  {distributorOptions.map((d: any) => (
-                    <MenuItem key={d._id} value={d._id}>
-                      {d.name}
-                    </MenuItem>
-                  ))}
-                </CustomTextField>
-                <CustomTextField
-                  select
-                  label='Employee (payroll filter)'
-                  value={employeeId}
-                  onChange={e => setEmployeeId(e.target.value)}
-                  sx={{ minWidth: 220 }}
-                >
-                  <MenuItem value=''>All employees</MenuItem>
-                  {employeeOptions.map((u: any) => (
-                    <MenuItem key={u._id} value={u._id}>
-                      {u.name}
-                    </MenuItem>
-                  ))}
-                </CustomTextField>
-                <Button
-                  variant='contained'
-                  onClick={load}
-                  disabled={summaryLoading || trendsLoading || revenueLoading}
-                >
-                  Apply
-                </Button>
+                  placeholder='All products'
+                  fetchErrorMessage='Failed to load products'
+                  textFieldProps={{ sx: { minWidth: 220 } }}
+                />
               </div>
-            )}
+              <div className='min-is-[220px]'>
+                <LookupAutocomplete
+                  value={selectedDistributor}
+                  onChange={v => {
+                    setSelectedDistributor(v)
+                    setDistributorId(v ? String(v._id) : '')
+                  }}
+                  fetchOptions={search =>
+                    distributorsService
+                      .lookup({ limit: 25, ...(search ? { search } : {}) })
+                      .then(r => r.data.data || [])
+                  }
+                  label='Distributor'
+                  placeholder='All distributors'
+                  fetchErrorMessage='Failed to load distributors'
+                  textFieldProps={{ sx: { minWidth: 220 } }}
+                />
+              </div>
+              <div className='min-is-[220px]'>
+                <LookupAutocomplete
+                  value={selectedEmployee}
+                  onChange={v => {
+                    setSelectedEmployee(v)
+                    setEmployeeId(v ? String(v._id) : '')
+                  }}
+                  fetchOptions={search =>
+                    usersService.assignable({ limit: 25, ...(search ? { search } : {}) }).then(r => r.data.data || [])
+                  }
+                  label='Employee (payroll filter)'
+                  placeholder='All employees'
+                  fetchErrorMessage='Failed to load users'
+                  textFieldProps={{ sx: { minWidth: 220 } }}
+                />
+              </div>
+              <Button
+                variant='contained'
+                onClick={load}
+                disabled={summaryLoading || trendsLoading || revenueLoading}
+              >
+                Apply
+              </Button>
+            </div>
             <Typography variant='caption' color='text.secondary' display='block' className='mt-2'>
               Trends use posted transactions for {FIN_LABELS.netSalesCustomer}; payroll uses paid-on date.
             </Typography>

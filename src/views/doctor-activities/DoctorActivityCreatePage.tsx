@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
@@ -8,10 +8,10 @@ import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Button from '@mui/material/Button'
 import Grid from '@mui/material/Grid'
-import MenuItem from '@mui/material/MenuItem'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import CustomTextField from '@core/components/mui/TextField'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { doctorsService, doctorActivitiesService } from '@/services/doctors.service'
 import { usersService } from '@/services/users.service'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
@@ -19,10 +19,9 @@ import { filterMedicalReps } from '@/utils/userLookups'
 
 const DoctorActivityCreatePage = () => {
   const router = useRouter()
-  const [doctors, setDoctors] = useState<any[]>([])
-  const [reps, setReps] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [selectedDoctor, setSelectedDoctor] = useState<any | null>(null)
+  const [selectedRep, setSelectedRep] = useState<any | null>(null)
 
   const [form, setForm] = useState({
     doctorId: '',
@@ -32,24 +31,6 @@ const DoctorActivityCreatePage = () => {
     startDate: '',
     endDate: ''
   })
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [dr, ur] = await Promise.all([
-          doctorsService.lookup({ limit: 500, isActive: 'true' }),
-          usersService.assignable()
-        ])
-        setDoctors(dr.data.data || [])
-        setReps(filterMedicalReps(ur.data.data || []))
-      } catch (e) {
-        showApiError(e, 'Failed to load form data')
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [])
 
   const startOk = form.startDate !== ''
   const endOk = form.endDate !== ''
@@ -90,14 +71,6 @@ const DoctorActivityCreatePage = () => {
     }
   }
 
-  if (loading) {
-    return (
-      <div className='flex justify-center p-12'>
-        <CircularProgress />
-      </div>
-    )
-  }
-
   return (
     <Grid container spacing={6}>
       <Grid size={{ xs: 12 }}>
@@ -107,34 +80,39 @@ const DoctorActivityCreatePage = () => {
         <Card>
           <CardHeader title='New doctor activity' subheader='Investment vs TP sales commitment for a fixed period.' />
           <CardContent className='flex flex-col gap-4 max-is-[560px]'>
-            <CustomTextField
-              select
-              required
+            <LookupAutocomplete
+              value={selectedDoctor}
+              onChange={v => {
+                setSelectedDoctor(v)
+                setForm(f => ({ ...f, doctorId: v ? String(v._id) : '' }))
+              }}
+              fetchOptions={search =>
+                doctorsService
+                  .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
+                  .then(r => r.data.data || [])
+              }
               label='Doctor'
-              value={form.doctorId}
-              onChange={e => setForm(f => ({ ...f, doctorId: e.target.value }))}
-            >
-              {doctors.map(d => (
-                <MenuItem key={d._id} value={d._id}>
-                  {d.name}
-                </MenuItem>
-              ))}
-            </CustomTextField>
+              placeholder='Type to search'
+              required
+              fetchErrorMessage='Failed to load doctors'
+            />
 
-            <CustomTextField
-              select
+            <LookupAutocomplete
+              value={selectedRep}
+              onChange={v => {
+                setSelectedRep(v)
+                setForm(f => ({ ...f, medicalRepId: v ? String(v._id) : '' }))
+              }}
+              fetchOptions={search =>
+                usersService
+                  .assignable({ limit: 25, ...(search ? { search } : {}) })
+                  .then(r => filterMedicalReps(r.data.data || []))
+              }
               label='Medical rep (optional)'
-              value={form.medicalRepId}
-              onChange={e => setForm(f => ({ ...f, medicalRepId: e.target.value }))}
+              placeholder='Type to search'
               helperText='Leave empty if this activity is not tied to a specific rep.'
-            >
-              <MenuItem value=''>— None —</MenuItem>
-              {reps.map((u: any) => (
-                <MenuItem key={u._id} value={u._id}>
-                  {u.name}
-                </MenuItem>
-              ))}
-            </CustomTextField>
+              fetchErrorMessage='Failed to load users'
+            />
 
             <CustomTextField
               required

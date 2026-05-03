@@ -8,10 +8,10 @@ import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Button from '@mui/material/Button'
 import Grid from '@mui/material/Grid'
-import MenuItem from '@mui/material/MenuItem'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import CustomTextField from '@core/components/mui/TextField'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { doctorsService, doctorActivitiesService } from '@/services/doctors.service'
 import { usersService } from '@/services/users.service'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
@@ -28,6 +28,16 @@ const toDateInput = (iso: string | undefined) => {
   return `${y}-${m}-${d}`
 }
 
+const doctorToOption = (doc: any) => {
+  if (!doc) return null
+  if (typeof doc === 'object' && doc !== null) {
+    const id = doc._id ?? doc
+    const name = 'name' in doc ? String(doc.name ?? '') : ''
+    return id ? { _id: String(id), name } : null
+  }
+  return { _id: String(doc), name: '' }
+}
+
 const DoctorActivityEditPage = () => {
   const router = useRouter()
   const params = useParams()
@@ -36,8 +46,8 @@ const DoctorActivityEditPage = () => {
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('doctors.edit')
 
-  const [doctors, setDoctors] = useState<any[]>([])
-  const [reps, setReps] = useState<any[]>([])
+  const [selectedDoctor, setSelectedDoctor] = useState<any | null>(null)
+  const [selectedRep, setSelectedRep] = useState<any | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -54,14 +64,10 @@ const DoctorActivityEditPage = () => {
     if (!id) return
     setLoading(true)
     try {
-      const [actRes, dr, ur] = await Promise.all([
-        doctorActivitiesService.getById(id),
-        doctorsService.lookup({ limit: 500, isActive: 'true' }),
-        usersService.assignable()
-      ])
+      const actRes = await doctorActivitiesService.getById(id)
       const a = actRes.data.data
-      setDoctors(dr.data.data || [])
-      setReps(filterMedicalReps(ur.data.data || []))
+      setSelectedDoctor(doctorToOption(a?.doctorId))
+      setSelectedRep(doctorToOption(a?.medicalRepId))
       setForm({
         doctorId: a?.doctorId?._id ?? a?.doctorId ?? '',
         medicalRepId: a?.medicalRepId?._id ?? a?.medicalRepId ?? '',
@@ -152,33 +158,39 @@ const DoctorActivityEditPage = () => {
             subheader='Change doctor, rep, amounts, or period. If you change the doctor or dates, achieved sales are recomputed from deliveries (TP) in the new range.'
           />
           <CardContent className='flex flex-col gap-4 max-is-[560px]'>
-            <CustomTextField
-              select
-              required
+            <LookupAutocomplete
+              value={selectedDoctor}
+              onChange={v => {
+                setSelectedDoctor(v)
+                setForm(f => ({ ...f, doctorId: v ? String(v._id) : '' }))
+              }}
+              fetchOptions={search =>
+                doctorsService
+                  .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
+                  .then(r => r.data.data || [])
+              }
               label='Doctor'
-              value={form.doctorId}
-              onChange={e => setForm(f => ({ ...f, doctorId: e.target.value }))}
-            >
-              {doctors.map(d => (
-                <MenuItem key={d._id} value={d._id}>
-                  {d.name}
-                </MenuItem>
-              ))}
-            </CustomTextField>
+              placeholder='Type to search'
+              required
+              fetchErrorMessage='Failed to load doctors'
+            />
 
-            <CustomTextField
-              select
+            <LookupAutocomplete
+              value={selectedRep}
+              onChange={v => {
+                setSelectedRep(v)
+                setForm(f => ({ ...f, medicalRepId: v ? String(v._id) : '' }))
+              }}
+              fetchOptions={search =>
+                usersService
+                  .assignable({ limit: 25, ...(search ? { search } : {}) })
+                  .then(r => filterMedicalReps(r.data.data || []))
+              }
               label='Medical rep'
-              value={form.medicalRepId}
-              onChange={e => setForm(f => ({ ...f, medicalRepId: e.target.value }))}
-            >
-              <MenuItem value=''>— Not set —</MenuItem>
-              {reps.map((u: any) => (
-                <MenuItem key={u._id} value={u._id}>
-                  {u.name}
-                </MenuItem>
-              ))}
-            </CustomTextField>
+              placeholder='Type to search — optional'
+              helperText='Clear selection if this activity should not be tied to a rep.'
+              fetchErrorMessage='Failed to load users'
+            />
 
             <CustomTextField
               required

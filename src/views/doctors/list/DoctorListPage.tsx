@@ -13,13 +13,13 @@ import DialogActions from '@mui/material/DialogActions'
 import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
 import CircularProgress from '@mui/material/CircularProgress'
-import MenuItem from '@mui/material/MenuItem'
 import { createColumnHelper, flexRender, getCoreRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
 import type { ColumnDef } from '@tanstack/react-table'
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { doctorsService } from '@/services/doctors.service'
 import { pharmaciesService } from '@/services/pharmacies.service'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import {
   TableListSearchField,
@@ -42,7 +42,7 @@ const columnHelper = createColumnHelper<Doctor>()
 
 const DoctorListPage = () => {
   const [data, setData] = useState<Doctor[]>([])
-  const [pharmacies, setPharmacies] = useState<any[]>([])
+  const [selectedPharmacy, setSelectedPharmacy] = useState<{ _id: string; name?: string } | null>(null)
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
   const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
   const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
@@ -72,13 +72,9 @@ const DoctorListPage = () => {
     try {
       const params: Record<string, string> = { limit: '100' }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
-      const [docsRes, pharmaRes] = await Promise.all([
-        doctorsService.list(params),
-        pharmaciesService.lookup({ limit: 100 })
-      ])
+      const docsRes = await doctorsService.list(params)
       if (seq !== fetchSeq.current) return
       setData(docsRes.data.data || [])
-      setPharmacies(pharmaRes.data.data || [])
     } catch (err) {
       if (seq === fetchSeq.current) showApiError(err, 'Failed to load data')
     } finally {
@@ -91,8 +87,25 @@ const DoctorListPage = () => {
   }, [fetchData])
 
   const handleOpen = (item?: Doctor) => {
-    if (item) { setEditItem(item); setForm({ pharmacyId: item.pharmacyId?._id || '', name: item.name, specialization: item.specialization || '', phone: item.phone || '', email: '' }) }
-    else { setEditItem(null); setForm({ pharmacyId: '', name: '', specialization: '', phone: '', email: '' }) }
+    if (item) {
+      setEditItem(item)
+      const ph = item.pharmacyId
+      const pid = ph && typeof ph === 'object' && ph !== null ? String(ph._id ?? '') : ph ? String(ph) : ''
+      const pname =
+        ph && typeof ph === 'object' && ph !== null && 'name' in ph ? String((ph as { name?: string }).name ?? '') : ''
+      setSelectedPharmacy(pid ? { _id: pid, name: pname } : null)
+      setForm({
+        pharmacyId: pid,
+        name: item.name,
+        specialization: item.specialization || '',
+        phone: item.phone || '',
+        email: ''
+      })
+    } else {
+      setEditItem(null)
+      setSelectedPharmacy(null)
+      setForm({ pharmacyId: '', name: '', specialization: '', phone: '', email: '' })
+    }
     setOpen(true)
   }
 
@@ -183,7 +196,23 @@ const DoctorListPage = () => {
         <DialogTitle>{editItem ? 'Edit Doctor' : 'Add Doctor'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            <Grid size={{ xs: 12 }}><CustomTextField required select fullWidth label='Pharmacy' value={form.pharmacyId} onChange={e => setForm(p => ({ ...p, pharmacyId: e.target.value }))}>{pharmacies.map(p => <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>)}</CustomTextField></Grid>
+            <Grid size={{ xs: 12 }}>
+              <LookupAutocomplete
+                value={selectedPharmacy}
+                onChange={v => {
+                  setSelectedPharmacy(v)
+                  setForm(p => ({ ...p, pharmacyId: v ? String(v._id) : '' }))
+                }}
+                fetchOptions={search =>
+                  pharmaciesService.lookup({ limit: 25, ...(search ? { search } : {}) }).then(r => r.data.data || [])
+                }
+                label='Pharmacy'
+                placeholder='Type to search'
+                helperText='Search by pharmacy name'
+                required
+                fetchErrorMessage='Failed to load pharmacies'
+              />
+            </Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Specialization' value={form.specialization} onChange={e => setForm(p => ({ ...p, specialization: e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Phone' value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></Grid>

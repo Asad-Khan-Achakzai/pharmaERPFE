@@ -6,7 +6,6 @@ import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Grid from '@mui/material/Grid'
-import MenuItem from '@mui/material/MenuItem'
 import Chip from '@mui/material/Chip'
 import Tab from '@mui/material/Tab'
 import TabContext from '@mui/lab/TabContext'
@@ -38,6 +37,7 @@ import { showApiError } from '@/utils/apiErrors'
 import { inventoryService } from '@/services/inventory.service'
 import { distributorsService } from '@/services/distributors.service'
 import { productsService } from '@/services/products.service'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { TableListSearchField, useDebouncedSearch } from '@/components/standard-list-toolbar'
 
 import tableStyles from '@core/styles/table.module.css'
@@ -107,27 +107,14 @@ const InventoryPage = () => {
   const [detailData, setDetailData] = useState<InventoryRow[]>([])
   const [summaryData, setSummaryData] = useState<SummaryRow[]>([])
   const [totals, setTotals] = useState({ totalUnits: 0, totalValue: 0, uniqueProducts: 0 })
-  const [distributors, setDistributors] = useState<any[]>([])
-  const [products, setProducts] = useState<any[]>([])
   const [filterDistributor, setFilterDistributor] = useState('')
   const [filterProduct, setFilterProduct] = useState('')
+  const [selectedFilterDistributor, setSelectedFilterDistributor] = useState<any | null>(null)
+  const [selectedFilterProduct, setSelectedFilterProduct] = useState<any | null>(null)
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
   const [loading, setLoading] = useState(true)
   const [viewDetail, setViewDetail] = useState<InventoryRow | null>(null)
   const [viewSummary, setViewSummary] = useState<SummaryRow | null>(null)
-
-  const fetchLookups = async () => {
-    try {
-      const [d, p] = await Promise.all([
-        distributorsService.lookup({ limit: 200 }),
-        productsService.lookup({ limit: 200 })
-      ])
-      setDistributors(d.data.data || [])
-      setProducts(p.data.data || [])
-    } catch (err) {
-      showApiError(err, 'Failed to load filters')
-    }
-  }
 
   const fetchData = async (distId?: string, prodId?: string) => {
     setLoading(true)
@@ -151,10 +138,6 @@ const InventoryPage = () => {
       setLoading(false)
     }
   }
-
-  useEffect(() => {
-    fetchLookups()
-  }, [])
 
   useEffect(() => {
     fetchData(filterDistributor, filterProduct)
@@ -388,38 +371,40 @@ const InventoryPage = () => {
           <CardContent>
             <Grid container spacing={4} className='mbe-4'>
               <Grid size={{ xs: 12, sm: 4 }}>
-                <CustomTextField
-                  select
-                  fullWidth
+                <LookupAutocomplete
+                  value={selectedFilterDistributor}
+                  onChange={v => {
+                    setSelectedFilterDistributor(v)
+                    setFilterDistributor(v ? String(v._id) : '')
+                  }}
+                  fetchOptions={search =>
+                    distributorsService
+                      .lookup({ limit: 25, ...(search ? { search } : {}) })
+                      .then(r => r.data.data || [])
+                  }
                   label='Distributor'
-                  value={filterDistributor}
-                  onChange={(e) => setFilterDistributor(e.target.value)}
-                  size='small'
-                >
-                  <MenuItem value=''>All Distributors</MenuItem>
-                  {distributors.map((d) => (
-                    <MenuItem key={d._id} value={d._id}>
-                      {d.name}
-                    </MenuItem>
-                  ))}
-                </CustomTextField>
+                  placeholder='All distributors'
+                  helperText='Optional filter'
+                  fetchErrorMessage='Failed to load distributors'
+                  textFieldProps={{ size: 'small' }}
+                />
               </Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
-                <CustomTextField
-                  select
-                  fullWidth
+                <LookupAutocomplete
+                  value={selectedFilterProduct}
+                  onChange={v => {
+                    setSelectedFilterProduct(v)
+                    setFilterProduct(v ? String(v._id) : '')
+                  }}
+                  fetchOptions={search =>
+                    productsService.lookup({ limit: 25, ...(search ? { search } : {}) }).then(r => r.data.data || [])
+                  }
                   label='Product'
-                  value={filterProduct}
-                  onChange={(e) => setFilterProduct(e.target.value)}
-                  size='small'
-                >
-                  <MenuItem value=''>All Products</MenuItem>
-                  {products.map((p) => (
-                    <MenuItem key={p._id} value={p._id}>
-                      {p.name}
-                    </MenuItem>
-                  ))}
-                </CustomTextField>
+                  placeholder='All products'
+                  helperText='Optional filter'
+                  fetchErrorMessage='Failed to load products'
+                  textFieldProps={{ size: 'small' }}
+                />
               </Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
                 <TableListSearchField

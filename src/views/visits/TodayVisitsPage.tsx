@@ -7,7 +7,6 @@ import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Button from '@mui/material/Button'
 import Grid from '@mui/material/Grid'
-import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
 import IconButton from '@mui/material/IconButton'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -24,13 +23,13 @@ import CustomTextField from '@core/components/mui/TextField'
 import { planItemsService } from '@/services/planItems.service'
 import { visitsService } from '@/services/visits.service'
 import { doctorsService } from '@/services/doctors.service'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import tableStyles from '@core/styles/table.module.css'
 
 const TodayVisitsPage = () => {
   const { hasPermission } = useAuth()
   const canMark = hasPermission('weeklyPlans.markVisit')
   const [items, setItems] = useState<any[]>([])
-  const [doctors, setDoctors] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [markOpen, setMarkOpen] = useState(false)
@@ -40,6 +39,7 @@ const TodayVisitsPage = () => {
   const [orderTaken, setOrderTaken] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [unplannedDoctor, setUnplannedDoctor] = useState('')
+  const [selectedUnplannedDoctor, setSelectedUnplannedDoctor] = useState<any | null>(null)
   const [unplannedNotes, setUnplannedNotes] = useState('')
   const [unplannedOrder, setUnplannedOrder] = useState(false)
 
@@ -48,18 +48,12 @@ const TodayVisitsPage = () => {
     try {
       const listRes = await planItemsService.listToday({ date })
       setItems(listRes.data.data || [])
-      if (canMark) {
-        const docRes = await doctorsService.lookup({ limit: 500, isActive: 'true' })
-        setDoctors(docRes.data.data || [])
-      } else {
-        setDoctors([])
-      }
     } catch (e) {
       showApiError(e, 'Failed to load plan')
     } finally {
       setLoading(false)
     }
-  }, [date, canMark])
+  }, [date])
 
   useEffect(() => {
     load()
@@ -102,6 +96,7 @@ const TodayVisitsPage = () => {
       showSuccess('Unplanned visit logged')
       setUnplannedOpen(false)
       setUnplannedDoctor('')
+      setSelectedUnplannedDoctor(null)
       setUnplannedNotes('')
       setUnplannedOrder(false)
     } catch (e) {
@@ -227,14 +222,22 @@ const TodayVisitsPage = () => {
       <Dialog open={unplannedOpen} onClose={() => setUnplannedOpen(false)} maxWidth='sm' fullWidth>
         <DialogTitle>Unplanned visit</DialogTitle>
         <DialogContent className='flex flex-col gap-4 pbs-4'>
-          <CustomTextField select fullWidth label='Doctor' required value={unplannedDoctor} onChange={e => setUnplannedDoctor(e.target.value)}>
-            <MenuItem value=''>Select</MenuItem>
-            {doctors.map((d: any) => (
-              <MenuItem key={d._id} value={d._id}>
-                {d.name}
-              </MenuItem>
-            ))}
-          </CustomTextField>
+          <LookupAutocomplete
+            value={selectedUnplannedDoctor}
+            onChange={v => {
+              setSelectedUnplannedDoctor(v)
+              setUnplannedDoctor(v ? String(v._id) : '')
+            }}
+            fetchOptions={search =>
+              doctorsService
+                .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
+                .then(r => r.data.data || [])
+            }
+            label='Doctor'
+            placeholder='Type to search'
+            required
+            fetchErrorMessage='Failed to load doctors'
+          />
           <CustomTextField
             fullWidth
             multiline

@@ -2,7 +2,7 @@ import api from './api'
 
 export const usersService = {
   /** Active company users for order assignment, etc. (auth + tenant only; no users.view) */
-  assignable: () => api.get('/users/assignable'),
+  assignable: (params?: Record<string, unknown>) => api.get('/users/assignable', { params }),
   list: (params?: any) => api.get('/users', { params }),
   create: (data: any) => api.post('/users', data),
   getById: (id: string) => api.get(`/users/${id}`),

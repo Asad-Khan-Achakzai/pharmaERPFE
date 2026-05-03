@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -15,12 +15,13 @@ import FormControlLabel from '@mui/material/FormControlLabel'
 import Radio from '@mui/material/Radio'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { settlementsService } from '@/services/settlements.service'
 import { distributorsService } from '@/services/distributors.service'
 
 const RecordSettlementPage = () => {
   const router = useRouter()
-  const [distributors, setDistributors] = useState<any[]>([])
+  const [selectedDistributor, setSelectedDistributor] = useState<any | null>(null)
   const [form, setForm] = useState({
     distributorId: '',
     direction: 'DISTRIBUTOR_TO_COMPANY' as 'DISTRIBUTOR_TO_COMPANY' | 'COMPANY_TO_DISTRIBUTOR',
@@ -30,24 +31,8 @@ const RecordSettlementPage = () => {
     notes: ''
   })
   const [saving, setSaving] = useState(false)
-  const [loadingData, setLoadingData] = useState(true)
 
   const isFormValid = form.distributorId !== '' && form.amount > 0 && form.paymentMethod !== ''
-
-  useEffect(() => {
-    const f = async () => {
-      setLoadingData(true)
-      try {
-        const { data: r } = await distributorsService.lookup({ limit: 200, isActive: 'true' })
-        setDistributors(r.data || [])
-      } catch (err) {
-        showApiError(err, 'Failed to load distributors')
-      } finally {
-        setLoadingData(false)
-      }
-    }
-    f()
-  }, [])
 
   const handleSubmit = async () => {
     if (!form.distributorId || form.amount <= 0) {
@@ -80,108 +65,97 @@ const RecordSettlementPage = () => {
         subheader='Clears distributor clearing balance FIFO (per distributor, not netted across distributors)'
       />
       <CardContent>
-        {loadingData ? (
-          <div className='flex justify-center p-12'>
-            <CircularProgress />
-          </div>
-        ) : (
-          <Grid container spacing={4}>
-            <Grid size={{ xs: 12 }}>
-              <FormControl>
-                <FormLabel>Direction</FormLabel>
-                <RadioGroup
-                  value={form.direction}
-                  onChange={e =>
-                    setForm(p => ({
-                      ...p,
-                      direction: e.target.value as 'DISTRIBUTOR_TO_COMPANY' | 'COMPANY_TO_DISTRIBUTOR'
-                    }))
-                  }
-                >
-                  <FormControlLabel
-                    value='DISTRIBUTOR_TO_COMPANY'
-                    control={<Radio />}
-                    label='Distributor pays company'
-                  />
-                  <FormControlLabel
-                    value='COMPANY_TO_DISTRIBUTOR'
-                    control={<Radio />}
-                    label='Company pays distributor'
-                  />
-                </RadioGroup>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <CustomTextField
-                required
-                select
-                fullWidth
-                label='Distributor'
-                value={form.distributorId}
-                onChange={e => setForm(p => ({ ...p, distributorId: e.target.value }))}
+        <Grid container spacing={4}>
+          <Grid size={{ xs: 12 }}>
+            <FormControl>
+              <FormLabel>Direction</FormLabel>
+              <RadioGroup
+                value={form.direction}
+                onChange={e =>
+                  setForm(p => ({
+                    ...p,
+                    direction: e.target.value as 'DISTRIBUTOR_TO_COMPANY' | 'COMPANY_TO_DISTRIBUTOR'
+                  }))
+                }
               >
-                {distributors.map(d => (
-                  <MenuItem key={d._id} value={d._id}>
-                    {d.name}
-                  </MenuItem>
-                ))}
-              </CustomTextField>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <CustomTextField
-                required
-                fullWidth
-                label='Amount (PKR)'
-                type='number'
-                value={form.amount}
-                onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))}
-              />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <CustomTextField
-                required
-                select
-                fullWidth
-                label='Payment method'
-                value={form.paymentMethod}
-                onChange={e => setForm(p => ({ ...p, paymentMethod: e.target.value }))}
-              >
-                <MenuItem value='CASH'>Cash</MenuItem>
-                <MenuItem value='CHEQUE'>Cheque</MenuItem>
-                <MenuItem value='BANK_TRANSFER'>Bank transfer</MenuItem>
-                <MenuItem value='UPI'>UPI</MenuItem>
-              </CustomTextField>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <CustomTextField
-                fullWidth
-                label='Reference number'
-                value={form.referenceNumber}
-                onChange={e => setForm(p => ({ ...p, referenceNumber: e.target.value }))}
-              />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <CustomTextField
-                fullWidth
-                label='Notes'
-                multiline
-                rows={2}
-                value={form.notes}
-                onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-              />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <Button
-                variant='contained'
-                onClick={handleSubmit}
-                disabled={saving || !isFormValid}
-                startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}
-              >
-                {saving ? 'Saving...' : 'Record settlement'}
-              </Button>
-            </Grid>
+                <FormControlLabel value='DISTRIBUTOR_TO_COMPANY' control={<Radio />} label='Distributor pays company' />
+                <FormControlLabel value='COMPANY_TO_DISTRIBUTOR' control={<Radio />} label='Company pays distributor' />
+              </RadioGroup>
+            </FormControl>
           </Grid>
-        )}
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <LookupAutocomplete
+              value={selectedDistributor}
+              onChange={v => {
+                setSelectedDistributor(v)
+                setForm(p => ({ ...p, distributorId: v ? String(v._id) : '' }))
+              }}
+              fetchOptions={search =>
+                distributorsService
+                  .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
+                  .then(r => r.data.data || [])
+              }
+              label='Distributor'
+              placeholder='Type to search'
+              helperText='Search by distributor name'
+              required
+              fetchErrorMessage='Failed to load distributors'
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <CustomTextField
+              required
+              fullWidth
+              label='Amount (PKR)'
+              type='number'
+              value={form.amount}
+              onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <CustomTextField
+              required
+              select
+              fullWidth
+              label='Payment method'
+              value={form.paymentMethod}
+              onChange={e => setForm(p => ({ ...p, paymentMethod: e.target.value }))}
+            >
+              <MenuItem value='CASH'>Cash</MenuItem>
+              <MenuItem value='CHEQUE'>Cheque</MenuItem>
+              <MenuItem value='BANK_TRANSFER'>Bank transfer</MenuItem>
+              <MenuItem value='UPI'>UPI</MenuItem>
+            </CustomTextField>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <CustomTextField
+              fullWidth
+              label='Reference number'
+              value={form.referenceNumber}
+              onChange={e => setForm(p => ({ ...p, referenceNumber: e.target.value }))}
+            />
+          </Grid>
+          <Grid size={{ xs: 12 }}>
+            <CustomTextField
+              fullWidth
+              label='Notes'
+              multiline
+              rows={2}
+              value={form.notes}
+              onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+            />
+          </Grid>
+          <Grid size={{ xs: 12 }}>
+            <Button
+              variant='contained'
+              onClick={handleSubmit}
+              disabled={saving || !isFormValid}
+              startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}
+            >
+              {saving ? 'Saving...' : 'Record settlement'}
+            </Button>
+          </Grid>
+        </Grid>
       </CardContent>
     </Card>
   )

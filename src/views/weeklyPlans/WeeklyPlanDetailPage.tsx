@@ -18,12 +18,15 @@ import CustomTextField from '@core/components/mui/TextField'
 import { weeklyPlansService } from '@/services/weeklyPlans.service'
 import { doctorsService } from '@/services/doctors.service'
 import { planItemsService } from '@/services/planItems.service'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import tableStyles from '@core/styles/table.module.css'
 
 type PlanItemRow = {
   date: string
   type: 'DOCTOR_VISIT' | 'OTHER_TASK'
   doctorId: string
+  /** Local label cache for async doctor lookup */
+  doctor?: { _id: string; name?: string } | null
   title: string
   notes: string
 }
@@ -34,11 +37,10 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
   const canEdit = hasPermission('weeklyPlans.edit')
   const [statusSavingId, setStatusSavingId] = useState<string | null>(null)
   const [plan, setPlan] = useState<any>(null)
-  const [doctors, setDoctors] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [rows, setRows] = useState<PlanItemRow[]>([
-    { date: '', type: 'DOCTOR_VISIT', doctorId: '', title: '', notes: '' }
+    { date: '', type: 'DOCTOR_VISIT', doctorId: '', doctor: null, title: '', notes: '' }
   ])
 
   const load = async () => {
@@ -46,12 +48,6 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
     try {
       const planRes = await weeklyPlansService.getById(params.id)
       setPlan(planRes.data.data)
-      if (canEdit) {
-        const docRes = await doctorsService.lookup({ limit: 500, isActive: 'true' })
-        setDoctors(docRes.data.data || [])
-      } else {
-        setDoctors([])
-      }
     } catch (e) {
       showApiError(e, 'Failed to load plan')
     } finally {
@@ -61,10 +57,10 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
 
   useEffect(() => {
     load()
-  }, [params.id, canEdit])
+  }, [params.id])
 
   const addRow = () =>
-    setRows(r => [...r, { date: '', type: 'DOCTOR_VISIT', doctorId: '', title: '', notes: '' }])
+    setRows(r => [...r, { date: '', type: 'DOCTOR_VISIT', doctorId: '', doctor: null, title: '', notes: '' }])
   const updateRow = (i: number, patch: Partial<PlanItemRow>) =>
     setRows(prev => prev.map((row, idx) => (idx === i ? { ...row, ...patch } : row)))
   const removeRow = (i: number) => setRows(prev => prev.filter((_, idx) => idx !== i))
@@ -95,7 +91,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
     try {
       await weeklyPlansService.bulkPlanItems(params.id, items)
       showSuccess('Plan items saved')
-      setRows([{ date: '', type: 'DOCTOR_VISIT', doctorId: '', title: '', notes: '' }])
+      setRows([{ date: '', type: 'DOCTOR_VISIT', doctorId: '', doctor: null, title: '', notes: '' }])
       load()
     } catch (e) {
       showApiError(e, 'Failed to save plan items')
@@ -246,7 +242,13 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                         fullWidth
                         label='Type'
                         value={row.type}
-                        onChange={e => updateRow(i, { type: e.target.value as PlanItemRow['type'] })}
+                        onChange={e =>
+                          updateRow(i, {
+                            type: e.target.value as PlanItemRow['type'],
+                            doctorId: e.target.value === 'OTHER_TASK' ? '' : row.doctorId,
+                            doctor: e.target.value === 'OTHER_TASK' ? null : row.doctor
+                          })
+                        }
                       >
                         <MenuItem value='DOCTOR_VISIT'>Doctor visit</MenuItem>
                         <MenuItem value='OTHER_TASK'>Other task</MenuItem>
@@ -254,20 +256,18 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                     </Grid>
                     <Grid size={{ xs: 12, sm: 3 }}>
                       {row.type === 'DOCTOR_VISIT' ? (
-                        <CustomTextField
-                          select
-                          fullWidth
+                        <LookupAutocomplete
+                          value={row.doctorId ? (row.doctor ?? { _id: row.doctorId, name: '' }) : null}
+                          onChange={v => updateRow(i, { doctorId: v ? String(v._id) : '', doctor: v })}
+                          fetchOptions={search =>
+                            doctorsService
+                              .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
+                              .then(r => r.data.data || [])
+                          }
                           label='Doctor'
-                          value={row.doctorId}
-                          onChange={e => updateRow(i, { doctorId: e.target.value })}
-                        >
-                          <MenuItem value=''>Select</MenuItem>
-                          {doctors.map((d: any) => (
-                            <MenuItem key={d._id} value={d._id}>
-                              {d.name}
-                            </MenuItem>
-                          ))}
-                        </CustomTextField>
+                          placeholder='Type to search'
+                          fetchErrorMessage='Failed to load doctors'
+                        />
                       ) : (
                         <CustomTextField
                           fullWidth
