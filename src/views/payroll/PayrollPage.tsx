@@ -81,6 +81,13 @@ const columnHelper = createColumnHelper<PayrollEntry>()
 const employeeName = (e: PayrollEntry['employeeId']) =>
   typeof e === 'object' && e && 'name' in e ? e.name ?? '-' : '-'
 
+const employeeIdFromEntry = (e: PayrollEntry['employeeId']) =>
+  typeof e === 'object' && e && '_id' in e && e._id
+    ? String(e._id)
+    : typeof e === 'string'
+      ? e
+      : ''
+
 const parseYyyyMm = (s: string): Date | null => {
   const t = s.trim()
   if (!/^\d{4}-\d{2}$/.test(t)) return null
@@ -100,6 +107,7 @@ const defaultMonthYyyyMm = () => {
 const PayrollPage = () => {
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('payroll.create')
+  const canEdit = hasPermission('payroll.edit')
   const canPay = hasPermission('payroll.pay')
 
   const [data, setData] = useState<PayrollEntry[]>([])
@@ -132,6 +140,11 @@ const PayrollPage = () => {
   const [filterMonthFrom, setFilterMonthFrom] = useState('')
   const [filterMonthTo, setFilterMonthTo] = useState('')
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingWasStructure, setEditingWasStructure] = useState(false)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const filterOpen = Boolean(filterAnchor)
   const activeFilterCount = countDateUserFilters(appliedFilters)
@@ -216,6 +229,27 @@ const PayrollPage = () => {
     }
   }
 
+  const closePayrollDialog = () => {
+    setOpen(false)
+    setEditingId(null)
+    setEditingWasStructure(false)
+  }
+
+  const openEditRow = useCallback((row: PayrollEntry) => {
+    setEditingId(row._id)
+    setEditingWasStructure(row.calculationMode === 'structure')
+    setForm({
+      employeeId: employeeIdFromEntry(row.employeeId),
+      month: row.month,
+      baseSalary: row.baseSalary,
+      bonus: row.bonus,
+      deductions: row.deductions
+    })
+    setManualMode(true)
+    setPreview(null)
+    setOpen(true)
+  }, [])
+
   const handleSave = async () => {
     if (!form.employeeId || !form.month.trim()) {
       showApiError(new Error('Employee and month are required'), 'Validation')
@@ -225,30 +259,41 @@ const PayrollPage = () => {
       showApiError(new Error('Base salary must be greater than 0'), 'Validation')
       return
     }
-    if (!manualMode && !preview) {
+    if (!editingId && !manualMode && !preview) {
       showApiError(new Error('Run preview before saving (structure-based payroll)'), 'Validation')
       return
     }
 
     setSaving(true)
     try {
-      const body: Record<string, unknown> = {
-        employeeId: form.employeeId,
-        month: form.month.trim()
+      if (editingId) {
+        const body: Record<string, unknown> = {
+          baseSalary: form.baseSalary,
+          bonus: form.bonus,
+          deductions: form.deductions
+        }
+        if (editingWasStructure) body.manualOverride = true
+        await payrollService.update(editingId, body)
+        showSuccess('Payroll updated')
+      } else {
+        const body: Record<string, unknown> = {
+          employeeId: form.employeeId,
+          month: form.month.trim()
+        }
+        if (manualMode) {
+          body.baseSalary = form.baseSalary
+          body.bonus = form.bonus
+          body.deductions = form.deductions
+        }
+        await payrollService.create(body)
+        showSuccess('Payroll created')
       }
-      if (manualMode) {
-        body.baseSalary = form.baseSalary
-        body.bonus = form.bonus
-        body.deductions = form.deductions
-      }
-      await payrollService.create(body)
-      showSuccess('Payroll created')
-      setOpen(false)
+      closePayrollDialog()
       setPreview(null)
       setManualMode(false)
       fetchData()
     } catch (err) {
-      showApiError(err, 'Failed to create payroll')
+      showApiError(err, editingId ? 'Failed to update payroll' : 'Failed to create payroll')
     } finally {
       setSaving(false)
     }
@@ -275,6 +320,27 @@ const PayrollPage = () => {
       setPayingId(null)
     }
   }, [payTargetId])
+
+  const openDeleteConfirm = useCallback((id: string) => {
+    setDeleteTargetId(id)
+    setConfirmDeleteOpen(true)
+  }, [])
+
+  const handleDeletePayroll = useCallback(async () => {
+    if (!deleteTargetId) return
+    setDeleting(true)
+    try {
+      await payrollService.remove(deleteTargetId)
+      showSuccess('Payroll deleted')
+      setConfirmDeleteOpen(false)
+      setDeleteTargetId(null)
+      fetchData()
+    } catch (err) {
+      showApiError(err, 'Failed to delete payroll')
+    } finally {
+      setDeleting(false)
+    }
+  }, [deleteTargetId, fetchData])
 
   const fmt = (n: number | undefined) => (typeof n === 'number' ? n.toFixed(2) : '—')
 
@@ -337,6 +403,16 @@ const PayrollPage = () => {
                 <i className='tabler-file-download text-textSecondary' />
               )}
             </IconButton>
+            {row.original.status !== 'PAID' && canEdit && (
+              <>
+                <IconButton size='small' title='Edit' onClick={() => openEditRow(row.original)}>
+                  <i className='tabler-edit text-textSecondary' />
+                </IconButton>
+                <IconButton size='small' title='Delete' onClick={() => openDeleteConfirm(row.original._id)}>
+                  <i className='tabler-trash text-textSecondary' />
+                </IconButton>
+              </>
+            )}
             {row.original.status === 'PENDING' && canPay && (
               <Button
                 size='small'
@@ -353,7 +429,7 @@ const PayrollPage = () => {
         )
       })
     ],
-    [canPay, payingId, downloadingId, handleDownloadPayslip]
+    [canPay, canEdit, payingId, downloadingId, handleDownloadPayslip, openEditRow, openDeleteConfirm]
   )
 
   const table = useReactTable({
@@ -424,6 +500,8 @@ const PayrollPage = () => {
             variant='contained'
             startIcon={<i className='tabler-plus' />}
             onClick={() => {
+              setEditingId(null)
+              setEditingWasStructure(false)
               setForm({
                 employeeId: '',
                 month: defaultMonthYyyyMm(),
@@ -494,24 +572,36 @@ const PayrollPage = () => {
       </div>
       <TablePaginationComponent table={table as any} />
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth='sm' fullWidth>
-        <DialogTitle>Add Payroll</DialogTitle>
+      <Dialog open={open} onClose={closePayrollDialog} maxWidth='sm' fullWidth>
+        <DialogTitle>{editingId ? 'Edit Payroll' : 'Add Payroll'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            <Grid size={{ xs: 12 }}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={manualMode}
-                    onChange={(_, c) => {
-                      setManualMode(c)
-                      setPreview(null)
-                    }}
-                  />
-                }
-                label='Manual entry (base, bonus, deductions). If off, active salary structure is used.'
-              />
-            </Grid>
+            {!editingId && (
+              <Grid size={{ xs: 12 }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={manualMode}
+                      onChange={(_, c) => {
+                        setManualMode(c)
+                        setPreview(null)
+                      }}
+                    />
+                  }
+                  label='Manual entry (base, bonus, deductions). If off, active salary structure is used.'
+                />
+              </Grid>
+            )}
+            {editingId && (
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary'>
+                  Adjust base, bonus, and deductions.{' '}
+                  {editingWasStructure
+                    ? 'This row was built from a structure; saving converts it to manual totals.'
+                    : null}
+                </Typography>
+              </Grid>
+            )}
             <Grid size={{ xs: 12, sm: 6 }}>
               <CustomTextField
                 select
@@ -519,6 +609,7 @@ const PayrollPage = () => {
                 label='Employee'
                 value={form.employeeId}
                 onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}
+                disabled={!!editingId}
               >
                 {users.map((u: any) => (
                   <MenuItem key={u._id} value={u._id}>
@@ -537,7 +628,9 @@ const PayrollPage = () => {
                   setForm(p => ({ ...p, month: date ? formatYyyyMm(date) : '' }))
                   setPreview(null)
                 }}
-                customInput={<CustomTextField fullWidth label='Payroll month' helperText='YYYY-MM' />}
+                customInput={
+                  <CustomTextField fullWidth label='Payroll month' helperText='YYYY-MM' disabled={!!editingId} />
+                }
               />
             </Grid>
             {manualMode && (
@@ -621,7 +714,7 @@ const PayrollPage = () => {
           </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpen(false)} disabled={saving}>
+          <Button onClick={closePayrollDialog} disabled={saving}>
             Cancel
           </Button>
           <Button
@@ -629,14 +722,14 @@ const PayrollPage = () => {
             onClick={handleSave}
             disabled={
               saving ||
-              (!manualMode && !preview) ||
+              (!editingId && !manualMode && !preview) ||
               (manualMode && form.baseSalary <= 0) ||
               !form.employeeId ||
               !form.month.trim()
             }
             startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}
           >
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? 'Saving...' : editingId ? 'Update' : 'Save'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -804,6 +897,18 @@ const PayrollPage = () => {
         confirmColor='success'
         icon='tabler-cash'
         loading={paying}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        onConfirm={handleDeletePayroll}
+        title='Delete payroll?'
+        description='This removes the unpaid payroll entry. Paid payroll cannot be deleted.'
+        confirmText='Delete'
+        confirmColor='error'
+        icon='tabler-trash'
+        loading={deleting}
       />
     </Card>
   )

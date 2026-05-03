@@ -5,6 +5,7 @@ export const payrollService = {
   preview: (data: Record<string, unknown>) => api.post('/payroll/preview', data),
   create: (data: Record<string, unknown>) => api.post('/payroll', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/payroll/${id}`, data),
+  remove: (id: string) => api.delete(`/payroll/${id}`),
   pay: (id: string) => api.post(`/payroll/${id}/pay`),
   downloadPayslip: (id: string) =>
     api.get(`/payroll/${id}/payslip`, { responseType: 'blob' })
