@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Select from '@mui/material/Select'
@@ -28,58 +28,86 @@ const SuperAdminCompanySwitcher = () => {
 
   const activeId =
     user?.activeCompanyId && typeof user.activeCompanyId === 'object'
-      ? user.activeCompanyId._id
+      ? String(user.activeCompanyId._id)
       : typeof user?.activeCompanyId === 'string'
         ? user.activeCompanyId
         : ''
 
+  /** PLATFORM: options come from session — synchronous so Select `value` is never orphaned on first paint. */
+  const platformCompanies = useMemo((): CompanyRow[] => {
+    if (user?.userType !== 'PLATFORM' || !user.allowedCompanies?.length) return []
+    return user.allowedCompanies.map(c => ({
+      _id: String(c._id),
+      name: c.name,
+      city: c.city
+    }))
+  }, [user?.userType, user?.allowedCompanies])
+
   const load = useCallback(async () => {
-    if (user?.userType === 'PLATFORM' && user.allowedCompanies && user.allowedCompanies.length) {
-      setCompanies(
-        user.allowedCompanies.map(c => ({
-          _id: c._id,
-          name: c.name,
-          city: c.city
-        }))
-      )
+    if (platformCompanies.length > 0) {
+      setCompanies(platformCompanies)
       return
     }
     setLoading(true)
     try {
       const { data } = await superAdminService.listCompanies({ limit: 100, page: 1 })
-      setCompanies(data.data || [])
+      const rows: CompanyRow[] = (data.data || []).map((c: CompanyRow) => ({
+        ...c,
+        _id: String(c._id)
+      }))
+      setCompanies(rows)
     } catch (e) {
       showApiError(e, 'Failed to load companies')
     } finally {
       setLoading(false)
     }
-  }, [user?.userType, user?.allowedCompanies])
+  }, [platformCompanies])
 
   useEffect(() => {
     if (show) void load()
   }, [show, load])
 
-  if (!show) return null
+  const effectiveCompanies = useMemo(
+    () => (platformCompanies.length > 0 ? platformCompanies : companies),
+    [platformCompanies, companies]
+  )
 
-  const handleChange = async (companyId: string) => {
-    if (!companyId || companyId === activeId) return
-    setBusy(true)
-    try {
-      if (user?.userType === 'PLATFORM') {
-        await switchCompanyContext(companyId)
-      } else {
-        const { data } = await superAdminService.switchCompany(companyId)
-        const payload = data.data as { tokens: { accessToken: string; refreshToken: string } }
-        localStorage.setItem('accessToken', payload.tokens.accessToken)
-        localStorage.setItem('refreshToken', payload.tokens.refreshToken)
-        window.location.reload()
+  /**
+   * MUI Select must not receive a `value` missing from `<MenuItem value>` children.
+   * That triggers dev warnings and can corrupt Menu/modal focus + backdrop (full-page dimming).
+   */
+  const selectValue = useMemo(
+    () =>
+      activeId && effectiveCompanies.some(c => String(c._id) === String(activeId))
+        ? String(activeId)
+        : '',
+    [activeId, effectiveCompanies]
+  )
+
+  const handleChange = useCallback(
+    async (companyId: string) => {
+      if (!companyId || companyId === activeId) return
+      setBusy(true)
+      try {
+        if (user?.userType === 'PLATFORM') {
+          await switchCompanyContext(companyId)
+        } else {
+          const { data } = await superAdminService.switchCompany(companyId)
+          const payload = data.data as { tokens: { accessToken: string; refreshToken: string } }
+          localStorage.setItem('accessToken', payload.tokens.accessToken)
+          localStorage.setItem('refreshToken', payload.tokens.refreshToken)
+          window.location.reload()
+        }
+      } catch (e) {
+        showApiError(e, 'Could not switch company')
+      } finally {
+        setBusy(false)
       }
-    } catch (e) {
-      showApiError(e, 'Could not switch company')
-    } finally {
-      setBusy(false)
-    }
-  }
+    },
+    [activeId, user?.userType, switchCompanyContext]
+  )
+
+  if (!show) return null
 
   return (
     <FormControl size='small' sx={{ minWidth: 220 }} disabled={busy || loading}>
@@ -87,10 +115,28 @@ const SuperAdminCompanySwitcher = () => {
       <Select
         labelId='sa-company-switch'
         label='Company'
-        value={activeId || ''}
-        onChange={e => void handleChange(e.target.value as string)}
+        displayEmpty
+        value={selectValue}
+        onChange={e => void handleChange(String(e.target.value))}
+        renderValue={selected => {
+          if (selected) {
+            const row = effectiveCompanies.find(c => String(c._id) === String(selected))
+            return row
+              ? `${row.name}${row.city ? ` · ${row.city}` : ''}`
+              : selected
+          }
+          if (activeId && loading) return 'Loading companies…'
+          if (activeId && effectiveCompanies.length === 0 && !loading) {
+            return 'Companies unavailable — check network or refresh'
+          }
+          if (activeId) return 'Select company'
+          return 'Select company'
+        }}
+        MenuProps={{
+          PaperProps: { sx: { maxHeight: 320 } }
+        }}
       >
-        {companies.map(c => (
+        {effectiveCompanies.map(c => (
           <MenuItem key={c._id} value={c._id}>
             {c.name}
             {c.city ? ` · ${c.city}` : ''}
