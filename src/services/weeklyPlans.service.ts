@@ -7,5 +7,6 @@ export const weeklyPlansService = {
   update: (id: string, data: any) => api.put(`/weekly-plans/${id}`, data),
   getByRep: (id: string) => api.get(`/weekly-plans/rep/${id}`),
   bulkPlanItems: (weeklyPlanId: string, items: any[]) =>
-    api.post(`/weekly-plans/${weeklyPlanId}/plan-items`, { items })
+    api.post(`/weekly-plans/${weeklyPlanId}/plan-items`, { items }),
+  copyPreviousWeek: (weeklyPlanId: string) => api.post(`/weekly-plans/${weeklyPlanId}/copy-previous-week`)
 }

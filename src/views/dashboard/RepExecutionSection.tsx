@@ -12,10 +12,12 @@ import Stack from '@mui/material/Stack'
 import LinearProgress from '@mui/material/LinearProgress'
 import Grid from '@mui/material/Grid'
 import Skeleton from '@mui/material/Skeleton'
+import Paper from '@mui/material/Paper'
 import { showApiError } from '@/utils/apiErrors'
 import { planItemsService } from '@/services/planItems.service'
 import { targetsService } from '@/services/targets.service'
 import SectionHeader from './SectionHeader'
+import { parseTodayExecutionResponse, type TodayExecutionPayload } from '@/utils/planExecutionPayload'
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -27,6 +29,9 @@ const currentMonthYyyyMm = () => {
 
 type PlanItemRow = {
   _id: string
+  status?: string
+  sequenceOrder?: number
+  plannedTime?: string
   type?: string
   title?: string
   doctorId?: { name?: string; specialization?: string } | null
@@ -44,6 +49,8 @@ type MedRepTarget = {
 export type RepExecutionPrefetch = {
   planItems: PlanItemRow[]
   monthTarget: MedRepTarget | null
+  /** From GET /dashboard/home or GET /plan-items/today */
+  todayExecution?: TodayExecutionPayload | null
 }
 
 const RepExecutionSection = memo(function RepExecutionSection({
@@ -62,6 +69,7 @@ const RepExecutionSection = memo(function RepExecutionSection({
 }) {
   const [planLoading, setPlanLoading] = useState(() => Boolean(showPlan && prefetch == null))
   const [planItems, setPlanItems] = useState<PlanItemRow[]>(() => prefetch?.planItems ?? [])
+  const [localExecution, setLocalExecution] = useState<TodayExecutionPayload | null>(null)
   const [targetLoading, setTargetLoading] = useState(() => (prefetch != null ? false : canViewTargets))
   const [monthTarget, setMonthTarget] = useState<MedRepTarget | null>(() => prefetch?.monthTarget ?? null)
 
@@ -69,7 +77,10 @@ const RepExecutionSection = memo(function RepExecutionSection({
     if (prefetch) {
       if (showPlan) setPlanItems(prefetch.planItems)
       if (showTargets) setMonthTarget(prefetch.monthTarget)
-      if (showPlan) setPlanLoading(false)
+      if (showPlan) {
+        setPlanLoading(false)
+        setLocalExecution(prefetch.todayExecution ?? null)
+      }
       if (showTargets) setTargetLoading(false)
     }
   }, [prefetch, showPlan, showTargets])
@@ -85,12 +96,16 @@ const RepExecutionSection = memo(function RepExecutionSection({
       try {
         const r = await planItemsService.listToday()
         if (cancel) return
-        const list = (r.data as { data?: PlanItemRow[] })?.data
-        setPlanItems(Array.isArray(list) ? list : [])
+        const exec = parseTodayExecutionResponse(r as { data: { data?: unknown } })
+        setLocalExecution(exec)
+        const pendingOnly =
+          exec?.items.filter(i => (i as { status?: string })?.status === 'PENDING') ?? []
+        setPlanItems(pendingOnly as PlanItemRow[])
       } catch (e) {
         if (!cancel) {
           showApiError(e, 'Could not load today’s plan')
           setPlanItems([])
+          setLocalExecution(null)
         }
       } finally {
         if (!cancel) setPlanLoading(false)
@@ -133,6 +148,12 @@ const RepExecutionSection = memo(function RepExecutionSection({
   }, [prefetch, canViewTargets, repUserId, showTargets])
 
   const pendingCount = planItems.length
+  const execution = useMemo(
+    () => prefetch?.todayExecution ?? localExecution,
+    [prefetch?.todayExecution, localExecution]
+  )
+  const routeSummary = execution?.summary
+
   const salesProgress = useMemo(() => {
     if (!monthTarget) return 0
     const t = Number(monthTarget.salesTarget) || 0
@@ -184,9 +205,13 @@ const RepExecutionSection = memo(function RepExecutionSection({
           <CardHeader
             title='Today’s plan'
             subheader={
-              pendingCount === 0
-                ? 'No pending visits scheduled for today.'
-                : `${pendingCount} visit${pendingCount === 1 ? '' : 's'} pending — mark them as you go.`
+              !routeSummary
+                ? pendingCount === 0
+                  ? 'No pending visits scheduled for today.'
+                  : `${pendingCount} visit${pendingCount === 1 ? '' : 's'} pending — mark them as you go.`
+                : routeSummary.pending === 0 && routeSummary.total > 0
+                  ? 'All planned stops are closed for today.'
+                  : `${routeSummary.pending} stop${routeSummary.pending === 1 ? '' : 's'} left in your route.`
             }
             action={
               <Button
@@ -201,7 +226,66 @@ const RepExecutionSection = memo(function RepExecutionSection({
             }
           />
           <CardContent sx={{ pt: 0 }}>
-            {planItems.length === 0 ? (
+            {routeSummary ? (
+              <Stack spacing={2} className='mbe-4'>
+                <Box>
+                  <Stack direction='row' justifyContent='space-between' alignItems='center' sx={{ mb: 0.5 }}>
+                    <Typography variant='caption' color='text.secondary'>
+                      Progress
+                    </Typography>
+                    <Typography variant='caption' fontWeight={700}>
+                      {routeSummary.progressPercent}%
+                    </Typography>
+                  </Stack>
+                  <LinearProgress
+                    variant='determinate'
+                    value={routeSummary.progressPercent}
+                    sx={{ height: 10, borderRadius: 1 }}
+                  />
+                  <Typography variant='caption' color='text.secondary' sx={{ display: 'block', mt: 0.75 }}>
+                    {routeSummary.total} planned · {routeSummary.visited} done · {routeSummary.pending} left ·{' '}
+                    {routeSummary.missed} missed
+                  </Typography>
+                </Box>
+                {(() => {
+                  const next = execution?.nextPlanItem as PlanItemRow | null | undefined
+                  if (next && next.status === 'PENDING') {
+                    const label =
+                      next.type === 'OTHER_TASK' && next.title
+                        ? next.title
+                        : next.doctorId?.name
+                          ? `${next.doctorId.name}${next.doctorId.specialization ? ` · ${next.doctorId.specialization}` : ''}`
+                          : 'Next visit'
+                    return (
+                      <Paper elevation={0} sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant='overline' color='primary'>
+                          Next visit
+                        </Typography>
+                        <Typography variant='h6' fontWeight={700} sx={{ mt: 0.5 }}>
+                          #{next.sequenceOrder ?? '—'} · {label}
+                        </Typography>
+                        <Typography variant='body2' color='text.secondary'>
+                          {next.plannedTime ? `Planned ${next.plannedTime}` : 'Time flexible'}
+                        </Typography>
+                        <Button
+                          fullWidth
+                          component={Link}
+                          href='/visits/today'
+                          variant='contained'
+                          size='large'
+                          sx={{ mt: 2, minHeight: 52 }}
+                        >
+                          Start visit
+                        </Button>
+                      </Paper>
+                    )
+                  }
+                  return null
+                })()}
+              </Stack>
+            ) : null}
+
+            {planItems.length === 0 && !routeSummary ? (
               <Typography variant='body2' color='text.secondary'>
                 You’re all caught up for today, or your weekly plan has no items on this date. You can open{' '}
                 <Link href='/weekly-plans' className='text-primary no-underline hover:underline'>
@@ -209,7 +293,15 @@ const RepExecutionSection = memo(function RepExecutionSection({
                 </Link>{' '}
                 to adjust.
               </Typography>
-            ) : (
+            ) : planItems.length === 0 && routeSummary && routeSummary.total === 0 ? (
+              <Typography variant='body2' color='text.secondary'>
+                No visits planned for this day. Open{' '}
+                <Link href='/weekly-plans' className='text-primary no-underline hover:underline'>
+                  Weekly plans
+                </Link>{' '}
+                to build your route.
+              </Typography>
+            ) : planItems.length > 0 ? (
               <Stack component='ul' sx={{ listStyle: 'none', p: 0, m: 0, gap: 1.25 }}>
                 {planItems.slice(0, 6).map(item => {
                   const label =
@@ -246,7 +338,7 @@ const RepExecutionSection = memo(function RepExecutionSection({
                   </Typography>
                 ) : null}
               </Stack>
-            )}
+            ) : null}
           </CardContent>
         </Card>
         ) : null}

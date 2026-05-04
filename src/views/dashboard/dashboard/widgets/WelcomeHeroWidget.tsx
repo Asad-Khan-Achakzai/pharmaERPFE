@@ -9,7 +9,8 @@ import { useDashboardV3Data } from '../core/dashboardDataOrchestrator'
 const formatPKR = (v: number) => `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 /**
- * Welcome copy + **Net sales (TP) · this month** (from GET /reports/dashboard, calendar month).
+ * Welcome + (for company admins only) financial month highlight from GET /dashboard/home.
+ * Field reps see route-focused copy instead of net sales on the hero.
  */
 export function WelcomeHeroWidget() {
   const d = useDashboardV3Data()
@@ -22,7 +23,13 @@ export function WelcomeHeroWidget() {
   }, [])
 
   const summary = useMemo(() => {
-    if (d.canLoadDashboardKpis && !d.kpi && (d.kpiLoading || d.bundleLoading)) {
+    const ex = d.todayExecution
+    if (!d.canSeeCompanyFinancials && ex?.summary && typeof ex.summary.total === 'number') {
+      const { visited, total, pending } = ex.summary
+      if (total <= 0) return 'No visits planned for today. Add stops in your weekly plan or log an unplanned visit.'
+      return `Today’s route: ${visited}/${total} complete${pending ? ` · ${pending} remaining` : ''}.`
+    }
+    if (d.canSeeCompanyFinancials && d.canLoadDashboardKpis && !d.kpi && (d.kpiLoading || d.bundleLoading)) {
       return 'Loading this month’s sales…'
     }
     if (!d.canSeeCompanyFinancials) {
@@ -42,7 +49,7 @@ export function WelcomeHeroWidget() {
   }, [d])
 
   const highlight = useMemo(() => {
-    if (!d.canLoadDashboardKpis) return undefined
+    if (!d.canSeeCompanyFinancials || !d.canLoadDashboardKpis) return undefined
     if (d.kpiError || !d.kpi) return undefined
     const tp = Number(d.kpi.totalGrossSalesTp ?? 0)
     const fmt = formatPKR
@@ -59,7 +66,7 @@ export function WelcomeHeroWidget() {
   }, [d])
 
   const sub = useMemo(() => {
-    if (d.canLoadDashboardKpis && (d.kpiLoading || d.bundleLoading) && !d.kpi) {
+    if (d.canSeeCompanyFinancials && d.canLoadDashboardKpis && (d.kpiLoading || d.bundleLoading) && !d.kpi) {
       return 'Loading this month’s sales…'
     }
     return summary

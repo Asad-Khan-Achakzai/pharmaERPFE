@@ -21,6 +21,7 @@ import { showApiError } from '@/utils/apiErrors'
 import { currentMonthRange } from '@/utils/currentMonthRange'
 import { resolveDashboardMode } from '../engine/widgetResolver'
 import type { DashboardMode } from './dashboardTypes'
+import { parseTodayExecutionResponse, type TodayExecutionPayload } from '@/utils/planExecutionPayload'
 
 const USE_UNIFIED_HOME = process.env.NEXT_PUBLIC_ENABLE_NEW_DASHBOARD === 'true'
 
@@ -58,6 +59,8 @@ export type DashboardV3DataContextValue = {
   supplierPayablesLoading: boolean
   nonCriticalReady: boolean
   refetch: () => void
+  /** Today’s route execution bundle (GET /plan-items/today shape) when `weeklyPlans.view` */
+  todayExecution: TodayExecutionPayload | null
 }
 
 const DashboardV3DataContext = createContext<DashboardV3DataContextValue | null>(null)
@@ -96,12 +99,13 @@ export function DashboardV3DataProvider({
   const mode = useMemo(() => resolveDashboardMode(has, isFullDashboardUser), [has, isFullDashboardUser])
 
   const [kpi, setKpi] = useState<ReturnType<typeof mapDashboardFinancial> | null>(null)
-  const [kpiLoading, setKpiLoading] = useState(canLoadDashboardKpis)
+  const [kpiLoading, setKpiLoading] = useState(() => Boolean(canSeeCompanyFinancials && canLoadDashboardKpis))
   const [kpiError, setKpiError] = useState(false)
   const [home, setHome] = useState<DashboardHomePayload | null>(null)
   const [bundleFailed, setBundleFailed] = useState(false)
   const [bundleLoading, setBundleLoading] = useState(USE_UNIFIED_HOME)
   const [planItems, setPlanItems] = useState<unknown[]>([])
+  const [todayExecution, setTodayExecution] = useState<TodayExecutionPayload | null>(null)
   const [monthTarget, setMonthTarget] = useState<unknown | null>(null)
   const [todayBoard, setTodayBoard] = useState<TodayBoard | null>(null)
   const [meToday, setMeToday] = useState<unknown | null>(null)
@@ -118,7 +122,7 @@ export function DashboardV3DataProvider({
     async (runId: number) => {
       const mp = currentMonthRange()
       const settled = await Promise.allSettled([
-        canLoadDashboardKpis ? reportsService.dashboard({ params: mp }) : Promise.resolve(null),
+        canSeeCompanyFinancials ? reportsService.dashboard({ params: mp }) : Promise.resolve(null),
         canWeekly ? planItemsService.listToday() : Promise.resolve(null),
         canTargets && user?._id ? targetsService.getByRep(String(user._id)) : Promise.resolve(null),
         canTeam ? attendanceService.today() : Promise.resolve(null),
@@ -127,89 +131,95 @@ export function DashboardV3DataProvider({
       if (runId !== gen.current) return
 
       const kRes = settled[0]
-      if (kRes.status === 'fulfilled' && kRes.value && canLoadDashboardKpis) {
+      if (kRes.status === 'fulfilled' && kRes.value && canSeeCompanyFinancials) {
         const ax = kRes.value as { data: { data?: unknown } & { success?: boolean } }
         const raw = ax.data && 'data' in ax.data && ax.data.data != null ? ax.data.data : ax.data
         const m = mapDashboardFinancial(raw)
         kpiClientCache = m
         setKpi(m)
         setKpiError(false)
-      } else if (canLoadDashboardKpis) {
+      } else if (canSeeCompanyFinancials) {
         setKpiError(true)
       } else {
         setKpi(null)
       }
       setKpiLoading(false)
 
-    if (settled[1].status === 'fulfilled' && settled[1].value) {
-      const list = (settled[1].value as { data: { data: unknown[] } })?.data?.data
-      setPlanItems(Array.isArray(list) ? list : [])
-    } else setPlanItems([])
+      if (settled[1].status === 'fulfilled' && settled[1].value) {
+        const ax = settled[1].value as { data: { data?: unknown } }
+        const exec = parseTodayExecutionResponse(ax)
+        setTodayExecution(exec)
+        const pend = exec?.items.filter(i => (i as { status?: string })?.status === 'PENDING') ?? []
+        setPlanItems(pend)
+      } else {
+        setTodayExecution(null)
+        setPlanItems([])
+      }
 
-    if (settled[2].status === 'fulfilled' && settled[2].value && canTargets) {
-      const rawB = (settled[2].value as { data: { data: { month?: string }[] } }).data?.data
-      const list = Array.isArray(rawB) ? rawB : []
-      const y = ym()
-      setMonthTarget((list as { month?: string }[]).find((x) => x.month === y) ?? list[0] ?? null)
-    } else setMonthTarget(null)
+      if (settled[2].status === 'fulfilled' && settled[2].value && canTargets) {
+        const rawB = (settled[2].value as { data: { data: { month?: string }[] } }).data?.data
+        const list = Array.isArray(rawB) ? rawB : []
+        const y = ym()
+        setMonthTarget((list as { month?: string }[]).find((x) => x.month === y) ?? list[0] ?? null)
+      } else setMonthTarget(null)
 
-    if (settled[3].status === 'fulfilled' && settled[3].value && canTeam) {
-      const board = (settled[3].value as { data: { data: TodayBoard } })?.data?.data
-      setTodayBoard(board ?? null)
-    } else setTodayBoard(null)
-    setTeamLoad(false)
+      if (settled[3].status === 'fulfilled' && settled[3].value && canTeam) {
+        const board = (settled[3].value as { data: { data: TodayBoard } })?.data?.data
+        setTodayBoard(board ?? null)
+      } else setTodayBoard(null)
+      setTeamLoad(false)
 
-    if (settled[4].status === 'fulfilled' && settled[4].value && canLoadMeToday) {
-      const p = (settled[4].value as { data: { data: unknown } })?.data?.data
-      setMeToday(p ?? null)
-    } else setMeToday(null)
-    setMeLoad(false)
+      if (settled[4].status === 'fulfilled' && settled[4].value && canLoadMeToday) {
+        const p = (settled[4].value as { data: { data: unknown } })?.data?.data
+        setMeToday(p ?? null)
+      } else setMeToday(null)
+      setMeLoad(false)
 
-    if (canSup) {
-      setSpLoad(true)
-      setSbLoad(true)
-      const [p1, p2] = await Promise.allSettled([
-        supplierService.recentPayments({ limit: 8 }),
-        supplierService.balancesSummary()
-      ])
-      if (runId !== gen.current) return
-      if (p1.status === 'fulfilled') {
-        const rp = (p1.value as { data: { data?: { docs?: unknown[] } } })?.data?.data?.docs
-        setRecPay(Array.isArray(rp) ? rp : [])
-      } else setRecPay([])
-      if (p2.status === 'fulfilled') {
-        const rows = (p2.value as { data: { data?: { rows?: unknown[] } } })?.data?.data?.rows
-        setTopPay(Array.isArray(rows) ? rows.slice(0, 8) : [])
-      } else setTopPay([])
-      setSpLoad(false)
-      setSbLoad(false)
-    } else {
-      setRecPay([])
-      setTopPay([])
-      setSpLoad(false)
-      setSbLoad(false)
-    }
-    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      window.requestIdleCallback(() => setNonCriticalReady(true), { timeout: 500 })
-    } else {
-      setTimeout(() => setNonCriticalReady(true), 120)
-    }
+      if (canSup) {
+        setSpLoad(true)
+        setSbLoad(true)
+        const [p1, p2] = await Promise.allSettled([
+          supplierService.recentPayments({ limit: 8 }),
+          supplierService.balancesSummary()
+        ])
+        if (runId !== gen.current) return
+        if (p1.status === 'fulfilled') {
+          const rp = (p1.value as { data: { data?: { docs?: unknown[] } } })?.data?.data?.docs
+          setRecPay(Array.isArray(rp) ? rp : [])
+        } else setRecPay([])
+        if (p2.status === 'fulfilled') {
+          const rows = (p2.value as { data: { data?: { rows?: unknown[] } } })?.data?.data?.rows
+          setTopPay(Array.isArray(rows) ? rows.slice(0, 8) : [])
+        } else setTopPay([])
+        setSpLoad(false)
+        setSbLoad(false)
+      } else {
+        setRecPay([])
+        setTopPay([])
+        setSpLoad(false)
+        setSbLoad(false)
+      }
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        window.requestIdleCallback(() => setNonCriticalReady(true), { timeout: 500 })
+      } else {
+        setTimeout(() => setNonCriticalReady(true), 120)
+      }
     },
-    [canLoadDashboardKpis, canWeekly, canTargets, canTeam, canLoadMeToday, canSup, user?._id]
+    [canSeeCompanyFinancials, canWeekly, canTargets, canTeam, canLoadMeToday, canSup, user?._id]
   )
 
   const load = useCallback(async () => {
     const runId = ++gen.current
     setBundleFailed(false)
-    if (!canLoadDashboardKpis) {
+    if (!canSeeCompanyFinancials) {
       setKpi(null)
       setKpiLoading(false)
       setKpiError(false)
     }
     if (USE_UNIFIED_HOME) {
       setBundleLoading(true)
-      if (canLoadDashboardKpis) setKpiLoading(true)
-    } else if (canLoadDashboardKpis) {
+      if (canSeeCompanyFinancials) setKpiLoading(true)
+    } else if (canSeeCompanyFinancials) {
       setKpiLoading(true)
     }
     try {
@@ -219,18 +229,27 @@ export function DashboardV3DataProvider({
           if (runId !== gen.current) return
           const raw = (r.data as { data: DashboardHomePayload }).data
           setHome(raw)
-          if (canLoadDashboardKpis && raw.kpis) {
+          if (canSeeCompanyFinancials && raw.kpis) {
             const m = mapDashboardFinancial(raw.kpis)
             kpiClientCache = m
             setKpi(m)
             setKpiError(false)
-          } else if (canLoadDashboardKpis) {
+          } else if (canSeeCompanyFinancials) {
             setKpi(null)
             setKpiError(true)
           } else {
             setKpi(null)
+            setKpiError(false)
           }
-          if (raw.today?.pendingPlanItems) setPlanItems(raw.today.pendingPlanItems as unknown[])
+          const ex = raw.today?.execution
+          if (ex && typeof ex === 'object' && 'items' in ex && Array.isArray((ex as TodayExecutionPayload).items)) {
+            setTodayExecution(ex as TodayExecutionPayload)
+          } else {
+            setTodayExecution(null)
+          }
+          if (raw.today?.pendingPlanItems?.length) setPlanItems(raw.today.pendingPlanItems as unknown[])
+          else if (Array.isArray(raw.today?.visits) && raw.today.visits.length)
+            setPlanItems(raw.today.visits as unknown[])
           else setPlanItems([])
           setMonthTarget(raw.targets?.currentMonth ?? null)
           if (canTeam && raw.attendance?.team) setTodayBoard(raw.attendance.team as TodayBoard)
@@ -262,7 +281,7 @@ export function DashboardV3DataProvider({
     } catch (e) {
       if (!isAbort(e)) showApiError(e, 'Dashboard load')
     }
-  }, [canLoadDashboardKpis, canTeam, canSup, user?._id, runLegacyBatch])
+  }, [canSeeCompanyFinancials, canTeam, canSup, user?._id, runLegacyBatch])
 
   useEffect(() => {
     if (!user) return
@@ -287,6 +306,7 @@ export function DashboardV3DataProvider({
     bundleFailed,
     bundleLoading,
     planItems,
+    todayExecution,
     monthTarget,
     todayBoard,
     meToday,

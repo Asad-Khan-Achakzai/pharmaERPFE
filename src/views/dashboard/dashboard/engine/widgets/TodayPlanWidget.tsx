@@ -16,9 +16,10 @@ export function TodayPlanWidget() {
     if (!user?._id) return undefined
     return {
       planItems: (d.planItems || []) as RepExecutionPrefetch['planItems'],
-      monthTarget: (d.monthTarget as RepExecutionPrefetch['monthTarget']) || null
+      monthTarget: (d.monthTarget as RepExecutionPrefetch['monthTarget']) || null,
+      todayExecution: d.todayExecution ?? null
     }
-  }, [d.planItems, d.monthTarget, user?._id])
+  }, [d.planItems, d.monthTarget, d.todayExecution, user?._id])
 
   if (!user?._id) return null
 

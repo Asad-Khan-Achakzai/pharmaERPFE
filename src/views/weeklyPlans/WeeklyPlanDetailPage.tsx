@@ -14,6 +14,7 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Chip from '@mui/material/Chip'
 import Paper from '@mui/material/Paper'
 import Divider from '@mui/material/Divider'
+import Stack from '@mui/material/Stack'
 import type { TextFieldProps } from '@mui/material/TextField'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
@@ -22,6 +23,7 @@ import CustomAutocomplete from '@core/components/mui/Autocomplete'
 import { weeklyPlansService } from '@/services/weeklyPlans.service'
 import { doctorsService } from '@/services/doctors.service'
 import { planItemsService } from '@/services/planItems.service'
+import WeeklyPlanWeekBoard from '@/views/weeklyPlans/WeeklyPlanWeekBoard'
 import tableStyles from '@core/styles/table.module.css'
 import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
 
@@ -31,6 +33,7 @@ type DayPlan = {
   date: string
   selectedDoctors: DoctorOption[]
   doctorNotes: string
+  plannedTime: string
   otherTasks: { title: string; notes: string }[]
 }
 
@@ -38,6 +41,7 @@ const emptyDayPlan = (): DayPlan => ({
   date: '',
   selectedDoctors: [],
   doctorNotes: '',
+  plannedTime: '',
   otherTasks: []
 })
 
@@ -185,6 +189,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('weeklyPlans.edit')
   const [statusSavingId, setStatusSavingId] = useState<string | null>(null)
+  const [copySaving, setCopySaving] = useState(false)
   const [plan, setPlan] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -220,6 +225,19 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
     const keys = [...map.keys()].sort()
     return keys.map(date => ({ date, items: map.get(date)! }))
   }, [plan?.planItems])
+
+  const weekYmds = useMemo(() => {
+    if (!plan?.weekStartDate || !plan?.weekEndDate) return []
+    return enumerateWeekYmd(plan.weekStartDate, plan.weekEndDate)
+  }, [plan?.weekStartDate, plan?.weekEndDate])
+
+  const itemsByYmd = useMemo(() => {
+    const m: Record<string, any[]> = {}
+    for (const row of groupedExistingItems) {
+      m[row.date] = row.items
+    }
+    return m
+  }, [groupedExistingItems])
 
   const updateDay = useCallback((index: number, patch: Partial<DayPlan>) => {
     setDayPlans(prev => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)))
@@ -313,18 +331,21 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       doctorId?: string
       title?: string
       notes?: string
+      plannedTime?: string
     }> = []
 
     for (const day of filledDays) {
       const doctors = dedupeDoctors(day.selectedDoctors)
       const notesCommon = day.doctorNotes?.trim() || undefined
+      const pt = day.plannedTime?.trim() || undefined
 
       for (const doc of doctors) {
         items.push({
           date: day.date,
           type: 'DOCTOR_VISIT',
           doctorId: String(doc._id),
-          notes: notesCommon
+          notes: notesCommon,
+          plannedTime: pt
         })
       }
 
@@ -373,6 +394,19 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       year: 'numeric'
     })
     return `${a} – ${b}`
+  }
+
+  const handleCopyPreviousWeek = async () => {
+    setCopySaving(true)
+    try {
+      await weeklyPlansService.copyPreviousWeek(params.id)
+      showSuccess('Previous week copied into this plan')
+      await load()
+    } catch (e) {
+      showApiError(e, 'Could not copy previous week')
+    } finally {
+      setCopySaving(false)
+    }
   }
 
   const handleStatusChange = async (planItemId: string, status: string) => {
@@ -429,6 +463,19 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                 <Chip size='small' label={plan.status} variant='tonal' />
               </div>
             }
+            action={
+              canEdit ? (
+                <Button
+                  size='small'
+                  variant='outlined'
+                  disabled={copySaving}
+                  onClick={() => void handleCopyPreviousWeek()}
+                  sx={{ minHeight: 44, minWidth: 44 }}
+                >
+                  {copySaving ? 'Copying…' : 'Copy previous week'}
+                </Button>
+              ) : undefined
+            }
           />
           <CardContent>
             {plan.notes && (
@@ -436,6 +483,45 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                 {plan.notes}
               </Typography>
             )}
+            {plan.executionMetrics && (
+              <Paper variant='outlined' className='mbe-4 p-4'>
+                <Typography variant='subtitle2' className='mbe-2'>
+                  Execution metrics
+                </Typography>
+                <Typography variant='body2' color='text.secondary' className='mbe-3'>
+                  Coverage {plan.executionMetrics.coveragePercent}% · Missed{' '}
+                  {plan.executionMetrics.missedPercent}% · Route adherence {plan.executionMetrics.adherencePercent}%
+                </Typography>
+                {plan.executionMetrics.daySummaries?.length ? (
+                  <Stack direction='row' flexWrap='wrap' gap={1}>
+                    {plan.executionMetrics.daySummaries.map((d: { date: string; state: string }) => (
+                      <Chip key={d.date} size='small' variant='outlined' label={`${d.date} · ${d.state}`} />
+                    ))}
+                  </Stack>
+                ) : null}
+              </Paper>
+            )}
+
+            {weekYmds.length > 0 && (
+              <div className='mbe-4'>
+                <Typography variant='subtitle2' className='mbe-2'>
+                  Week execution map
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+                  Drag handles to reorder calls on open days (mobile: long‑press then drag).
+                </Typography>
+                <WeeklyPlanWeekBoard
+                  weeklyPlanId={params.id}
+                  weekYmds={weekYmds}
+                  itemsByYmd={itemsByYmd}
+                  beforePlanWeek={Boolean(plan.editLock?.beforePlanWeek)}
+                  businessTodayYmd={String(plan.editLock?.businessTodayYmd || '')}
+                  canEdit={canEdit}
+                  onReload={() => void load()}
+                />
+              </div>
+            )}
+
             <Typography variant='subtitle2' className='mbe-2'>
               Scheduled items
             </Typography>
@@ -605,7 +691,17 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                               helperText='Within plan week'
                             />
                           </Grid>
-                          <Grid size={{ xs: 12, sm: 8, md: 9 }}>
+                          <Grid size={{ xs: 12, sm: 4, md: 3 }}>
+                            <CustomTextField
+                              fullWidth
+                              label='Planned time (hint)'
+                              placeholder='e.g. 10:30'
+                              value={day.plannedTime}
+                              onChange={e => updateDay(dayIndex, { plannedTime: e.target.value })}
+                              helperText='Optional — shown to reps'
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12 }}>
                             <DoctorMultiSelectField
                               value={day.selectedDoctors}
                               onChange={next => updateDay(dayIndex, { selectedDoctors: next })}

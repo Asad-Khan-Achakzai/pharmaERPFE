@@ -5,7 +5,11 @@ export type DashboardHomePayload = {
   mode: DashboardHomeMode
   features: { canSeeCompanyFinancials: boolean; showExecutionPanel: boolean }
   kpis: Record<string, unknown> | null
-  today: { visits: unknown[]; pendingPlanItems: unknown[] }
+  today: {
+    execution?: unknown | null
+    visits: unknown[]
+    pendingPlanItems: unknown[]
+  }
   targets: { currentMonth: Record<string, unknown> | null; allRows: unknown[] }
   attendance: { team: TodayBoardLike | null; me: unknown | null }
   suppliers: {
