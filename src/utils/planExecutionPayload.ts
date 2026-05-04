@@ -35,7 +35,7 @@ export function parseTodayExecutionResponse(res: { data?: { data?: unknown } }):
     const missed = items.filter((x: any) => x?.status === 'MISSED').length
     const pending = items.filter((x: any) => x?.status === 'PENDING').length
     const total = items.length
-    const progressPercent = total ? Math.round(((visited + missed) / total) * 100) : 0
+    const progressPercent = total ? Math.round((visited / total) * 100) : 0
     const nextPlanItem = items.find((x: any) => x?.status === 'PENDING') ?? null
     return {
       date: '',
@@ -59,7 +59,7 @@ export function parseTodayExecutionResponse(res: { data?: { data?: unknown } }):
       visited,
       missed,
       pending,
-      progressPercent: total ? Math.round(((visited + missed) / total) * 100) : 0
+      progressPercent: total ? Math.round((visited / total) * 100) : 0
     }
   }
   return {

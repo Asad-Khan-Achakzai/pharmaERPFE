@@ -7,7 +7,18 @@ export const doctorsService = {
   create: (data: any) => api.post('/doctors', data),
   getById: (id: string) => api.get(`/doctors/${id}`),
   update: (id: string, data: any) => api.put(`/doctors/${id}`, data),
-  remove: (id: string) => api.delete(`/doctors/${id}`)
+  remove: (id: string) => api.delete(`/doctors/${id}`),
+  /** Bulk Excel import (additive — does not affect single-doctor create). */
+  import: {
+    preview: (data: { fileBase64: string; sheet?: string }) => api.post('/doctors/import/preview', data),
+    commit: (data: {
+      fileBase64: string
+      mapping: Record<string, string | null>
+      sheet?: string
+      skipDuplicates?: boolean
+    }) => api.post('/doctors/import/commit', data),
+    template: () => api.get('/doctors/import/template', { responseType: 'blob' })
+  }
 }
 
 export const doctorActivitiesService = {
