@@ -191,14 +191,15 @@ const CreateOrderPage = () => {
     setSubmitting(true)
     try {
       const payloadItems = items.map(({ manualBonus: _m, ...rest }) => rest)
-      await ordersService.create({
+      const payload: Record<string, unknown> = {
         pharmacyId,
         distributorId,
         doctorId: doctorId || undefined,
         medicalRepId,
         items: payloadItems,
         notes
-      })
+      }
+      await ordersService.create(payload)
       showSuccess('Order created')
       router.push('/orders/list')
     } catch (err) {

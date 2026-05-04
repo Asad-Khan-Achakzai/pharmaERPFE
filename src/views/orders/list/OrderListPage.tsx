@@ -291,8 +291,8 @@ const OrderListPage = () => {
         <Divider sx={{ my: 1 }} />
         <DateAndCreatedByFilterPanel
           title='More filters'
-          description='Narrow the list by date and who created the order.'
-          dateSectionLabel='Order date'
+          description='Narrow the list by when the order was created and who created it.'
+          dateSectionLabel='Created date'
           createdByHelperText='Matches the teammate who saved the order. Older rows may not have this set.'
           datePickerId='date-range-picker-months'
           appliedFilters={appliedFilters}

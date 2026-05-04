@@ -307,9 +307,14 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
             }
           />
           <CardContent>
-            <div className='flex flex-wrap gap-4 mbe-4'>
+            <div className='flex flex-wrap gap-4 mbe-4 items-center'>
               <Chip label={order.status} color={statusColors[order.status] || 'default'} />
-              <Typography>Date: {new Date(order.createdAt).toLocaleDateString()}</Typography>
+              <Typography>
+                Order date: {new Date(order.orderDate ?? order.createdAt).toLocaleDateString()}
+              </Typography>
+              <Typography variant='body2' color='text.secondary'>
+                Recorded: {new Date(order.createdAt).toLocaleString()}
+              </Typography>
             </div>
             {hasOrderFinancialSnap ? (
               <Box className='mbe-4'>

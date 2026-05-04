@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -21,11 +21,13 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import Grid from '@mui/material/Grid'
 import TextField from '@mui/material/TextField'
+import Autocomplete from '@mui/material/Autocomplete'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import { useAuth } from '@/contexts/AuthContext'
 import { superAdminService } from '@/services/superAdmin.service'
 import { showApiError } from '@/utils/apiErrors'
+import { allIanaTimeZones, countryCodeFromLabel, suggestTimeZoneForCountry } from '@/constants/countryTimeZones'
 
 type Company = {
   _id: string
@@ -37,6 +39,7 @@ type Company = {
   state?: string
   address?: string
   currency?: string
+  timeZone?: string
   isActive?: boolean
   createdAt?: string
 }
@@ -53,6 +56,7 @@ const emptyForm = {
   phone: '',
   email: '',
   currency: 'PKR',
+  timeZone: '',
   isActive: true
 }
 
@@ -70,6 +74,12 @@ const SuperAdminPage = () => {
   const [summaryCompany, setSummaryCompany] = useState<Company | null>(null)
   const [summaryData, setSummaryData] = useState<any>(null)
   const [summaryLoading, setSummaryLoading] = useState(false)
+
+  const ianaZones = useMemo(() => allIanaTimeZones(), [])
+  const suggestedFromCountry = useMemo(() => {
+    const code = countryCodeFromLabel(form.country) || ''
+    return (code && suggestTimeZoneForCountry(code)) || ''
+  }, [form.country])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -103,6 +113,7 @@ const SuperAdminPage = () => {
       phone: c.phone || '',
       email: c.email || '',
       currency: c.currency || 'PKR',
+      timeZone: c.timeZone || '',
       isActive: c.isActive !== false
     })
     setEditOpen(true)
@@ -114,7 +125,8 @@ const SuperAdminPage = () => {
     try {
       await superAdminService.createCompany({
         ...form,
-        email: form.email.trim() || undefined
+        email: form.email.trim() || undefined,
+        timeZone: form.timeZone.trim() || undefined
       })
       setCreateOpen(false)
       await load()
@@ -131,7 +143,8 @@ const SuperAdminPage = () => {
     try {
       await superAdminService.updateCompany(editingId, {
         ...form,
-        email: form.email.trim() || undefined
+        email: form.email.trim() || undefined,
+        timeZone: form.timeZone.trim()
       })
       setEditOpen(false)
       await load()
@@ -303,6 +316,19 @@ const SuperAdminPage = () => {
             onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
             margin='normal'
           />
+          {suggestedFromCountry ? (
+            <Typography variant='caption' color='text.secondary' display='block' className='-mt-2 mbe-2'>
+              Default IANA from country: <strong>{suggestedFromCountry}</strong> (leave override empty to use this)
+            </Typography>
+          ) : null}
+          <Autocomplete
+            options={ianaZones}
+            value={form.timeZone.trim() || null}
+            onChange={(_, v) => setForm(f => ({ ...f, timeZone: v || '' }))}
+            renderInput={params => (
+              <TextField {...params} label='IANA timezone override' margin='normal' placeholder='Optional' />
+            )}
+          />
           <TextField
             label='Phone'
             fullWidth
@@ -392,6 +418,19 @@ const SuperAdminPage = () => {
             value={form.country}
             onChange={e => setForm(f => ({ ...f, country: e.target.value }))}
             margin='normal'
+          />
+          {suggestedFromCountry ? (
+            <Typography variant='caption' color='text.secondary' display='block' className='-mt-2 mbe-2'>
+              Default IANA from country: <strong>{suggestedFromCountry}</strong>
+            </Typography>
+          ) : null}
+          <Autocomplete
+            options={ianaZones}
+            value={form.timeZone.trim() || null}
+            onChange={(_, v) => setForm(f => ({ ...f, timeZone: v || '' }))}
+            renderInput={params => (
+              <TextField {...params} label='IANA timezone override' margin='normal' placeholder='Optional' />
+            )}
           />
           <TextField
             label='Phone'
