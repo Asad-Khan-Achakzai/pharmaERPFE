@@ -24,6 +24,7 @@ import { pharmaciesService } from '@/services/pharmacies.service'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import DoctorBulkImportDialog from './DoctorBulkImportDialog'
+import DoctorAssignDialog from './DoctorAssignDialog'
 import {
   TableListSearchField,
   TableListFilterIconButton,
@@ -129,6 +130,7 @@ const DoctorListPage = () => {
   const [deleting, setDeleting] = useState(false)
   const [viewItem, setViewItem] = useState<Doctor | null>(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [assignTarget, setAssignTarget] = useState<Doctor | null>(null)
 
   const isFormValid = form.name.trim() !== ''
 
@@ -139,6 +141,7 @@ const DoctorListPage = () => {
   const canCreate = hasPermission('doctors.create')
   const canEdit = hasPermission('doctors.edit')
   const canDelete = hasPermission('doctors.delete')
+  const canAssign = hasPermission('doctors.assign')
 
   const fetchData = useCallback(async () => {
     const seq = ++fetchSeq.current
@@ -304,6 +307,15 @@ const DoctorListPage = () => {
                 <i className='tabler-edit text-textSecondary' />
               </IconButton>
             )}
+            {canAssign && (
+              <IconButton
+                size='small'
+                onClick={() => setAssignTarget(row.original)}
+                aria-label='Assign territory / rep / target'
+              >
+                <i className='tabler-user-plus text-textSecondary' />
+              </IconButton>
+            )}
             {canDelete && (
               <IconButton size='small' onClick={() => openDeleteConfirm(row.original._id)}>
                 <i className='tabler-trash text-textSecondary' />
@@ -313,7 +325,7 @@ const DoctorListPage = () => {
         )
       })
     ],
-    [canEdit, canDelete]
+    [canEdit, canAssign, canDelete]
   )
 
   const table = useReactTable({
@@ -772,6 +784,15 @@ const DoctorListPage = () => {
         onImported={() => {
           void fetchData()
         }}
+      />
+
+      <DoctorAssignDialog
+        open={!!assignTarget}
+        onClose={() => setAssignTarget(null)}
+        onSaved={() => {
+          void fetchData()
+        }}
+        doctor={assignTarget as any}
       />
     </Card>
   )

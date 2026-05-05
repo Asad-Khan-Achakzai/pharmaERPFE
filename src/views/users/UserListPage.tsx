@@ -25,8 +25,10 @@ import TablePaginationComponent from '@components/TablePaginationComponent'
 import { usersService } from '@/services/users.service'
 import { rolesService } from '@/services/roles.service'
 import type { Role } from '@/services/roles.service'
+import { territoriesService, type Territory } from '@/services/territories.service'
 import { extractPaginatedList } from '@/utils/apiPaginated'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import tableStyles from '@core/styles/table.module.css'
 import {
   TableListSearchField,
@@ -40,6 +42,13 @@ import {
   type DateUserFilterState
 } from '@/components/standard-list-toolbar'
 
+type ManagerRef = { _id: string; name: string; email: string } | string | null
+
+type TerritoryRef =
+  | { _id: string; name: string; code?: string | null; kind: 'ZONE' | 'AREA' | 'BRICK' }
+  | string
+  | null
+
 type User = {
   _id: string
   name: string
@@ -50,7 +59,13 @@ type User = {
   permissions: string[]
   isActive: boolean
   lastLoginAt?: string | null
+  /** MRep hierarchy fields (Phase 0). */
+  employeeCode?: string | null
+  managerId?: ManagerRef
+  territoryId?: TerritoryRef
 }
+
+type ManagerLookup = { _id: string; name: string; email: string; role?: string }
 
 const columnHelper = createColumnHelper<User>()
 
@@ -68,8 +83,11 @@ const UserListPage = () => {
     email: '',
     password: '',
     phone: '',
-    roleId: '' as string
+    roleId: '' as string,
+    employeeCode: ''
   })
+  const [formManager, setFormManager] = useState<ManagerLookup | null>(null)
+  const [formTerritory, setFormTerritory] = useState<Territory | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [statusConfirmOpen, setStatusConfirmOpen] = useState(false)
@@ -140,13 +158,41 @@ const UserListPage = () => {
         email: item.email,
         password: '',
         phone: item.phone || '',
-        roleId: typeof rid === 'string' ? rid : rid != null ? String(rid) : defaultRepRoleId
+        roleId: typeof rid === 'string' ? rid : rid != null ? String(rid) : defaultRepRoleId,
+        employeeCode: item.employeeCode || ''
       })
+      const mgr = typeof item.managerId === 'object' && item.managerId ? item.managerId : null
+      setFormManager(mgr ? { _id: mgr._id, name: mgr.name, email: mgr.email } : null)
+      const ter = typeof item.territoryId === 'object' && item.territoryId ? item.territoryId : null
+      setFormTerritory(
+        ter
+          ? ({
+              _id: ter._id,
+              name: ter.name,
+              code: ter.code,
+              kind: ter.kind,
+              isActive: true
+            } as Territory)
+          : null
+      )
     } else {
       setEditItem(null)
-      setForm({ name: '', email: '', password: '', phone: '', roleId: defaultRepRoleId })
+      setForm({ name: '', email: '', password: '', phone: '', roleId: defaultRepRoleId, employeeCode: '' })
+      setFormManager(null)
+      setFormTerritory(null)
     }
     setOpen(true)
+  }
+
+  const fetchManagerOptions = async (search: string) => {
+    const res = await usersService.assignable({ search, limit: 25 })
+    const list = (res.data?.data || []) as ManagerLookup[]
+    return editItem ? list.filter(u => u._id !== editItem._id) : list
+  }
+
+  const fetchTerritoryOptions = async (search: string) => {
+    const res = await territoriesService.lookup({ search, kind: 'BRICK', limit: 25 })
+    return (res.data?.data || []) as Territory[]
   }
 
   const handleSave = async () => {
@@ -156,7 +202,10 @@ const UserListPage = () => {
         name: form.name,
         email: form.email,
         phone: form.phone,
-        roleId: form.roleId
+        roleId: form.roleId,
+        employeeCode: form.employeeCode.trim() || null,
+        managerId: formManager?._id || null,
+        territoryId: formTerritory?._id || null
       }
       if (editItem) {
         if (form.password?.trim()) payload.password = form.password
@@ -222,6 +271,32 @@ const UserListPage = () => {
           variant='tonal'
         />
         )
+      }
+    }),
+    columnHelper.display({
+      id: 'manager',
+      header: 'Manager',
+      cell: ({ row }) => {
+        const mgr = row.original.managerId
+        if (mgr && typeof mgr === 'object') return <Typography variant='body2'>{mgr.name}</Typography>
+        return <Typography variant='body2' color='text.disabled'>—</Typography>
+      }
+    }),
+    columnHelper.display({
+      id: 'territory',
+      header: 'Territory',
+      cell: ({ row }) => {
+        const ter = row.original.territoryId
+        if (ter && typeof ter === 'object') {
+          return (
+            <Chip
+              size='small'
+              variant='outlined'
+              label={`${ter.name}${ter.code ? ` (${ter.code})` : ''}`}
+            />
+          )
+        }
+        return <Typography variant='body2' color='text.disabled'>—</Typography>
       }
     }),
     columnHelper.display({ id: 'status', header: 'Status', cell: ({ row }) => <Chip label={row.original.isActive ? 'Active' : 'Inactive'} color={row.original.isActive ? 'success' : 'error'} size='small' variant='tonal' /> }),
@@ -368,6 +443,35 @@ const UserListPage = () => {
               </CustomTextField>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Phone' value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Employee code'
+                value={form.employeeCode}
+                onChange={e => setForm(p => ({ ...p, employeeCode: e.target.value }))}
+                helperText='Optional HR identifier (e.g. EMP-1023).'
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <LookupAutocomplete<ManagerLookup>
+                value={formManager}
+                onChange={setFormManager}
+                fetchOptions={fetchManagerOptions}
+                label='Reports to (Manager)'
+                getOptionLabel={u => `${u.name} <${u.email}>`}
+                helperText='Optional. Build the reporting tree by setting each user’s manager.'
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <LookupAutocomplete<Territory>
+                value={formTerritory}
+                onChange={setFormTerritory}
+                fetchOptions={fetchTerritoryOptions}
+                label='Territory (Brick)'
+                getOptionLabel={t => `${t.name}${t.code ? ` (${t.code})` : ''}`}
+                helperText='Reps usually map 1:1 with a Brick. Managers can be left blank or set to their primary brick.'
+              />
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
@@ -383,6 +487,27 @@ const UserListPage = () => {
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Role</Typography><Chip label={viewItem.roleId?.name ?? viewItem.role} color={viewItem.role === 'ADMIN' ? 'primary' : viewItem.role === 'SUPER_ADMIN' ? 'secondary' : 'default'} size='small' variant='tonal' /></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Status</Typography><Chip label={viewItem.isActive ? 'Active' : 'Inactive'} color={viewItem.isActive ? 'success' : 'error'} size='small' variant='tonal' /></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Phone</Typography><Typography>{viewItem.phone || '-'}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Employee code</Typography><Typography>{viewItem.employeeCode || '-'}</Typography></Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant='body2' color='text.secondary'>Manager</Typography>
+                <Typography>
+                  {typeof viewItem.managerId === 'object' && viewItem.managerId
+                    ? viewItem.managerId.name
+                    : '-'}
+                </Typography>
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant='body2' color='text.secondary'>Territory</Typography>
+                {typeof viewItem.territoryId === 'object' && viewItem.territoryId ? (
+                  <Chip
+                    size='small'
+                    variant='outlined'
+                    label={`${viewItem.territoryId.name}${viewItem.territoryId.code ? ` (${viewItem.territoryId.code})` : ''}`}
+                  />
+                ) : (
+                  <Typography>-</Typography>
+                )}
+              </Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Last Login</Typography><Typography>{viewItem.lastLoginAt ? new Date(viewItem.lastLoginAt).toLocaleString() : '-'}</Typography></Grid>
               {viewItem.permissions && viewItem.permissions.length > 0 && (
                 <Grid size={{ xs: 12 }}><Typography variant='body2' color='text.secondary' className='mbe-1'>Permissions</Typography><div className='flex flex-wrap gap-1'>{viewItem.permissions.map(p => <Chip key={p} label={p} size='small' variant='tonal' />)}</div></Grid>

@@ -8,6 +8,16 @@ export const doctorsService = {
   getById: (id: string) => api.get(`/doctors/${id}`),
   update: (id: string, data: any) => api.put(`/doctors/${id}`, data),
   remove: (id: string) => api.delete(`/doctors/${id}`),
+  /** MRep manager flow: change territory / rep / target / tier without full edit. */
+  assign: (
+    id: string,
+    data: Partial<{
+      territoryId: string | null
+      assignedRepId: string | null
+      monthlyVisitTarget: number | null
+      tier: string | null
+    }>
+  ) => api.patch(`/doctors/${id}/assign`, data),
   /** Bulk Excel import (additive — does not affect single-doctor create). */
   import: {
     preview: (data: { fileBase64: string; sheet?: string }) => api.post('/doctors/import/preview', data),
