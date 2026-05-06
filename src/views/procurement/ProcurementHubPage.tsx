@@ -97,6 +97,7 @@ const statusChipSx = (status: string) => {
   if (s === 'CLOSED') return { color: 'secondary' as const }
   if (s === 'CANCELLED') return { color: 'warning' as const }
   if (s === 'PARTIALLY_RECEIVED') return { color: 'warning' as const }
+  if (s === 'REVERSED') return { color: 'error' as const }
   return { color: 'primary' as const }
 }
 
@@ -169,6 +170,9 @@ const ProcurementHubPage = () => {
   const canApprovePo = hasPermission('procurement.approve')
   const canReceive = hasPermission('procurement.receive')
   const canPostInvoice = hasPermission('procurement.invoicePost')
+  const canPurchaseReturn = hasPermission('procurement.return')
+  const canReverseGrn = hasPermission('procurement.grnReverse')
+  const canCancelPo = hasPermission('procurement.cancelPo')
 
   const [tab, setTab] = useState(0)
   useEffect(() => {
@@ -318,6 +322,28 @@ const ProcurementHubPage = () => {
   const [printingPoId, setPrintingPoId] = useState<string | null>(null)
   const [printingGrnId, setPrintingGrnId] = useState<string | null>(null)
   const [postConfirmGrnId, setPostConfirmGrnId] = useState<string | null>(null)
+  const [prDialogGrnId, setPrDialogGrnId] = useState<string | null>(null)
+  const [prCaps, setPrCaps] = useState<{
+    lines?: Array<{
+      goodsReceiptLineId?: string
+      maxReturnable?: number
+      qtyReceived?: number
+      alreadyReturned?: number
+      unitCost?: number
+      productId?: string
+    }>
+  } | null>(null)
+  const [prGrnDetail, setPrGrnDetail] = useState<any | null>(null)
+  const [prQtyByLineId, setPrQtyByLineId] = useState<Record<string, number>>({})
+  const [prReason, setPrReason] = useState('')
+  const [prLoading, setPrLoading] = useState(false)
+  const [prSubmitting, setPrSubmitting] = useState(false)
+  const [reverseGrnId, setReverseGrnId] = useState<string | null>(null)
+  const [reverseReason, setReverseReason] = useState('')
+  const [reversingGrn, setReversingGrn] = useState(false)
+  const [cancelPoId, setCancelPoId] = useState<string | null>(null)
+  const [cancelPoReason, setCancelPoReason] = useState('')
+  const [cancelPoSubmitting, setCancelPoSubmitting] = useState(false)
   /** Print-friendly snapshot (opens browser print / Save as PDF). */
   const [hubPrintDoc, setHubPrintDoc] = useState<HubPrintDoc | null>(null)
   /** Per PO line: qty on other draft GRNs for the same supplier order (excludes GRN being edited). */
@@ -339,6 +365,87 @@ const ProcurementHubPage = () => {
   const [viewPoDetail, setViewPoDetail] = useState<any | null>(null)
   const [viewGrn, setViewGrn] = useState<GrnRow | null>(null)
   const [viewGrnDetail, setViewGrnDetail] = useState<any | null>(null)
+
+  const purchaseOrderIdsWithGrn = useMemo(() => {
+    const s = new Set<string>()
+    grns.forEach(g => {
+      const raw = g.purchaseOrderId
+      const pid =
+        typeof raw === 'object' && raw != null
+          ? String((raw as { _id?: string })._id ?? '')
+          : String(raw ?? '')
+      if (pid) s.add(pid)
+    })
+    return s
+  }, [grns])
+
+  const openPurchaseReturnDialog = useCallback(
+    async (g: GrnRow) => {
+      if (!canPurchaseReturn) return
+      setPrDialogGrnId(g._id)
+      setPrLoading(true)
+      setPrCaps(null)
+      setPrGrnDetail(null)
+      setPrQtyByLineId({})
+      setPrReason('')
+      try {
+        const [capsR, grnR] = await Promise.all([
+          procurementService.getGrnReturnableQuantities(g._id),
+          procurementService.getGoodsReceiptNote(g._id)
+        ])
+        const caps = apiPayload<{
+          lines?: Array<{ goodsReceiptLineId?: string; maxReturnable?: number }>
+        }>(capsR)
+        const grnD = apiPayload(grnR)
+        setPrCaps(caps)
+        setPrGrnDetail(grnD)
+        const init: Record<string, number> = {}
+        caps?.lines?.forEach(l => {
+          const id = String(l.goodsReceiptLineId ?? '')
+          if (id) init[id] = 0
+        })
+        setPrQtyByLineId(init)
+      } catch (e) {
+        procurementShowError(e, 'Could not load return data')
+        setPrDialogGrnId(null)
+      } finally {
+        setPrLoading(false)
+      }
+    },
+    [canPurchaseReturn]
+  )
+
+  const submitPurchaseReturn = useCallback(async () => {
+    if (!prDialogGrnId) return
+    const lines = Object.entries(prQtyByLineId)
+      .map(([goodsReceiptLineId, qtyReturned]) => ({
+        goodsReceiptLineId,
+        qtyReturned: Number(qtyReturned) || 0
+      }))
+      .filter(l => l.qtyReturned > 0)
+    if (!lines.length) {
+      procurementShowError(null, 'Enter a return quantity on at least one line.')
+      return
+    }
+    setPrSubmitting(true)
+    try {
+      const created = apiPayload<{ _id: string }>(
+        await procurementService.createPurchaseReturn({
+          grnId: prDialogGrnId,
+          lines,
+          reason: prReason.trim() || undefined
+        })
+      )
+      await procurementService.postPurchaseReturn(created._id, { reason: prReason.trim() || undefined })
+      showSuccess('Purchase return posted')
+      setPrDialogGrnId(null)
+      void refreshHub()
+    } catch (e) {
+      procurementShowError(e, 'Purchase return failed')
+    } finally {
+      setPrSubmitting(false)
+    }
+  }, [prDialogGrnId, prQtyByLineId, prReason, refreshHub])
 
   useEffect(() => {
     ;(async () => {
@@ -1343,6 +1450,22 @@ const ProcurementHubPage = () => {
                                 </TableCell>
                                 <TableCell>{formatDate(p.createdAt)}</TableCell>
                                 <TableCell align='right'>
+                                  {canCancelPo &&
+                                    ['DRAFT', 'APPROVED'].includes(p.status) &&
+                                    !purchaseOrderIdsWithGrn.has(p._id) && (
+                                      <Tooltip title='Cancel supplier order (no receipts)'>
+                                        <IconButton
+                                          size='small'
+                                          onClick={() => {
+                                            setCancelPoId(p._id)
+                                            setCancelPoReason('')
+                                          }}
+                                          aria-label='Cancel supplier order'
+                                        >
+                                          <i className='tabler-ban' />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
                                   <Tooltip title='Print supplier order'>
                                     <span>
                                       <IconButton
@@ -1432,6 +1555,15 @@ const ProcurementHubPage = () => {
                           onPrint={() => void quickPrintSupplierOrder(p)}
                           onReceiveGoods={() => openReceiveGoodsForOrder(p)}
                           showReceiveGoods={canReceive && ['APPROVED', 'PARTIALLY_RECEIVED'].includes(p.status)}
+                          showCancel={
+                            canCancelPo &&
+                            ['DRAFT', 'APPROVED'].includes(p.status) &&
+                            !purchaseOrderIdsWithGrn.has(p._id)
+                          }
+                          onCancel={() => {
+                            setCancelPoId(p._id)
+                            setCancelPoReason('')
+                          }}
                           onEditDraft={canCreate && p.status === 'DRAFT' ? () => void openEditPurchaseOrder(p) : undefined}
                           editDraftLoading={loadingEditPoId === p._id}
                           onApprove={
@@ -1540,6 +1672,31 @@ const ProcurementHubPage = () => {
                                       </IconButton>
                                     </span>
                                   </Tooltip>
+                                  {canPurchaseReturn && g.status === 'POSTED' && (
+                                    <Tooltip title='Purchase return'>
+                                      <IconButton
+                                        size='small'
+                                        onClick={() => void openPurchaseReturnDialog(g)}
+                                        aria-label='Purchase return'
+                                      >
+                                        <i className='tabler-arrow-back-up' />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
+                                  {canReverseGrn && g.status === 'POSTED' && (
+                                    <Tooltip title='Reverse posted receipt (admin)'>
+                                      <IconButton
+                                        size='small'
+                                        onClick={() => {
+                                          setReverseGrnId(g._id)
+                                          setReverseReason('')
+                                        }}
+                                        aria-label='Reverse posted receipt'
+                                      >
+                                        <i className='tabler-rotate-clockwise-2' />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
                                   {showReceiveMore && (
                                     <Tooltip title='Receive more goods (same supplier order)'>
                                       <IconButton
@@ -1600,6 +1757,13 @@ const ProcurementHubPage = () => {
                             grn={g}
                             printLoading={printingGrnId === g._id}
                             showReceiveMore={showRecvMore}
+                            showPurchaseReturn={canPurchaseReturn && g.status === 'POSTED'}
+                            onPurchaseReturn={() => void openPurchaseReturnDialog(g)}
+                            showReverseGrn={canReverseGrn && g.status === 'POSTED'}
+                            onReverseGrn={() => {
+                              setReverseGrnId(g._id)
+                              setReverseReason('')
+                            }}
                             onPrint={() => void quickPrintGoodsReceipt(g)}
                             onReceiveMore={() => openReceiveGoodsFromGrnRow(g)}
                             onView={() => void openViewGrn(g)}
@@ -2309,7 +2473,7 @@ const ProcurementHubPage = () => {
         <DialogTitle>Post received goods?</DialogTitle>
         <DialogContent>
           <Typography variant='body2' color='text.secondary'>
-            This will <strong>increase distributor stock</strong> using the costs you entered (including any shipping you split per unit) and <strong>raise supplier payable</strong> for this shipment. This step cannot be undone from this screen — only via finance adjustments.
+            This will <strong>increase distributor stock</strong> using the costs you entered (including any shipping you split per unit) and <strong>raise supplier payable</strong> for this shipment. If this shipment was posted by mistake, use <strong>Purchase return</strong> on a posted receipt, or ask an admin to <strong>Reverse receipt</strong> when no returns or posted invoices block it.
           </Typography>
         </DialogContent>
         <DialogActions
@@ -2344,6 +2508,208 @@ const ProcurementHubPage = () => {
             }}
           >
             Post receive
+          </ProcurementBusyButton>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(prDialogGrnId)}
+        onClose={() => {
+          if (!prSubmitting) setPrDialogGrnId(null)
+        }}
+        maxWidth='md'
+        fullWidth
+        scroll='body'
+      >
+        <DialogTitle>Purchase return</DialogTitle>
+        <DialogContent>
+          {prLoading ? (
+            <Box className='flex justify-center py-10'>
+              <CircularProgress aria-label='Loading return data' />
+            </Box>
+          ) : (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Typography variant='body2' color='text.secondary'>
+                Enter quantities to send back to the supplier. This reduces stock (at the receipt&apos;s landed unit cost) and lowers supplier payable (at the same basis as the original GRN posting).
+              </Typography>
+              <CustomTextField
+                fullWidth
+                label='Reason (optional)'
+                value={prReason}
+                onChange={e => setPrReason(e.target.value)}
+                multiline
+                rows={2}
+              />
+              <TableContainer component={Paper} variant='outlined' sx={{ borderRadius: 2 }}>
+                <Table size='small'>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Product</TableCell>
+                      <TableCell align='right'>Max returnable</TableCell>
+                      <TableCell align='right'>Return qty</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {prCaps?.lines?.map(cap => {
+                      const lid = String(cap.goodsReceiptLineId)
+                      const gl = prGrnDetail?.lines?.find((l: any) => String(l._id) === lid)
+                      const name = gl?.productId?.name ?? lid.slice(-6)
+                      const maxR = Number(cap.maxReturnable) || 0
+                      return (
+                        <TableRow key={lid} hover>
+                          <TableCell>
+                            <Typography variant='body2'>{name}</Typography>
+                            <Typography variant='caption' color='text.secondary'>
+                              Landed {formatPKR(Number(cap.unitCost) || 0)}/u
+                            </Typography>
+                          </TableCell>
+                          <TableCell align='right'>{maxR}</TableCell>
+                          <TableCell align='right'>
+                            <CustomTextField
+                              type='number'
+                              size='small'
+                              inputProps={{ min: 0, max: maxR, step: 1 }}
+                              value={prQtyByLineId[lid] ?? 0}
+                              onChange={e =>
+                                setPrQtyByLineId(prev => ({
+                                  ...prev,
+                                  [lid]: Math.min(maxR, Math.max(0, Number(e.target.value) || 0))
+                                }))
+                              }
+                              sx={{ width: 112 }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button disabled={prSubmitting} onClick={() => setPrDialogGrnId(null)}>
+            Cancel
+          </Button>
+          <ProcurementBusyButton
+            variant='contained'
+            loading={prSubmitting}
+            loadingLabel='Posting…'
+            disabled={prLoading}
+            onClick={() => void submitPurchaseReturn()}
+          >
+            Post return
+          </ProcurementBusyButton>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(reverseGrnId)}
+        onClose={() => {
+          if (!reversingGrn) setReverseGrnId(null)
+        }}
+        maxWidth='sm'
+        fullWidth
+      >
+        <DialogTitle>Reverse posted receipt?</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Alert severity='warning'>
+              Emergency use only. Blocked when purchase returns exist for this receipt or a posted supplier invoice references it.
+            </Alert>
+            <CustomTextField
+              fullWidth
+              label='Reason (optional)'
+              multiline
+              rows={3}
+              value={reverseReason}
+              onChange={e => setReverseReason(e.target.value)}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button disabled={reversingGrn} onClick={() => setReverseGrnId(null)}>
+            Cancel
+          </Button>
+          <ProcurementBusyButton
+            color='error'
+            variant='contained'
+            loading={reversingGrn}
+            loadingLabel='Reversing…'
+            onClick={async () => {
+              if (!reverseGrnId) return
+              setReversingGrn(true)
+              try {
+                await procurementService.reverseGoodsReceiptNote(reverseGrnId, {
+                  reason: reverseReason.trim() || undefined
+                })
+                showSuccess('Receipt reversed')
+                setReverseGrnId(null)
+                void refreshHub()
+              } catch (e) {
+                procurementShowError(e, 'Could not reverse receipt')
+              } finally {
+                setReversingGrn(false)
+              }
+            }}
+          >
+            Reverse receipt
+          </ProcurementBusyButton>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(cancelPoId)}
+        onClose={() => {
+          if (!cancelPoSubmitting) setCancelPoId(null)
+        }}
+        maxWidth='xs'
+        fullWidth
+      >
+        <DialogTitle>Cancel supplier order?</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Typography variant='body2' color='text.secondary'>
+              Only allowed when this order has no goods receipts. If receipts exist, use purchase return instead.
+            </Typography>
+            <CustomTextField
+              fullWidth
+              label='Reason (optional)'
+              multiline
+              rows={2}
+              value={cancelPoReason}
+              onChange={e => setCancelPoReason(e.target.value)}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button disabled={cancelPoSubmitting} onClick={() => setCancelPoId(null)}>
+            Back
+          </Button>
+          <ProcurementBusyButton
+            color='warning'
+            variant='contained'
+            loading={cancelPoSubmitting}
+            loadingLabel='Cancelling…'
+            onClick={async () => {
+              if (!cancelPoId) return
+              setCancelPoSubmitting(true)
+              try {
+                await procurementService.cancelPurchaseOrder(cancelPoId, {
+                  reason: cancelPoReason.trim() || undefined
+                })
+                showSuccess('Supplier order cancelled')
+                setCancelPoId(null)
+                void refreshHub()
+              } catch (e) {
+                procurementShowError(e, 'Could not cancel order')
+              } finally {
+                setCancelPoSubmitting(false)
+              }
+            }}
+          >
+            Cancel order
           </ProcurementBusyButton>
         </DialogActions>
       </Dialog>
@@ -2589,6 +2955,8 @@ function MobilePoCard({
   approveLoading,
   approveDisabled,
   showReceiveGoods,
+  showCancel,
+  onCancel,
   printLoading
 }: {
   po: PoRow
@@ -2602,6 +2970,8 @@ function MobilePoCard({
   approveLoading?: boolean
   approveDisabled?: boolean
   showReceiveGoods: boolean
+  showCancel?: boolean
+  onCancel?: () => void
   printLoading?: boolean
 }) {
   const pct = poProgress(metrics)
@@ -2660,6 +3030,13 @@ function MobilePoCard({
               </IconButton>
             </Tooltip>
           )}
+          {showCancel && onCancel && (
+            <Tooltip title='Cancel order (no receipts)'>
+              <IconButton size='small' onClick={onCancel} aria-label='Cancel supplier order'>
+                <i className='tabler-ban' />
+              </IconButton>
+            </Tooltip>
+          )}
           <Button size='small' onClick={onView}>
             View
           </Button>
@@ -2679,6 +3056,10 @@ function MobileGrnCard({
   editDraftLoading,
   printLoading,
   showReceiveMore,
+  showPurchaseReturn,
+  onPurchaseReturn,
+  showReverseGrn,
+  onReverseGrn,
   canPost
 }: {
   grn: GrnRow
@@ -2690,6 +3071,10 @@ function MobileGrnCard({
   editDraftLoading?: boolean
   printLoading?: boolean
   showReceiveMore: boolean
+  showPurchaseReturn?: boolean
+  onPurchaseReturn?: () => void
+  showReverseGrn?: boolean
+  onReverseGrn?: () => void
   canPost: boolean
 }) {
   return (
@@ -2709,6 +3094,20 @@ function MobileGrnCard({
             </IconButton>
           </span>
         </Tooltip>
+        {showPurchaseReturn && onPurchaseReturn && (
+          <Tooltip title='Purchase return'>
+            <IconButton size='small' onClick={onPurchaseReturn} aria-label='Purchase return'>
+              <i className='tabler-arrow-back-up' />
+            </IconButton>
+          </Tooltip>
+        )}
+        {showReverseGrn && onReverseGrn && (
+          <Tooltip title='Reverse receipt (admin)'>
+            <IconButton size='small' onClick={onReverseGrn} aria-label='Reverse posted receipt'>
+              <i className='tabler-rotate-clockwise-2' />
+            </IconButton>
+          </Tooltip>
+        )}
         {showReceiveMore && (
           <Tooltip title='Receive more (same order)'>
             <IconButton size='small' onClick={onReceiveMore} aria-label='Receive more goods'>

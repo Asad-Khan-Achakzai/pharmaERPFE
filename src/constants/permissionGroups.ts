@@ -10,7 +10,10 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'territories.view': 'View Zones / Areas / Bricks',
   'territories.manage': 'Create / edit / delete Zones / Areas / Bricks',
   'weeklyPlans.review': 'Open submitted weekly plans of direct reports',
-  'weeklyPlans.approve': 'Approve or reject submitted weekly plans'
+  'weeklyPlans.approve': 'Approve or reject submitted weekly plans',
+  'procurement.return': 'Record purchase returns against posted receipts',
+  'procurement.grnReverse': 'Reverse a posted goods receipt (emergency / admin)',
+  'procurement.cancelPo': 'Cancel supplier orders that have no receipts'
 }
 
 export const PERMISSION_GROUPS: Record<string, string[]> = {
@@ -43,7 +46,10 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
     'procurement.create',
     'procurement.approve',
     'procurement.receive',
-    'procurement.invoicePost'
+    'procurement.invoicePost',
+    'procurement.return',
+    'procurement.grnReverse',
+    'procurement.cancelPo'
   ],
   users: ['users.view', 'users.create', 'users.edit', 'users.delete'],
   team: ['team.view', 'team.manage', 'team.viewAllReports'],

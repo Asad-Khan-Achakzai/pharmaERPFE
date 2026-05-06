@@ -8,6 +8,8 @@ export const procurementService = {
   updatePurchaseOrder: (id: string, data: unknown) =>
     api.patch(`/procurement/purchase-orders/${id}`, data),
   approvePurchaseOrder: (id: string) => api.post(`/procurement/purchase-orders/${id}/approve`, {}),
+  cancelPurchaseOrder: (id: string, data?: unknown) =>
+    api.post(`/procurement/purchase-orders/${id}/cancel`, data ?? {}),
 
   listGoodsReceiptNotes: (params?: Record<string, unknown>) =>
     api.get('/procurement/goods-receipt-notes', { params }),
@@ -16,6 +18,18 @@ export const procurementService = {
   updateGoodsReceiptNote: (id: string, data: unknown) =>
     api.patch(`/procurement/goods-receipt-notes/${id}`, data),
   postGoodsReceiptNote: (id: string) => api.post(`/procurement/goods-receipt-notes/${id}/post`, {}),
+  getGrnReturnableQuantities: (grnId: string) =>
+    api.get(`/procurement/goods-receipt-notes/${grnId}/returnable-quantities`),
+  reverseGoodsReceiptNote: (id: string, data?: unknown) =>
+    api.post(`/procurement/goods-receipt-notes/${id}/reverse`, data ?? {}),
+
+  listPurchaseReturns: (params?: Record<string, unknown>) =>
+    api.get('/procurement/purchase-returns', { params }),
+  createPurchaseReturn: (data: unknown) => api.post('/procurement/purchase-returns', data),
+  updatePurchaseReturn: (id: string, data: unknown) =>
+    api.patch(`/procurement/purchase-returns/${id}`, data),
+  postPurchaseReturn: (id: string, data?: unknown) =>
+    api.post(`/procurement/purchase-returns/${id}/post`, data ?? {}),
 
   listSupplierInvoices: (params?: Record<string, unknown>) =>
     api.get('/procurement/supplier-invoices', { params }),

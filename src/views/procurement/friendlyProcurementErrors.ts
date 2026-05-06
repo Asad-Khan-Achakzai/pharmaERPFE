@@ -64,6 +64,15 @@ function mapBackendMessage(raw: string, fallback: string): string {
   if (/post.*first|posted receipts only|link posted/i.test(lower)) {
     return 'Post the receipt first, then link it from supplier invoice.'
   }
+  if (/goods receipt notes exist|cannot cancel:.*receipt/i.test(lower)) {
+    return 'This order already has receipts. Cancel isn’t allowed — use a purchase return instead.'
+  }
+  if (/purchase returns exist for this receipt|cannot reverse:.*purchase return/i.test(lower)) {
+    return 'This receipt has purchase returns. Reverse GRN isn’t allowed — keep using returns.'
+  }
+  if (/posted supplier invoice references this receipt/i.test(lower)) {
+    return 'A posted supplier invoice uses this receipt. Resolve the invoice before reversing.'
+  }
   if (/401|403|unauthorized|forbidden|permission/i.test(lower)) {
     return 'You do not have permission to do that.'
   }
