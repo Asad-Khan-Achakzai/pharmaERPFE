@@ -23,6 +23,8 @@ import Grid from '@mui/material/Grid'
 import TextField from '@mui/material/TextField'
 import Autocomplete from '@mui/material/Autocomplete'
 import MenuItem from '@mui/material/MenuItem'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import Switch from '@mui/material/Switch'
 import Skeleton from '@mui/material/Skeleton'
 import { useAuth } from '@/contexts/AuthContext'
 import { superAdminService } from '@/services/superAdmin.service'
@@ -41,6 +43,8 @@ type Company = {
   currency?: string
   timeZone?: string
   isActive?: boolean
+  /** When true, new weekly plans inherit approvalRequired and must be submitted before execution. */
+  weeklyPlanApprovalRequired?: boolean
   createdAt?: string
 }
 
@@ -57,7 +61,8 @@ const emptyForm = {
   email: '',
   currency: 'PKR',
   timeZone: '',
-  isActive: true
+  isActive: true,
+  weeklyPlanApprovalRequired: false
 }
 
 const SuperAdminPage = () => {
@@ -114,7 +119,8 @@ const SuperAdminPage = () => {
       email: c.email || '',
       currency: c.currency || 'PKR',
       timeZone: c.timeZone || '',
-      isActive: c.isActive !== false
+      isActive: c.isActive !== false,
+      weeklyPlanApprovalRequired: c.weeklyPlanApprovalRequired === true
     })
     setEditOpen(true)
   }
@@ -126,7 +132,8 @@ const SuperAdminPage = () => {
       await superAdminService.createCompany({
         ...form,
         email: form.email.trim() || undefined,
-        timeZone: form.timeZone.trim() || undefined
+        timeZone: form.timeZone.trim() || undefined,
+        weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired
       })
       setCreateOpen(false)
       await load()
@@ -144,7 +151,8 @@ const SuperAdminPage = () => {
       await superAdminService.updateCompany(editingId, {
         ...form,
         email: form.email.trim() || undefined,
-        timeZone: form.timeZone.trim()
+        timeZone: form.timeZone.trim(),
+        weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired
       })
       setEditOpen(false)
       await load()
@@ -229,6 +237,15 @@ const SuperAdminPage = () => {
                               <Typography variant='caption' color='text.secondary' display='block'>
                                 {row.email}
                               </Typography>
+                            ) : null}
+                            {row.weeklyPlanApprovalRequired ? (
+                              <Chip
+                                size='small'
+                                label='Weekly plan approval'
+                                color='info'
+                                variant='outlined'
+                                sx={{ mt: 0.75 }}
+                              />
                             ) : null}
                           </TableCell>
                           <TableCell>{row.city || '—'}</TableCell>
@@ -367,6 +384,27 @@ const SuperAdminPage = () => {
             <MenuItem value='true'>Active</MenuItem>
             <MenuItem value='false'>Inactive</MenuItem>
           </TextField>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.weeklyPlanApprovalRequired}
+                onChange={e => setForm(f => ({ ...f, weeklyPlanApprovalRequired: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Require weekly plan approval
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  New plans must be submitted and approved by a manager before they become active. Existing plans are
+                  unchanged.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)} disabled={saving}>
@@ -470,6 +508,27 @@ const SuperAdminPage = () => {
             <MenuItem value='true'>Active</MenuItem>
             <MenuItem value='false'>Inactive</MenuItem>
           </TextField>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.weeklyPlanApprovalRequired}
+                onChange={e => setForm(f => ({ ...f, weeklyPlanApprovalRequired: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Require weekly plan approval
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When on, new weekly plans need manager submit/approve. Plans already created keep their current
+                  workflow.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditOpen(false)} disabled={saving}>

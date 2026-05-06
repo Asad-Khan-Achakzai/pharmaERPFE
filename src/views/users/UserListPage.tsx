@@ -113,6 +113,39 @@ const UserListPage = () => {
     [roleOptions]
   )
 
+  /**
+   * Pick the right territory granularity for the selected role:
+   *   - DEFAULT_RM           → Zone
+   *   - DEFAULT_ASM          → Area
+   *   - DEFAULT_MEDICAL_REP  → Brick (current default)
+   *   - anything else        → all kinds (admins, custom roles)
+   */
+  const selectedRoleCode = useMemo(
+    () => roleOptions.find(r => String(r._id) === String(form.roleId))?.code || '',
+    [roleOptions, form.roleId]
+  )
+  const territoryKindForRole: 'ZONE' | 'AREA' | 'BRICK' | undefined = useMemo(() => {
+    if (selectedRoleCode === 'DEFAULT_RM') return 'ZONE'
+    if (selectedRoleCode === 'DEFAULT_ASM') return 'AREA'
+    if (selectedRoleCode === 'DEFAULT_MEDICAL_REP') return 'BRICK'
+    return undefined
+  }, [selectedRoleCode])
+  const territoryFieldLabel = territoryKindForRole
+    ? `Territory (${territoryKindForRole.charAt(0)}${territoryKindForRole.slice(1).toLowerCase()})`
+    : 'Territory'
+  const territoryHelperText = (() => {
+    switch (territoryKindForRole) {
+      case 'ZONE':
+        return 'RMs cover an entire Zone (one or more Areas).'
+      case 'AREA':
+        return 'ASMs cover an Area (one or more Bricks under it).'
+      case 'BRICK':
+        return 'Reps usually map 1:1 with a Brick.'
+      default:
+        return 'Optional. Pick the geography this user is responsible for.'
+    }
+  })()
+
   const loadRoles = useCallback(async () => {
     try {
       const res = await rolesService.list({ limit: 200 })
@@ -191,9 +224,22 @@ const UserListPage = () => {
   }
 
   const fetchTerritoryOptions = async (search: string) => {
-    const res = await territoriesService.lookup({ search, kind: 'BRICK', limit: 25 })
+    const params: Record<string, unknown> = { search, limit: 25 }
+    if (territoryKindForRole) params.kind = territoryKindForRole
+    const res = await territoriesService.lookup(params)
     return (res.data?.data || []) as Territory[]
   }
+
+  /**
+   * When the role changes mid-edit and the previously-selected territory's kind no longer
+   * matches the new role's expected kind, clear the value so it doesn't silently persist.
+   */
+  useEffect(() => {
+    if (!territoryKindForRole || !formTerritory) return
+    if (formTerritory.kind && formTerritory.kind !== territoryKindForRole) {
+      setFormTerritory(null)
+    }
+  }, [territoryKindForRole, formTerritory])
 
   const handleSave = async () => {
     setSaving(true)
@@ -464,12 +510,21 @@ const UserListPage = () => {
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <LookupAutocomplete<Territory>
+                /**
+                 * Re-key on role kind so the dropdown remounts and refetches options with the
+                 * correct kind filter (e.g., switching role from MR → ASM swaps Bricks for Areas).
+                 */
+                key={`territory-${territoryKindForRole || 'any'}`}
                 value={formTerritory}
                 onChange={setFormTerritory}
                 fetchOptions={fetchTerritoryOptions}
-                label='Territory (Brick)'
-                getOptionLabel={t => `${t.name}${t.code ? ` (${t.code})` : ''}`}
-                helperText='Reps usually map 1:1 with a Brick. Managers can be left blank or set to their primary brick.'
+                label={territoryFieldLabel}
+                getOptionLabel={t =>
+                  `${t.name}${t.code ? ` (${t.code})` : ''}${
+                    !territoryKindForRole && t.kind ? ` · ${t.kind}` : ''
+                  }`
+                }
+                helperText={territoryHelperText}
               />
             </Grid>
           </Grid>

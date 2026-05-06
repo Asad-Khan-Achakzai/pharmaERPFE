@@ -11,6 +11,7 @@ import { ExecutionHintWidget } from './widgets/ExecutionHintWidget'
 import { OrdersStatusWidget } from './widgets/OrdersStatusWidget'
 import { AttendanceTeamWidget } from './widgets/AttendanceTeamWidget'
 import { SupplierWidget } from './widgets/SupplierWidget'
+import { TeamSummaryWidget } from './widgets/TeamSummaryWidget'
 
 const ProfitChartsLazy = lazy(() =>
   import('./widgets/ProfitChartsWidget').then(m => ({ default: m.ProfitChartsWidget }))
@@ -110,6 +111,22 @@ export const WIDGET_REGISTRY: EngineWidgetDefinition[] = [
       EXECUTION: { band: 'HERO_SPLIT', zone: 'main', order: 0 },
       MONITORING: null,
       HYBRID: { band: 'EXECUTION_FULL', zone: 'full', order: 0 }
+    }
+  },
+  {
+    id: WIDGET_ID.TEAM_SUMMARY_WIDGET,
+    component: TeamSummaryWidget,
+    permissions: ['team.view'],
+    /** Mounts in all modes for managers; rendered above the team-attendance band. */
+    allowedModes: ['EXECUTION', 'MONITORING', 'HYBRID'],
+    priority: 905,
+    modeAxis: 'monitoring',
+    grid: { xs: 12, md: 12, lg: 12 },
+    dataKeys: [],
+    bandByMode: {
+      EXECUTION: { band: 'EXECUTION_FULL', zone: 'full', order: 5 },
+      MONITORING: { band: 'HERO_SPLIT', zone: 'main', order: 5 },
+      HYBRID: { band: 'EXECUTION_FULL', zone: 'full', order: 5 }
     }
   },
   {

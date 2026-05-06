@@ -38,6 +38,7 @@ import {
   appendDateUserParams,
   type DateUserFilterState
 } from '@/components/standard-list-toolbar'
+import { TeamScopeToggle, type TeamScope } from '@/components/team-scope/TeamScopeToggle'
 
 type Plan = {
   _id: string
@@ -92,8 +93,10 @@ const WeeklyPlansPage = () => {
   const router = useRouter()
   const { hasPermission, user } = useAuth()
   const canCreate = hasPermission('weeklyPlans.create')
+  const canSeeTeam = hasPermission('team.viewAllReports') || hasPermission('admin.access')
   const [data, setData] = useState<Plan[]>([])
   const [reps, setReps] = useState<any[]>([])
+  const [scope, setScope] = useState<TeamScope>(canSeeTeam ? 'team' : 'self')
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
   const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
   const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
@@ -123,6 +126,7 @@ const WeeklyPlansPage = () => {
     try {
       const params: Record<string, string> = { limit: '100' }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
+      if (canSeeTeam && scope === 'team') params.scope = 'team'
       const [r, u] = await Promise.all([weeklyPlansService.list(params), usersService.assignable()])
       if (seq !== fetchSeq.current) return
       setData(r.data.data || [])
@@ -132,7 +136,7 @@ const WeeklyPlansPage = () => {
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch])
+  }, [appliedFilters, debouncedSearch, scope, canSeeTeam])
 
   useEffect(() => {
     void fetchData()
@@ -268,6 +272,7 @@ const WeeklyPlansPage = () => {
             placeholder='Search notes, rep…'
           />
           <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
+          {canSeeTeam && <TeamScopeToggle value={scope} onChange={setScope} />}
         </Stack>
       </div>
 

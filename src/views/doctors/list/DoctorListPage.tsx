@@ -36,6 +36,7 @@ import {
   appendDateUserParams,
   type DateUserFilterState
 } from '@/components/standard-list-toolbar'
+import { TeamScopeToggle, type TeamScope } from '@/components/team-scope/TeamScopeToggle'
 import tableStyles from '@core/styles/table.module.css'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
@@ -142,6 +143,8 @@ const DoctorListPage = () => {
   const canEdit = hasPermission('doctors.edit')
   const canDelete = hasPermission('doctors.delete')
   const canAssign = hasPermission('doctors.assign')
+  const canSeeTeam = hasPermission('team.viewAllReports') || hasPermission('admin.access')
+  const [scope, setScope] = useState<TeamScope>('self')
 
   const fetchData = useCallback(async () => {
     const seq = ++fetchSeq.current
@@ -149,6 +152,7 @@ const DoctorListPage = () => {
     try {
       const params: Record<string, string> = { limit: '100' }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
+      if (canSeeTeam && scope === 'team') params.scope = 'team'
       const docsRes = await doctorsService.list(params)
       if (seq !== fetchSeq.current) return
       setData(docsRes.data.data || [])
@@ -157,7 +161,7 @@ const DoctorListPage = () => {
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch])
+  }, [appliedFilters, debouncedSearch, scope, canSeeTeam])
 
   useEffect(() => {
     void fetchData()
@@ -352,6 +356,7 @@ const DoctorListPage = () => {
             placeholder='Search name, code, specialty, zone, city, mobile…'
           />
           <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
+          {canSeeTeam && <TeamScopeToggle value={scope} onChange={setScope} />}
         </Stack>
         {canCreate && (
           <Stack direction='row' spacing={1.5} useFlexGap>

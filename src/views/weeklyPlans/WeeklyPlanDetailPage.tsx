@@ -15,6 +15,11 @@ import Chip from '@mui/material/Chip'
 import Paper from '@mui/material/Paper'
 import Divider from '@mui/material/Divider'
 import Stack from '@mui/material/Stack'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import Alert from '@mui/material/Alert'
 import type { TextFieldProps } from '@mui/material/TextField'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
@@ -186,10 +191,14 @@ function DoctorMultiSelectField({
 
 const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string }> }) => {
   const params = use(paramsPromise)
-  const { hasPermission } = useAuth()
+  const { hasPermission, user } = useAuth()
   const canEdit = hasPermission('weeklyPlans.edit')
+  const canApprove = hasPermission('weeklyPlans.approve')
   const [statusSavingId, setStatusSavingId] = useState<string | null>(null)
   const [copySaving, setCopySaving] = useState(false)
+  const [approvalSaving, setApprovalSaving] = useState<'submit' | 'approve' | 'reject' | null>(null)
+  const [rejectOpen, setRejectOpen] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
   const [plan, setPlan] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -423,6 +432,51 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
     }
   }
 
+  const handleSubmitForApproval = async () => {
+    setApprovalSaving('submit')
+    try {
+      await weeklyPlansService.submit(params.id)
+      showSuccess('Plan submitted for approval')
+      await load()
+    } catch (e) {
+      showApiError(e, 'Failed to submit plan')
+    } finally {
+      setApprovalSaving(null)
+    }
+  }
+
+  const handleApprove = async () => {
+    setApprovalSaving('approve')
+    try {
+      await weeklyPlansService.approve(params.id)
+      showSuccess('Plan approved')
+      await load()
+    } catch (e) {
+      showApiError(e, 'Failed to approve plan')
+    } finally {
+      setApprovalSaving(null)
+    }
+  }
+
+  const handleReject = async () => {
+    if (!rejectReason.trim()) {
+      showApiError(null, 'Rejection reason is required')
+      return
+    }
+    setApprovalSaving('reject')
+    try {
+      await weeklyPlansService.reject(params.id, rejectReason.trim())
+      showSuccess('Plan rejected')
+      setRejectOpen(false)
+      setRejectReason('')
+      await load()
+    } catch (e) {
+      showApiError(e, 'Failed to reject plan')
+    } finally {
+      setApprovalSaving(null)
+    }
+  }
+
   const formatHeadingDate = (ymd: string) => {
     const p = parseYyyyMmDd(ymd)
     if (!p) return ymd
@@ -460,24 +514,98 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                 <Typography component='span' variant='body2' color='text.secondary'>
                   {plan.medicalRepId?.name || 'Rep'} · {weekLabel()} ·
                 </Typography>
-                <Chip size='small' label={plan.status} variant='tonal' />
+                <Chip
+                  size='small'
+                  label={plan.status}
+                  color={
+                    plan.status === 'ACTIVE' || plan.status === 'COMPLETED'
+                      ? 'success'
+                      : plan.status === 'SUBMITTED'
+                        ? 'warning'
+                        : 'default'
+                  }
+                  variant='tonal'
+                />
+                {plan.approvalRequired && (
+                  <Chip size='small' label='Approval required' variant='outlined' icon={<i className='tabler-shield-check text-base' />} />
+                )}
               </div>
             }
             action={
-              canEdit ? (
-                <Button
-                  size='small'
-                  variant='outlined'
-                  disabled={copySaving}
-                  onClick={() => void handleCopyPreviousWeek()}
-                  sx={{ minHeight: 44, minWidth: 44 }}
-                >
-                  {copySaving ? 'Copying…' : 'Copy previous week'}
-                </Button>
-              ) : undefined
+              <Stack direction='row' spacing={1} flexWrap='wrap' useFlexGap>
+                {/* Phase 2B — owner / manager submit flow */}
+                {plan.approvalRequired && plan.status === 'DRAFT' && (
+                  (String(plan.medicalRepId?._id || plan.medicalRepId) === String(user?._id) || canEdit) && (
+                    <Button
+                      size='small'
+                      variant='contained'
+                      color='primary'
+                      disabled={!!approvalSaving}
+                      onClick={() => void handleSubmitForApproval()}
+                      sx={{ minHeight: 44 }}
+                    >
+                      {approvalSaving === 'submit' ? 'Submitting…' : 'Submit for approval'}
+                    </Button>
+                  )
+                )}
+                {/* Phase 2B — manager review flow */}
+                {plan.status === 'SUBMITTED' && canApprove && (
+                  <>
+                    <Button
+                      size='small'
+                      variant='contained'
+                      color='success'
+                      disabled={!!approvalSaving}
+                      onClick={() => void handleApprove()}
+                      sx={{ minHeight: 44 }}
+                    >
+                      {approvalSaving === 'approve' ? 'Approving…' : 'Approve'}
+                    </Button>
+                    <Button
+                      size='small'
+                      variant='outlined'
+                      color='error'
+                      disabled={!!approvalSaving}
+                      onClick={() => setRejectOpen(true)}
+                      sx={{ minHeight: 44 }}
+                    >
+                      Reject
+                    </Button>
+                  </>
+                )}
+                {canEdit && (
+                  <Button
+                    size='small'
+                    variant='outlined'
+                    disabled={copySaving}
+                    onClick={() => void handleCopyPreviousWeek()}
+                    sx={{ minHeight: 44, minWidth: 44 }}
+                  >
+                    {copySaving ? 'Copying…' : 'Copy previous week'}
+                  </Button>
+                )}
+              </Stack>
             }
           />
           <CardContent>
+            {plan.rejectedReason && plan.status === 'DRAFT' && (
+              <Alert severity='warning' className='mbe-4'>
+                <Typography variant='subtitle2'>Plan was rejected</Typography>
+                <Typography variant='body2'>{plan.rejectedReason}</Typography>
+              </Alert>
+            )}
+            {plan.status === 'SUBMITTED' && (
+              <Alert severity='info' className='mbe-4'>
+                Submitted{plan.submittedAt ? ` on ${new Date(plan.submittedAt).toLocaleString()}` : ''} —
+                waiting for manager approval.
+              </Alert>
+            )}
+            {plan.status === 'ACTIVE' && plan.approvedAt && (
+              <Alert severity='success' className='mbe-4'>
+                Approved on {new Date(plan.approvedAt).toLocaleString()}
+                {plan.approvedBy?.name ? ` by ${plan.approvedBy.name}` : ''}.
+              </Alert>
+            )}
             {plan.notes && (
               <Typography variant='body2' className='mbe-4' color='text.secondary'>
                 {plan.notes}
@@ -786,6 +914,52 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
           </Card>
         </Grid>
       )}
+
+      <Dialog
+        open={rejectOpen}
+        onClose={() => {
+          if (approvalSaving) return
+          setRejectOpen(false)
+          setRejectReason('')
+        }}
+        fullWidth
+        maxWidth='sm'
+      >
+        <DialogTitle>Reject plan</DialogTitle>
+        <DialogContent>
+          <Typography variant='body2' color='text.secondary' className='mbe-3'>
+            Tell the rep why this plan is being rejected. They&apos;ll see this when they edit and resubmit.
+          </Typography>
+          <CustomTextField
+            fullWidth
+            multiline
+            minRows={3}
+            label='Reason'
+            value={rejectReason}
+            onChange={e => setRejectReason(e.target.value)}
+            placeholder='e.g. Tier-A doctors missing on Wednesday; please rebalance the route.'
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setRejectOpen(false)
+              setRejectReason('')
+            }}
+            disabled={!!approvalSaving}
+          >
+            Cancel
+          </Button>
+          <Button
+            color='error'
+            variant='contained'
+            disabled={!rejectReason.trim() || !!approvalSaving}
+            onClick={() => void handleReject()}
+          >
+            {approvalSaving === 'reject' ? 'Rejecting…' : 'Reject plan'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Grid>
   )
 }

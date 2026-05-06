@@ -37,6 +37,7 @@ import DashboardSupplierSection from '@/views/dashboard/DashboardSupplierSection
 import DashboardAttendanceSection from '@/views/dashboard/DashboardAttendanceSection'
 import DashboardQuickActions, { type QuickAction } from '@/views/dashboard/DashboardQuickActions'
 import RepExecutionSection from '@/views/dashboard/RepExecutionSection'
+import { TeamSummaryWidget } from '@/views/dashboard/dashboard/engine/widgets/TeamSummaryWidget'
 import { orderQuickActions, resolveDashboardLayout } from '@/views/dashboard/dashboardLayout'
 import { isFullDashboardUser } from '@/views/dashboard/dashboard/engine/dashboardExperience'
 import type { TodayBoard, TodayEmployee } from '@/views/dashboard/dashboard.types'
@@ -832,6 +833,7 @@ const LegacyDashboardView = () => {
               />
             )
           ) : null}
+          {hasPermission('team.view') ? <TeamSummaryWidget /> : null}
           {!showStatsKpis && !(layout?.showExecutionPanel && user?._id) ? (
             <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
               <CardContent sx={{ py: 4 }}>
