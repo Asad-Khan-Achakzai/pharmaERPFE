@@ -51,5 +51,12 @@ export const reportsService = {
   visitSummary: (params: { weekStart: string; weekEnd: string; employeeId?: string }) =>
     api.get('/reports/visit-summary', { params }),
   visitByEmployee: (params: { weekStart: string; weekEnd: string }) =>
-    api.get('/reports/visit-by-employee', { params })
+    api.get('/reports/visit-by-employee', { params }),
+
+  mrepMonthlyOverview: (config?: { params?: { month?: string; repId?: string } }) =>
+    api.get('/reports/mrep/monthly-overview', config),
+  mrepDoctorCoverage: (params: { month: string; repId: string }) =>
+    api.get('/reports/mrep/doctor-coverage', { params }),
+  mrepTerritoryCoverage: (params: { month: string; territoryId: string }) =>
+    api.get('/reports/mrep/territory-coverage', { params })
 }

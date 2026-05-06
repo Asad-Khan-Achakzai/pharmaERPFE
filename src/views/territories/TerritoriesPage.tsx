@@ -27,6 +27,7 @@ import {
   type TerritoryNode
 } from '@/services/territories.service'
 import TerritoryFormDialog from './TerritoryFormDialog'
+import TerritoryBulkImportDialog from './TerritoryBulkImportDialog'
 
 const KIND_COLOR: Record<TerritoryKind, 'primary' | 'secondary' | 'default'> = {
   ZONE: 'primary',
@@ -63,6 +64,7 @@ const TerritoriesPage = () => {
   }>({ open: false, initial: null, parent: null })
   const [deleteTarget, setDeleteTarget] = useState<TerritoryNode | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
 
   const load = useCallback(async () => {
@@ -214,9 +216,14 @@ const TerritoriesPage = () => {
         subheader='Zones contain Areas; Areas contain Bricks. Doctors and Pharmacies can be assigned to a Brick.'
         action={
           canManage && (
-            <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={openAddZone}>
-              Add Zone
-            </Button>
+            <Stack direction='row' spacing={1} flexWrap='wrap' useFlexGap>
+              <Button variant='tonal' startIcon={<i className='tabler-file-upload' />} onClick={() => setImportOpen(true)}>
+                Import Excel
+              </Button>
+              <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={openAddZone}>
+                Add Zone
+              </Button>
+            </Stack>
           )
         }
       />
@@ -280,6 +287,8 @@ const TerritoriesPage = () => {
         icon='tabler-trash'
         loading={deleting}
       />
+
+      <TerritoryBulkImportDialog open={importOpen} onClose={() => setImportOpen(false)} onImported={load} />
     </Card>
   )
 }

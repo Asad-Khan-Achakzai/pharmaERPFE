@@ -17,12 +17,29 @@ export type TodayEndOfDayPreview = {
   dayComplete: boolean
 }
 
+export type TodayCoverageAlert = {
+  severity?: string
+  message?: string
+  count?: number
+}
+
+export type TodayCoverageHint = {
+  doctorId: string
+  doctorName?: string
+  monthlyTarget: number
+  visitsSoFarThisMonth: number
+  remaining: number
+  onTrack: boolean
+}
+
 export type TodayExecutionPayload = {
   date: string
   summary: TodayExecutionSummary
   dayExecutionState: string
   nextPlanItem: unknown | null
   endOfDayPreview?: TodayEndOfDayPreview
+  coverageHints?: TodayCoverageHint[]
+  coverageAlert?: TodayCoverageAlert | null
   items: unknown[]
 }
 
@@ -68,6 +85,11 @@ export function parseTodayExecutionResponse(res: { data?: { data?: unknown } }):
     dayExecutionState: String(p.dayExecutionState || ''),
     nextPlanItem: p.nextPlanItem ?? null,
     endOfDayPreview: p.endOfDayPreview,
+    coverageHints: Array.isArray(p.coverageHints) ? (p.coverageHints as TodayCoverageHint[]) : undefined,
+    coverageAlert:
+      p.coverageAlert != null && typeof p.coverageAlert === 'object'
+        ? (p.coverageAlert as TodayCoverageAlert)
+        : null,
     items
   }
 }

@@ -26,6 +26,7 @@ import MenuItem from '@mui/material/MenuItem'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Switch from '@mui/material/Switch'
 import Skeleton from '@mui/material/Skeleton'
+import Stack from '@mui/material/Stack'
 import { useAuth } from '@/contexts/AuthContext'
 import { superAdminService } from '@/services/superAdmin.service'
 import { showApiError } from '@/utils/apiErrors'
@@ -45,6 +46,8 @@ type Company = {
   isActive?: boolean
   /** When true, new weekly plans inherit approvalRequired and must be submitted before execution. */
   weeklyPlanApprovalRequired?: boolean
+  /** When true, field visits must follow planned sequence (company override; env can still force globally). */
+  strictVisitSequence?: boolean
   createdAt?: string
 }
 
@@ -62,7 +65,8 @@ const emptyForm = {
   currency: 'PKR',
   timeZone: '',
   isActive: true,
-  weeklyPlanApprovalRequired: false
+  weeklyPlanApprovalRequired: false,
+  strictVisitSequence: false
 }
 
 const SuperAdminPage = () => {
@@ -120,7 +124,8 @@ const SuperAdminPage = () => {
       currency: c.currency || 'PKR',
       timeZone: c.timeZone || '',
       isActive: c.isActive !== false,
-      weeklyPlanApprovalRequired: c.weeklyPlanApprovalRequired === true
+      weeklyPlanApprovalRequired: c.weeklyPlanApprovalRequired === true,
+      strictVisitSequence: c.strictVisitSequence === true
     })
     setEditOpen(true)
   }
@@ -133,7 +138,8 @@ const SuperAdminPage = () => {
         ...form,
         email: form.email.trim() || undefined,
         timeZone: form.timeZone.trim() || undefined,
-        weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired
+        weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired,
+        strictVisitSequence: form.strictVisitSequence
       })
       setCreateOpen(false)
       await load()
@@ -152,7 +158,8 @@ const SuperAdminPage = () => {
         ...form,
         email: form.email.trim() || undefined,
         timeZone: form.timeZone.trim(),
-        weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired
+        weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired,
+        strictVisitSequence: form.strictVisitSequence
       })
       setEditOpen(false)
       await load()
@@ -238,15 +245,14 @@ const SuperAdminPage = () => {
                                 {row.email}
                               </Typography>
                             ) : null}
-                            {row.weeklyPlanApprovalRequired ? (
-                              <Chip
-                                size='small'
-                                label='Weekly plan approval'
-                                color='info'
-                                variant='outlined'
-                                sx={{ mt: 0.75 }}
-                              />
-                            ) : null}
+                            <Stack direction='row' flexWrap='wrap' useFlexGap spacing={0.75} sx={{ mt: 0.75 }}>
+                              {row.weeklyPlanApprovalRequired ? (
+                                <Chip size='small' label='Weekly plan approval' color='info' variant='outlined' />
+                              ) : null}
+                              {row.strictVisitSequence ? (
+                                <Chip size='small' label='Strict visit sequence' color='warning' variant='outlined' />
+                              ) : null}
+                            </Stack>
                           </TableCell>
                           <TableCell>{row.city || '—'}</TableCell>
                           <TableCell>{row.phone || '—'}</TableCell>
@@ -405,6 +411,27 @@ const SuperAdminPage = () => {
             }
             sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
           />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.strictVisitSequence}
+                onChange={e => setForm(f => ({ ...f, strictVisitSequence: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Strict visit sequence
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  Reps must complete today’s route in planned order (out-of-order visits are blocked unless an admin
+                  edits the plan).
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)} disabled={saving}>
@@ -524,6 +551,26 @@ const SuperAdminPage = () => {
                 <Typography variant='caption' color='text.secondary' display='block'>
                   When on, new weekly plans need manager submit/approve. Plans already created keep their current
                   workflow.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.strictVisitSequence}
+                onChange={e => setForm(f => ({ ...f, strictVisitSequence: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Strict visit sequence
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  Reps must complete today’s route in planned order unless the plan is adjusted.
                 </Typography>
               </div>
             }

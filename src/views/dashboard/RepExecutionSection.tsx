@@ -12,6 +12,7 @@ import Stack from '@mui/material/Stack'
 import LinearProgress from '@mui/material/LinearProgress'
 import Grid from '@mui/material/Grid'
 import Skeleton from '@mui/material/Skeleton'
+import Alert from '@mui/material/Alert'
 import Paper from '@mui/material/Paper'
 import { showApiError } from '@/utils/apiErrors'
 import { planItemsService } from '@/services/planItems.service'
@@ -226,6 +227,11 @@ const RepExecutionSection = memo(function RepExecutionSection({
             }
           />
           <CardContent sx={{ pt: 0 }}>
+            {showPlan && execution?.coverageAlert && typeof execution.coverageAlert === 'object' ? (
+              <Alert severity='info' sx={{ mb: 2 }}>
+                {String((execution.coverageAlert as { message?: string }).message || '')}
+              </Alert>
+            ) : null}
             {routeSummary ? (
               <Stack spacing={2} className='mbe-4'>
                 <Box>

@@ -59,5 +59,16 @@ export const territoriesService = {
     }>
   ) => api.put(`/territories/${id}`, data),
 
-  remove: (id: string) => api.delete(`/territories/${id}`)
+  remove: (id: string) => api.delete(`/territories/${id}`),
+
+  import: {
+    preview: (data: { fileBase64: string; sheet?: string }) => api.post('/territories/import/preview', data),
+    commit: (data: {
+      fileBase64: string
+      mapping: Record<string, string | null>
+      sheet?: string
+      skipExisting?: boolean
+    }) => api.post('/territories/import/commit', data),
+    template: () => api.get('/territories/import/template', { responseType: 'blob' })
+  }
 }
