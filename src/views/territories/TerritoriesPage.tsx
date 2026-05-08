@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import CardHeader from '@mui/material/CardHeader'
@@ -51,6 +52,8 @@ const matchesSearch = (n: TerritoryNode, term: string): boolean => {
 
 const TerritoriesPage = () => {
   const { hasPermission } = useAuth()
+  const searchParams = useSearchParams()
+  const searchFromUrl = searchParams.get('search')
   const canManage = hasPermission('territories.manage')
 
   const [roots, setRoots] = useState<TerritoryNode[]>([])
@@ -66,6 +69,11 @@ const TerritoriesPage = () => {
   const [deleting, setDeleting] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
+
+  useEffect(() => {
+    const q = searchFromUrl?.trim()
+    if (q) setSearchInput(q)
+  }, [searchFromUrl, setSearchInput])
 
   const load = useCallback(async () => {
     setLoading(true)

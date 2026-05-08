@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
@@ -53,6 +54,8 @@ function trendArrow(current: number | null | undefined, previous: number | null 
 }
 
 export default function MrepCommandCenterPage() {
+  const searchParams = useSearchParams()
+  const monthFromUrl = searchParams.get('month')
   const { hasPermission } = useAuth()
   const canSee = useMemo(
     () =>
@@ -75,6 +78,12 @@ export default function MrepCommandCenterPage() {
     null
   )
   const [pendingPlans, setPendingPlans] = useState<any[] | null>(null)
+
+  useEffect(() => {
+    if (monthFromUrl && /^\d{4}-\d{2}$/.test(monthFromUrl)) {
+      setMonth(monthFromUrl)
+    }
+  }, [monthFromUrl])
 
   const load = useCallback(async () => {
     if (!canSee) return

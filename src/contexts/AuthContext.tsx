@@ -31,6 +31,14 @@ export interface ResolvedRole {
   name?: string
 }
 
+export interface UserTerritorySnapshot {
+  _id: string
+  name?: string
+  code?: string | null
+  kind?: string
+  materializedPath?: string
+}
+
 export interface User {
   _id: string
   name: string
@@ -40,6 +48,10 @@ export interface User {
   permissions: string[]
   /** Active-tenant role metadata for dashboard UI; not used for RBAC checks. */
   resolvedRole?: ResolvedRole | null
+  /** Primary territory anchor (zone / area / brick) with path for client-side scoping. */
+  territoryId?: string | UserTerritorySnapshot | null
+  /** Extra coverage territories when enabled on the company. */
+  coverageTerritoryIds?: (string | UserTerritorySnapshot)[]
   companyId: any
   activeCompanyId?: { _id: string; name: string; city?: string; currency?: string } | string | null
   allowedCompanies?: AllowedCompany[]
@@ -96,7 +108,9 @@ function authUserEquivalent(a: User | null, b: User | null): boolean {
     JSON.stringify(a.resolvedRole ?? null) === JSON.stringify(b.resolvedRole ?? null) &&
     idKey(a.companyId) === idKey(b.companyId) &&
     idKey(a.activeCompanyId) === idKey(b.activeCompanyId) &&
-    JSON.stringify(a.allowedCompanies || []) === JSON.stringify(b.allowedCompanies || [])
+    JSON.stringify(a.allowedCompanies || []) === JSON.stringify(b.allowedCompanies || []) &&
+    JSON.stringify(a.territoryId ?? null) === JSON.stringify(b.territoryId ?? null) &&
+    JSON.stringify(a.coverageTerritoryIds ?? []) === JSON.stringify(b.coverageTerritoryIds ?? [])
   )
 }
 

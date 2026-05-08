@@ -11,6 +11,7 @@ import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
+import Alert from '@mui/material/Alert'
 import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
 import MenuItem from '@mui/material/MenuItem'
@@ -149,6 +150,7 @@ const DoctorListPage = () => {
   const canSeeTeam = hasPermission('team.viewAllReports') || hasPermission('admin.access')
   const urlWantsTeamScope = searchParams.get('scope') === 'team'
   const assignedRepIdFromUrl = searchParams.get('assignedRepId')
+  const underTerritoryIdFromUrl = searchParams.get('underTerritoryId')
   const [scope, setScope] = useState<TeamScope>('self')
 
   useEffect(() => {
@@ -165,6 +167,9 @@ const DoctorListPage = () => {
       if (assignedRepIdFromUrl && /^[a-f0-9]{24}$/i.test(assignedRepIdFromUrl)) {
         params.assignedRepId = assignedRepIdFromUrl
       }
+      if (underTerritoryIdFromUrl && /^[a-f0-9]{24}$/i.test(underTerritoryIdFromUrl)) {
+        params.underTerritoryId = underTerritoryIdFromUrl
+      }
       const docsRes = await doctorsService.list(params)
       if (seq !== fetchSeq.current) return
       setData(docsRes.data.data || [])
@@ -173,7 +178,7 @@ const DoctorListPage = () => {
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch, scope, canSeeTeam, assignedRepIdFromUrl])
+  }, [appliedFilters, debouncedSearch, scope, canSeeTeam, assignedRepIdFromUrl, underTerritoryIdFromUrl])
 
   useEffect(() => {
     void fetchData()
@@ -359,6 +364,11 @@ const DoctorListPage = () => {
   return (
     <Card>
       <CardHeader title='Doctors' />
+      {underTerritoryIdFromUrl && /^[a-f0-9]{24}$/i.test(underTerritoryIdFromUrl) ? (
+        <Alert severity="info" sx={{ mx: 3, mb: 0 }}>
+          Listing doctors whose brick assignment falls under this territory (including the territory itself when it is a brick). Remove the filter from the address bar to see the full directory.
+        </Alert>
+      ) : null}
       <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
         <Stack direction='row' spacing={1.5} alignItems='center' flexWrap='wrap' useFlexGap sx={{ flex: 1, minWidth: 0 }}>
           <TableListSearchField
