@@ -88,6 +88,7 @@ function seedPathsFromIndex(seedIds: string[], pathById: Map<string, string>): s
 function resolveScopeMode(user: User | null): TerritoryScopeMode {
   if (!user) return 'empty'
   if (user.role === 'SUPER_ADMIN') return 'full'
+  if (user.role === 'ADMIN') return 'full'
   if (user.permissions?.includes('admin.access')) return 'full'
   const code = user.resolvedRole?.code || ''
   if (code === 'DEFAULT_ADMIN') return 'full'

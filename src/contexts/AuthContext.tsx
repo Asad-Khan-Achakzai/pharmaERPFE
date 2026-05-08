@@ -221,8 +221,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const hasPermission = useCallback((permission: string) => {
     if (!user) return false
     if (user.role === 'SUPER_ADMIN') return true
+    if (user.role === 'ADMIN') return true
     const p = user.permissions || []
     if (p.includes('admin.access')) return true
+    if (user.resolvedRole?.code === 'DEFAULT_ADMIN') return true
     return p.includes(permission)
   }, [user])
 

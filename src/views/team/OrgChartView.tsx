@@ -158,13 +158,13 @@ export default function OrgChartView() {
     <Card>
       <CardHeader
         title='Org chart (reporting tree)'
-        subheader='Built from your subtree on /users/team. Coverage % is from Field performance API for the current month.'
+        subheader='Built from /users/team (full company for tenant administrators; otherwise your reporting subtree). Coverage % is from Field performance for the current month.'
       />
       <CardContent>
         {loading ? (
           <Skeleton variant='rounded' height={200} />
         ) : forest.length === 0 ? (
-          <Typography color='text.secondary'>No team members in your subtree yet.</Typography>
+          <Typography color='text.secondary'>No users to display.</Typography>
         ) : (
           forest.map(root => <OrgNode key={root._id} node={root} depth={0} kpiByRep={kpiByRep} />)
         )}

@@ -126,7 +126,7 @@ const TeamPage = () => {
         title='My Team'
         subheader={
           authUser?.name
-            ? `Reporting subtree of ${authUser.name}. Use the manager column to re-parent a user.`
+            ? `Roster from Team API (full company for tenant administrators; otherwise the reporting subtree of ${authUser.name}). Use the manager column to re-parent a user.`
             : undefined
         }
       />
