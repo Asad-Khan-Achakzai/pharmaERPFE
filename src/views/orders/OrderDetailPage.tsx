@@ -24,6 +24,7 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import CustomTextField from '@core/components/mui/TextField'
+import api from '@/services/api'
 import { ordersService } from '@/services/orders.service'
 import { inventoryService } from '@/services/inventory.service'
 import { lineTotalQuantity } from '@/utils/bonus'
@@ -65,6 +66,20 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
     } catch (err) {
       setLoadError(true)
       showApiError(err, 'Failed to load order')
+    }
+  }
+
+  const openDeliveryInvoice = async (deliveryId: string) => {
+    try {
+      const res = await api.get(`/orders/${params.id}/deliveries/${deliveryId}/invoice`, {
+        responseType: 'blob'
+      })
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 120_000)
+    } catch (err: unknown) {
+      showApiError(err, 'Could not open invoice PDF')
     }
   }
 
@@ -581,7 +596,11 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                       : null}
                   </Typography>
                   <Typography variant='body2' color='text.secondary'>{new Date(d.deliveredAt).toLocaleString()} by {d.deliveredBy?.name}</Typography>
-                  {d.pdfUrl && <Button size='small' href={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '')}${d.pdfUrl}`} target='_blank'>Download PDF</Button>}
+                  {d.invoiceNumber && (
+                    <Button size='small' onClick={() => openDeliveryInvoice(d._id)}>
+                      Download PDF
+                    </Button>
+                  )}
                 </div>
               ))}
             </CardContent>

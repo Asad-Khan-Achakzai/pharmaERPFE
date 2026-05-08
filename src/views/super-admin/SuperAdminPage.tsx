@@ -41,6 +41,8 @@ type Company = {
   country?: string
   state?: string
   address?: string
+  /** Pakistan FBR National Tax Number — shown on printed invoices. */
+  ntnNo?: string
   currency?: string
   timeZone?: string
   isActive?: boolean
@@ -65,6 +67,7 @@ const emptyForm = {
   state: '',
   country: 'Pakistan',
   phone: '',
+  ntnNo: '',
   email: '',
   currency: 'PKR',
   timeZone: '',
@@ -126,6 +129,7 @@ const SuperAdminPage = () => {
       state: c.state || '',
       country: c.country || 'Pakistan',
       phone: c.phone || '',
+      ntnNo: c.ntnNo || '',
       email: c.email || '',
       currency: c.currency || 'PKR',
       timeZone: c.timeZone || '',
@@ -386,6 +390,14 @@ const SuperAdminPage = () => {
             margin='normal'
           />
           <TextField
+            label='NTN No.'
+            fullWidth
+            value={form.ntnNo}
+            onChange={e => setForm(f => ({ ...f, ntnNo: e.target.value }))}
+            margin='normal'
+            helperText='National Tax Number (Pakistan FBR) — printed on delivery invoices'
+          />
+          <TextField
             select
             label='Currency'
             fullWidth
@@ -570,6 +582,14 @@ const SuperAdminPage = () => {
             value={form.email}
             onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
             margin='normal'
+          />
+          <TextField
+            label='NTN No.'
+            fullWidth
+            value={form.ntnNo}
+            onChange={e => setForm(f => ({ ...f, ntnNo: e.target.value }))}
+            margin='normal'
+            helperText='National Tax Number (Pakistan FBR) — printed on delivery invoices'
           />
           <TextField
             select
