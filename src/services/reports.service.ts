@@ -58,5 +58,11 @@ export const reportsService = {
   mrepDoctorCoverage: (params: { month: string; repId: string }) =>
     api.get('/reports/mrep/doctor-coverage', { params }),
   mrepTerritoryCoverage: (params: { month: string; territoryId: string }) =>
-    api.get('/reports/mrep/territory-coverage', { params })
+    api.get('/reports/mrep/territory-coverage', { params }),
+  mrepDeviationSummary: (params: { month: string; repId?: string }) =>
+    api.get('/reports/mrep/deviation-summary', { params }),
+  mrepRankings: (params: { month: string; repId?: string }) => api.get('/reports/mrep/rankings', { params }),
+  mrepTrends: (params?: { months?: number; repId?: string }) => api.get('/reports/mrep/trends', { params }),
+  mrepTerritoryCompare: (params: { month: string; parentTerritoryId: string }) =>
+    api.get('/reports/mrep/territory-compare', { params })
 }

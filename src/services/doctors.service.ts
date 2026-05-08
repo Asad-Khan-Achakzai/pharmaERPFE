@@ -18,6 +18,8 @@ export const doctorsService = {
       tier: string | null
     }>
   ) => api.patch(`/doctors/${id}/assign`, data),
+  ownershipHistory: (id: string, params?: { limit?: number }) =>
+    api.get(`/doctors/${id}/ownership-history`, { params }),
   /** Bulk Excel import (additive — does not affect single-doctor create). */
   import: {
     preview: (data: { fileBase64: string; sheet?: string }) => api.post('/doctors/import/preview', data),

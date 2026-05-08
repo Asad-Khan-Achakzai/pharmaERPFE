@@ -30,6 +30,7 @@ import { lineTotalQuantity } from '@/utils/bonus'
 import { FinancialLayerSection } from '@/components/financial/FinancialLayerSection'
 import { FinInfoTip } from '@/components/financial/FinInfoTip'
 import { FIN_LABELS, FIN_TOOLTIPS } from '@/constants/financialLabels'
+import { OrderVisitLinkPanel } from '@/components/orders/OrderVisitLinkPanel'
 
 const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'default'> = {
   PENDING: 'warning', PARTIALLY_DELIVERED: 'info', DELIVERED: 'success', PARTIALLY_RETURNED: 'warning', RETURNED: 'error', CANCELLED: 'default'
@@ -277,6 +278,7 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   return (
     <Grid container spacing={6}>
       <Grid size={{ xs: 12, md: 8 }}>
+        <OrderVisitLinkPanel order={order} />
         <Card>
           <CardHeader
             title={

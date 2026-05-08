@@ -37,8 +37,11 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
     icon: 'tabler-layout-dashboard',
     children: [
       { label: 'Dashboard', href: '/home', permission: 'dashboard.view' },
+      { label: 'MRep command center', href: '/dashboard/mrep', permission: 'weeklyPlans.view' },
       { label: 'Field performance', href: '/dashboard/manager', permission: 'weeklyPlans.view' },
       { label: 'Team (cards)', href: '/dashboard/manager/team', permission: 'team.view' },
+      { label: 'Org chart', href: '/team/tree', permission: 'team.view' },
+      { label: 'Territory analytics', href: '/territories/analytics', permission: 'territories.view' },
       { label: 'Reports & Insights', href: '/reports', permission: 'reports.view' }
     ]
   },

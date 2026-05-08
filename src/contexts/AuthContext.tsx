@@ -44,6 +44,12 @@ export interface User {
   activeCompanyId?: { _id: string; name: string; city?: string; currency?: string } | string | null
   allowedCompanies?: AllowedCompany[]
   phone?: string
+  tenantCompanyFlags?: {
+    weeklyPlanApprovalRequired?: boolean
+    strictVisitSequence?: boolean
+    mrepMultiTerritory?: boolean
+    mrepOwnershipAudit?: boolean
+  }
 }
 
 interface AuthContextType {

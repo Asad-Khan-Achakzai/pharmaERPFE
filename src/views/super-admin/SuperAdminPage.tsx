@@ -48,6 +48,10 @@ type Company = {
   weeklyPlanApprovalRequired?: boolean
   /** When true, field visits must follow planned sequence (company override; env can still force globally). */
   strictVisitSequence?: boolean
+  /** Allow additional `coverageTerritoryIds` on users (unioned with primary territory for coverage). */
+  mrepMultiTerritory?: boolean
+  /** Append DoctorOwnershipEvent rows when doctor territory/rep assignment changes. */
+  mrepOwnershipAudit?: boolean
   createdAt?: string
 }
 
@@ -66,7 +70,9 @@ const emptyForm = {
   timeZone: '',
   isActive: true,
   weeklyPlanApprovalRequired: false,
-  strictVisitSequence: false
+  strictVisitSequence: false,
+  mrepMultiTerritory: false,
+  mrepOwnershipAudit: false
 }
 
 const SuperAdminPage = () => {
@@ -125,7 +131,9 @@ const SuperAdminPage = () => {
       timeZone: c.timeZone || '',
       isActive: c.isActive !== false,
       weeklyPlanApprovalRequired: c.weeklyPlanApprovalRequired === true,
-      strictVisitSequence: c.strictVisitSequence === true
+      strictVisitSequence: c.strictVisitSequence === true,
+      mrepMultiTerritory: c.mrepMultiTerritory === true,
+      mrepOwnershipAudit: c.mrepOwnershipAudit === true
     })
     setEditOpen(true)
   }
@@ -139,7 +147,9 @@ const SuperAdminPage = () => {
         email: form.email.trim() || undefined,
         timeZone: form.timeZone.trim() || undefined,
         weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired,
-        strictVisitSequence: form.strictVisitSequence
+        strictVisitSequence: form.strictVisitSequence,
+        mrepMultiTerritory: form.mrepMultiTerritory,
+        mrepOwnershipAudit: form.mrepOwnershipAudit
       })
       setCreateOpen(false)
       await load()
@@ -159,7 +169,9 @@ const SuperAdminPage = () => {
         email: form.email.trim() || undefined,
         timeZone: form.timeZone.trim(),
         weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired,
-        strictVisitSequence: form.strictVisitSequence
+        strictVisitSequence: form.strictVisitSequence,
+        mrepMultiTerritory: form.mrepMultiTerritory,
+        mrepOwnershipAudit: form.mrepOwnershipAudit
       })
       setEditOpen(false)
       await load()
@@ -251,6 +263,12 @@ const SuperAdminPage = () => {
                               ) : null}
                               {row.strictVisitSequence ? (
                                 <Chip size='small' label='Strict visit sequence' color='warning' variant='outlined' />
+                              ) : null}
+                              {row.mrepMultiTerritory ? (
+                                <Chip size='small' label='Multi-territory' color='success' variant='outlined' />
+                              ) : null}
+                              {row.mrepOwnershipAudit ? (
+                                <Chip size='small' label='Ownership audit' color='secondary' variant='outlined' />
                               ) : null}
                             </Stack>
                           </TableCell>
@@ -432,6 +450,47 @@ const SuperAdminPage = () => {
             }
             sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
           />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.mrepMultiTerritory}
+                onChange={e => setForm(f => ({ ...f, mrepMultiTerritory: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Multi-territory users
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  Enables optional extra territory nodes per user (`coverageTerritoryIds`), unioned with the primary
+                  territory for doctor ownership queries.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.mrepOwnershipAudit}
+                onChange={e => setForm(f => ({ ...f, mrepOwnershipAudit: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Doctor ownership audit trail
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  Records assignment changes (territory / pinned rep) for compliance and handovers.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)} disabled={saving}>
@@ -571,6 +630,46 @@ const SuperAdminPage = () => {
                 </Typography>
                 <Typography variant='caption' color='text.secondary' display='block'>
                   Reps must complete today’s route in planned order unless the plan is adjusted.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.mrepMultiTerritory}
+                onChange={e => setForm(f => ({ ...f, mrepMultiTerritory: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Multi-territory users
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  Enables optional extra territory nodes per user; unioned with primary territory for coverage ownership.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.mrepOwnershipAudit}
+                onChange={e => setForm(f => ({ ...f, mrepOwnershipAudit: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Doctor ownership audit trail
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  Records territory / pinned-rep changes on doctors.
                 </Typography>
               </div>
             }

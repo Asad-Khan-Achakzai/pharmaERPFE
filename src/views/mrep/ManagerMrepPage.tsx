@@ -32,6 +32,9 @@ type MrepRow = {
   planExecution?: {
     adherencePercent?: number | null
     visitCompletionPercent?: number | null
+    missed?: number
+    unplannedRatio?: number | null
+    visited?: number
   }
   target?: { salesAchievementPercent?: number | null }
   attendanceScorePercent?: number | null
@@ -128,7 +131,7 @@ const ManagerMrepPage = () => {
         <Card>
           <CardHeader
             title='Field performance'
-            subheader='Coverage vs monthly doctor targets, route discipline, sales targets, and orders for the selected month.'
+            subheader='Coverage % uses VisitLog counts vs monthly targets (coverageActualV1). Route missed / unplanned % come from weekly plan items.'
           />
           <CardContent>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }} alignItems={{ sm: 'center' }}>
@@ -170,6 +173,8 @@ const ManagerMrepPage = () => {
                       <TableCell align='right'>Coverage</TableCell>
                       <TableCell align='right'>Visit completion</TableCell>
                       <TableCell align='right'>In-sequence</TableCell>
+                      <TableCell align='right'>Missed (plan)</TableCell>
+                      <TableCell align='right'>Unplanned %</TableCell>
                       <TableCell align='right'>Sales target</TableCell>
                       <TableCell align='right'>Attendance</TableCell>
                       <TableCell align='right'>Orders</TableCell>
@@ -179,7 +184,7 @@ const ManagerMrepPage = () => {
                   <TableBody>
                     {rows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8}>
+                        <TableCell colSpan={10}>
                           <Typography variant='body2' color='text.secondary'>
                             No rows for this month or your visibility scope.
                           </Typography>
@@ -199,6 +204,8 @@ const ManagerMrepPage = () => {
                           <TableCell align='right'>{pct(r.coverage?.coveragePercent)}</TableCell>
                           <TableCell align='right'>{pct(r.planExecution?.visitCompletionPercent)}</TableCell>
                           <TableCell align='right'>{pct(r.planExecution?.adherencePercent)}</TableCell>
+                          <TableCell align='right'>{r.planExecution?.missed ?? '—'}</TableCell>
+                          <TableCell align='right'>{pct(r.planExecution?.unplannedRatio)}</TableCell>
                           <TableCell align='right'>{pct(r.target?.salesAchievementPercent)}</TableCell>
                           <TableCell align='right'>{pct(r.attendanceScorePercent)}</TableCell>
                           <TableCell align='right'>{r.ordersInPeriod?.orderCount ?? 0}</TableCell>

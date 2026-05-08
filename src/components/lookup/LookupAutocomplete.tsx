@@ -122,6 +122,14 @@ export function LookupAutocomplete<T extends LookupAutocompleteBase>({
           label={label}
           placeholder={placeholder}
           helperText={helperText !== undefined ? helperText : textFieldProps?.helperText}
+          inputProps={{
+            ...params.inputProps,
+            ...((textFieldProps as { inputProps?: typeof params.inputProps })?.inputProps || {}),
+            autoComplete: 'off',
+            'data-lpignore': 'true',
+            'data-1p-ignore': 'true',
+            'data-bwignore': 'true'
+          }}
           InputProps={{ ...params.InputProps, ...textFieldProps?.InputProps }}
         />
       )}

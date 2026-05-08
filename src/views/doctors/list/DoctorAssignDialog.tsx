@@ -9,6 +9,8 @@ import Button from '@mui/material/Button'
 import Grid from '@mui/material/Grid'
 import MenuItem from '@mui/material/MenuItem'
 import CircularProgress from '@mui/material/CircularProgress'
+import Chip from '@mui/material/Chip'
+import Typography from '@mui/material/Typography'
 import CustomTextField from '@core/components/mui/TextField'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
@@ -40,6 +42,14 @@ const DoctorAssignDialog = ({ open, onClose, onSaved, doctor }: Props) => {
   const [target, setTarget] = useState<string>('')
   const [tier, setTier] = useState<string>('')
   const [saving, setSaving] = useState(false)
+
+  const ownershipLabel = !doctor
+    ? ''
+    : doctor.assignedRepId && (typeof doctor.assignedRepId === 'object' || typeof doctor.assignedRepId === 'string')
+      ? 'Assigned rep'
+      : doctor.territoryId && (typeof doctor.territoryId === 'object' || typeof doctor.territoryId === 'string')
+        ? 'Territory-inferred'
+        : 'Unassigned'
 
   useEffect(() => {
     if (!open || !doctor) return
@@ -99,8 +109,20 @@ const DoctorAssignDialog = ({ open, onClose, onSaved, doctor }: Props) => {
 
   return (
     <Dialog open={open} onClose={() => (saving ? null : onClose())} maxWidth='sm' fullWidth>
-      <DialogTitle>Assign {doctor?.name}</DialogTitle>
+      <DialogTitle>
+        <span className='flex flex-wrap items-center gap-2'>
+          Assign {doctor?.name}
+          {doctor && ownershipLabel ? (
+            <Chip size='small' variant='outlined' label={`Ownership: ${ownershipLabel}`} />
+          ) : null}
+        </span>
+      </DialogTitle>
       <DialogContent>
+        {doctor ? (
+          <Typography variant='caption' color='text.secondary' display='block' className='pbs-1 pbe-2'>
+            Assigned rep overrides territory for coverage. Clear the rep to rely on brick inference only.
+          </Typography>
+        ) : null}
         <Grid container spacing={4} className='pbs-4'>
           <Grid size={{ xs: 12, sm: 6 }}>
             <LookupAutocomplete<Territory>

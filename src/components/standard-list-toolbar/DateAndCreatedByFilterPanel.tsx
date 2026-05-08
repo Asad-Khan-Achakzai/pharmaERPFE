@@ -222,6 +222,14 @@ export function DateAndCreatedByFilterPanel({
             {...params}
             label='User'
             placeholder='Any user'
+            inputProps={{
+              ...params.inputProps,
+              name: 'user-list-filter-created-by',
+              autoComplete: 'off',
+              'data-lpignore': 'true',
+              'data-1p-ignore': 'true',
+              'data-bwignore': 'true'
+            }}
             InputProps={{
               ...params.InputProps,
               startAdornment: (

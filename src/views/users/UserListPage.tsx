@@ -12,8 +12,14 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
+import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
+import FormControl from '@mui/material/FormControl'
+import FormLabel from '@mui/material/FormLabel'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import RadioGroup from '@mui/material/RadioGroup'
+import Radio from '@mui/material/Radio'
 import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
@@ -25,10 +31,18 @@ import TablePaginationComponent from '@components/TablePaginationComponent'
 import { usersService } from '@/services/users.service'
 import { rolesService } from '@/services/roles.service'
 import type { Role } from '@/services/roles.service'
-import { territoriesService, type Territory } from '@/services/territories.service'
+import type { Territory } from '@/services/territories.service'
 import { extractPaginatedList } from '@/utils/apiPaginated'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
+import {
+  TerritoryTreePicker,
+  type TerritoryCoveragePreview
+} from '@/components/territories/TerritoryTreePicker'
+import {
+  allowedManagerRoleCodesForSubordinate,
+  managerMatchesRmParent
+} from '@/utils/userManagerOptions'
 import tableStyles from '@core/styles/table.module.css'
 import {
   TableListSearchField,
@@ -42,7 +56,10 @@ import {
   type DateUserFilterState
 } from '@/components/standard-list-toolbar'
 
-type ManagerRef = { _id: string; name: string; email: string } | string | null
+type ManagerRef =
+  | { _id: string; name: string; email: string; roleId?: { code?: string; name?: string } | string | null }
+  | string
+  | null
 
 type TerritoryRef =
   | { _id: string; name: string; code?: string | null; kind: 'ZONE' | 'AREA' | 'BRICK' }
@@ -59,13 +76,22 @@ type User = {
   permissions: string[]
   isActive: boolean
   lastLoginAt?: string | null
-  /** MRep hierarchy fields (Phase 0). */
+  /** MRep hierarchy fields (Phase 4 — extra territories require company flag). */
   employeeCode?: string | null
   managerId?: ManagerRef
   territoryId?: TerritoryRef
+  coverageTerritoryIds?: Territory[] | string[] | null
 }
 
-type ManagerLookup = { _id: string; name: string; email: string; role?: string }
+type ManagerLookup = {
+  _id: string
+  name: string
+  email: string
+  role?: string
+  roleCode?: string | null
+  roleName?: string | null
+  isAdminCapable?: boolean
+}
 
 const columnHelper = createColumnHelper<User>()
 
@@ -88,6 +114,10 @@ const UserListPage = () => {
   })
   const [formManager, setFormManager] = useState<ManagerLookup | null>(null)
   const [formTerritory, setFormTerritory] = useState<Territory | null>(null)
+  /** Anchor granularity for MR / ASM only (RM & admin use full tree). */
+  const [territoryScopeMode, setTerritoryScopeMode] = useState<'BRICK' | 'AREA' | 'ZONE'>('AREA')
+  const [territoryBulkPreview, setTerritoryBulkPreview] = useState<TerritoryCoveragePreview | null>(null)
+  const [territorySaveConfirmOpen, setTerritorySaveConfirmOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [statusConfirmOpen, setStatusConfirmOpen] = useState(false)
@@ -96,55 +126,96 @@ const UserListPage = () => {
   const [statusLoading, setStatusLoading] = useState(false)
   const [viewItem, setViewItem] = useState<User | null>(null)
 
-  const isFormValid =
-    form.name.trim() !== '' && form.email.trim() !== '' && form.roleId !== '' && (editItem ? true : form.password.trim() !== '')
-
-  const filterOpen = Boolean(filterAnchor)
-  const activeFilterCount = countDateUserFilters(appliedFilters)
-
   const { hasPermission, user: authUser } = useAuth()
   const canCreate = hasPermission('users.create')
   const canEdit = hasPermission('users.edit')
   const canDelete = hasPermission('users.delete')
   const canToggleStatus = canEdit || canDelete
 
+  const isFormValid =
+    form.name.trim() !== '' && form.email.trim() !== '' && form.roleId !== '' && (editItem ? true : form.password.trim() !== '')
+
+  const prevRoleIdRef = useRef<string | null>(null)
+  const activeFilterCount = countDateUserFilters(appliedFilters)
+  const filterOpen = Boolean(filterAnchor)
+
+  useEffect(() => {
+    if (!open) {
+      prevRoleIdRef.current = null
+      return
+    }
+    const cur = form.roleId
+    if (prevRoleIdRef.current === null) {
+      prevRoleIdRef.current = cur
+      return
+    }
+    if (prevRoleIdRef.current !== cur) {
+      prevRoleIdRef.current = cur
+      setTerritoryScopeMode('AREA')
+      setFormTerritory(null)
+    }
+  }, [open, form.roleId])
+
   const defaultRepRoleId = useMemo(
     () => roleOptions.find(r => r.code === 'DEFAULT_MEDICAL_REP')?._id || roleOptions[0]?._id || '',
     [roleOptions]
   )
 
-  /**
-   * Pick the right territory granularity for the selected role:
-   *   - DEFAULT_RM           → Zone
-   *   - DEFAULT_ASM          → Area
-   *   - DEFAULT_MEDICAL_REP  → Brick (current default)
-   *   - anything else        → all kinds (admins, custom roles)
-   */
   const selectedRoleCode = useMemo(
     () => roleOptions.find(r => String(r._id) === String(form.roleId))?.code || '',
     [roleOptions, form.roleId]
   )
-  const territoryKindForRole: 'ZONE' | 'AREA' | 'BRICK' | undefined = useMemo(() => {
-    if (selectedRoleCode === 'DEFAULT_RM') return 'ZONE'
-    if (selectedRoleCode === 'DEFAULT_ASM') return 'AREA'
-    if (selectedRoleCode === 'DEFAULT_MEDICAL_REP') return 'BRICK'
-    return undefined
-  }, [selectedRoleCode])
-  const territoryFieldLabel = territoryKindForRole
-    ? `Territory (${territoryKindForRole.charAt(0)}${territoryKindForRole.slice(1).toLowerCase()})`
-    : 'Territory'
-  const territoryHelperText = (() => {
-    switch (territoryKindForRole) {
-      case 'ZONE':
-        return 'RMs cover an entire Zone (one or more Areas).'
-      case 'AREA':
-        return 'ASMs cover an Area (one or more Bricks under it).'
-      case 'BRICK':
-        return 'Reps usually map 1:1 with a Brick.'
-      default:
-        return 'Optional. Pick the geography this user is responsible for.'
+
+  const pickerAllowedKinds = useMemo((): Territory['kind'][] | undefined => {
+    if (selectedRoleCode === 'DEFAULT_MEDICAL_REP') {
+      return territoryScopeMode === 'BRICK' ? ['BRICK'] : ['AREA']
     }
-  })()
+    if (selectedRoleCode === 'DEFAULT_ASM') {
+      return territoryScopeMode === 'ZONE' ? ['ZONE'] : ['AREA']
+    }
+    return undefined
+  }, [selectedRoleCode, territoryScopeMode])
+
+  const showTerritoryScopeModes = selectedRoleCode === 'DEFAULT_MEDICAL_REP' || selectedRoleCode === 'DEFAULT_ASM'
+
+  const territoryFieldLabel = showTerritoryScopeModes ? 'Territory assignment' : 'Territory'
+
+  const handleTerritoryScopeChange = (next: 'BRICK' | 'AREA' | 'ZONE') => {
+    setTerritoryScopeMode(next)
+    setFormTerritory(prev => {
+      if (!prev) return null
+      const allow: Territory['kind'][] =
+        selectedRoleCode === 'DEFAULT_MEDICAL_REP'
+          ? next === 'BRICK'
+            ? ['BRICK']
+            : ['AREA']
+          : selectedRoleCode === 'DEFAULT_ASM'
+            ? next === 'ZONE'
+              ? ['ZONE']
+              : ['AREA']
+            : ['ZONE', 'AREA', 'BRICK']
+      if (!allow.includes(prev.kind)) return null
+      return prev
+    })
+  }
+
+  const territoryFormCaption =
+    showTerritoryScopeModes
+      ? 'Choose how the territory anchor is stored. Descendant bricks are expanded on the server — you do not pick bricks manually.'
+      : 'Regional managers and admins may select a zone, area, or brick. Coverage still expands from the chosen anchor.'
+
+  const territoryBulkConfirmText = useMemo(() => {
+    if (!formTerritory || (formTerritory.kind !== 'AREA' && formTerritory.kind !== 'ZONE')) return ''
+    const kindLabel = formTerritory.kind === 'AREA' ? 'Area' : 'Zone'
+    const n = territoryBulkPreview?.brickCount ?? 0
+    const samples =
+      territoryBulkPreview?.sampleBrickNames?.filter(Boolean).slice(0, 5).join(', ') || '—'
+    return `${formTerritory.name} (${kindLabel}) — ${n} brick${n === 1 ? '' : 's'} will be assigned under this anchor (examples: ${samples}). Doctor and order coverage will be recalculated from the expanded territory footprint.`
+  }, [formTerritory, territoryBulkPreview])
+
+  const onTerritoryCoveragePreview = useCallback((p: TerritoryCoveragePreview | null) => {
+    setTerritoryBulkPreview(p)
+  }, [])
 
   const loadRoles = useCallback(async () => {
     try {
@@ -195,7 +266,21 @@ const UserListPage = () => {
         employeeCode: item.employeeCode || ''
       })
       const mgr = typeof item.managerId === 'object' && item.managerId ? item.managerId : null
-      setFormManager(mgr ? { _id: mgr._id, name: mgr.name, email: mgr.email } : null)
+      const mRole =
+        mgr && typeof mgr === 'object' && mgr.roleId && typeof mgr.roleId === 'object' && mgr.roleId !== null
+          ? mgr.roleId
+          : null
+      setFormManager(
+        mgr
+          ? {
+              _id: mgr._id,
+              name: mgr.name,
+              email: mgr.email,
+              roleCode: mRole?.code ?? null,
+              roleName: mRole?.name ?? null
+            }
+          : null
+      )
       const ter = typeof item.territoryId === 'object' && item.territoryId ? item.territoryId : null
       setFormTerritory(
         ter
@@ -208,49 +293,88 @@ const UserListPage = () => {
             } as Territory)
           : null
       )
+      const itemRoleCode = (item.roleId as Role | undefined)?.code || ''
+      if (itemRoleCode === 'DEFAULT_MEDICAL_REP') {
+        setTerritoryScopeMode(ter?.kind === 'BRICK' ? 'BRICK' : 'AREA')
+      } else if (itemRoleCode === 'DEFAULT_ASM') {
+        setTerritoryScopeMode(ter?.kind === 'ZONE' ? 'ZONE' : 'AREA')
+      } else {
+        setTerritoryScopeMode('AREA')
+      }
     } else {
       setEditItem(null)
       setForm({ name: '', email: '', password: '', phone: '', roleId: defaultRepRoleId, employeeCode: '' })
       setFormManager(null)
       setFormTerritory(null)
+      setTerritoryScopeMode('AREA')
     }
+    setTerritoryBulkPreview(null)
+    setTerritorySaveConfirmOpen(false)
     setOpen(true)
   }
 
   const fetchManagerOptions = async (search: string) => {
-    const res = await usersService.assignable({ search, limit: 25 })
+    const res = await usersService.assignable({ search, limit: 100 })
     const list = (res.data?.data || []) as ManagerLookup[]
-    return editItem ? list.filter(u => u._id !== editItem._id) : list
-  }
-
-  const fetchTerritoryOptions = async (search: string) => {
-    const params: Record<string, unknown> = { search, limit: 25 }
-    if (territoryKindForRole) params.kind = territoryKindForRole
-    const res = await territoriesService.lookup(params)
-    return (res.data?.data || []) as Territory[]
-  }
-
-  /**
-   * When the role changes mid-edit and the previously-selected territory's kind no longer
-   * matches the new role's expected kind, clear the value so it doesn't silently persist.
-   */
-  useEffect(() => {
-    if (!territoryKindForRole || !formTerritory) return
-    if (formTerritory.kind && formTerritory.kind !== territoryKindForRole) {
-      setFormTerritory(null)
+    const exclude = editItem?._id
+    let filtered = exclude ? list.filter(u => u._id !== exclude) : list
+    const allowed = allowedManagerRoleCodesForSubordinate(selectedRoleCode)
+    if (allowed !== null) {
+      if (allowed.length === 0) filtered = []
+      else if (selectedRoleCode === 'DEFAULT_RM') {
+        filtered = filtered.filter(u => managerMatchesRmParent(u, allowed))
+      } else {
+        filtered = filtered.filter(u => Boolean(u.roleCode && allowed.includes(u.roleCode)))
+      }
     }
-  }, [territoryKindForRole, formTerritory])
+    return filtered
+  }
 
-  const handleSave = async () => {
+  /** Role-driven hierarchy: drop an invalid manager when the ladder role changes. */
+  useEffect(() => {
+    if (!open) return
+    const allowed = allowedManagerRoleCodesForSubordinate(selectedRoleCode)
+    if (allowed === null) return
+    if (!formManager) return
+    if (allowed.length === 0) {
+      setFormManager(null)
+      return
+    }
+    if (selectedRoleCode === 'DEFAULT_RM') {
+      if (!managerMatchesRmParent(formManager, allowed)) setFormManager(null)
+    } else if (!formManager.roleCode || !allowed.includes(formManager.roleCode)) {
+      setFormManager(null)
+    }
+  }, [selectedRoleCode, open, formManager])
+
+  const runSave = async () => {
+    if (selectedRoleCode === 'DEFAULT_MEDICAL_REP' && formTerritory) {
+      if (formTerritory.kind !== 'BRICK' && formTerritory.kind !== 'AREA') {
+        showApiError(
+          new Error('Medical Rep territory must be a brick or an area.'),
+          'Territory'
+        )
+        return
+      }
+    }
+    if (selectedRoleCode === 'DEFAULT_ASM' && formTerritory) {
+      if (formTerritory.kind !== 'AREA' && formTerritory.kind !== 'ZONE') {
+        showApiError(new Error('ASM territory must be an area or a zone.'), 'Territory')
+        return
+      }
+    }
+
     setSaving(true)
     try {
+      const isCompanyAdminRole = selectedRoleCode === 'DEFAULT_ADMIN'
+      const effectiveManager = isCompanyAdminRole ? null : formManager
       const payload: Record<string, unknown> = {
         name: form.name,
         email: form.email,
         phone: form.phone,
         roleId: form.roleId,
         employeeCode: form.employeeCode.trim() || null,
-        managerId: formManager?._id || null,
+        managerId: effectiveManager?._id || null,
         territoryId: formTerritory?._id || null
       }
       if (editItem) {
@@ -268,7 +392,22 @@ const UserListPage = () => {
     } catch (e: any) {
       showApiError(e, 'Error saving user')
     } finally {
-      setSaving(false) }
+      setSaving(false)
+    }
+  }
+
+  const handleSave = () => {
+    const t = formTerritory
+    if (t && (t.kind === 'AREA' || t.kind === 'ZONE')) {
+      setTerritorySaveConfirmOpen(true)
+      return
+    }
+    void runSave()
+  }
+
+  const handleConfirmTerritoryBulkSave = () => {
+    setTerritorySaveConfirmOpen(false)
+    void runSave()
   }
 
   const openStatusConfirm = (u: User, nextActive: boolean) => {
@@ -435,7 +574,7 @@ const UserListPage = () => {
             value={searchInput}
             onChange={setSearchInput}
             onClear={clearSearch}
-            placeholder='Search name, email, phone…'
+            placeholder='Search users (name, phone, …)'
           />
           <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
         </Stack>
@@ -463,14 +602,62 @@ const UserListPage = () => {
       </div>
       <TablePaginationComponent table={table as any} />
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth='md' fullWidth>
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth='lg' fullWidth scroll='paper'>
         <DialogTitle>{editItem ? 'Edit User' : 'Add User'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Email' value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} disabled={!!editItem} /></Grid>
-            {!editItem && <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Password' type='password' value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} /></Grid>}
-            {editItem && <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='New password' type='password' value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} helperText='Leave empty to keep current' /></Grid>}
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                required
+                fullWidth
+                label='Name'
+                value={form.name}
+                onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                inputProps={{ autoComplete: 'name', name: 'user_form_name' }}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                required
+                fullWidth
+                label='Email'
+                value={form.email}
+                onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                disabled={!!editItem}
+                inputProps={{
+                  id: 'user_form_email',
+                  name: 'user_form_email',
+                  autoComplete: editItem ? 'off' : 'email',
+                  'data-lpignore': editItem ? 'true' : undefined
+                }}
+              />
+            </Grid>
+            {!editItem && (
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <CustomTextField
+                  required
+                  fullWidth
+                  label='Password'
+                  type='password'
+                  value={form.password}
+                  onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                  inputProps={{ autoComplete: 'new-password', name: 'user_form_password' }}
+                />
+              </Grid>
+            )}
+            {editItem && (
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <CustomTextField
+                  fullWidth
+                  label='New password'
+                  type='password'
+                  value={form.password}
+                  onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                  helperText='Leave empty to keep current'
+                  inputProps={{ autoComplete: 'new-password', name: 'user_form_new_password' }}
+                />
+              </Grid>
+            )}
             <Grid size={{ xs: 12, sm: 6 }}>
               <CustomTextField
                 required
@@ -500,32 +687,97 @@ const UserListPage = () => {
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <LookupAutocomplete<ManagerLookup>
+                key={`manager-${selectedRoleCode || 'any'}`}
                 value={formManager}
                 onChange={setFormManager}
                 fetchOptions={fetchManagerOptions}
                 label='Reports to (Manager)'
-                getOptionLabel={u => `${u.name} <${u.email}>`}
-                helperText='Optional. Build the reporting tree by setting each user’s manager.'
+                disabled={selectedRoleCode === 'DEFAULT_ADMIN'}
+                getOptionLabel={u =>
+                  `${u.name} <${u.email}>${u.roleName ? ` · ${u.roleName}` : ''}`
+                }
+                helperText={
+                  selectedRoleCode === 'DEFAULT_ADMIN'
+                    ? 'Company administrators are top of the tenant hierarchy; manager is not used.'
+                    : 'Search active users. The list is filtered by your role (MR→ASM, ASM→RM, RM→Admin).'
+                }
               />
             </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <LookupAutocomplete<Territory>
-                /**
-                 * Re-key on role kind so the dropdown remounts and refetches options with the
-                 * correct kind filter (e.g., switching role from MR → ASM swaps Bricks for Areas).
-                 */
-                key={`territory-${territoryKindForRole || 'any'}`}
-                value={formTerritory}
-                onChange={setFormTerritory}
-                fetchOptions={fetchTerritoryOptions}
-                label={territoryFieldLabel}
-                getOptionLabel={t =>
-                  `${t.name}${t.code ? ` (${t.code})` : ''}${
-                    !territoryKindForRole && t.kind ? ` · ${t.kind}` : ''
-                  }`
-                }
-                helperText={territoryHelperText}
-              />
+            <Grid size={{ xs: 12 }}>
+              <Typography variant='subtitle2' className='mbe-2'>
+                {territoryFieldLabel}
+              </Typography>
+              <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+                {territoryFormCaption}
+              </Typography>
+              {showTerritoryScopeModes ? (
+                <FormControl component='fieldset' className='mbe-4'>
+                  <FormLabel component='legend'>Territory scope mode</FormLabel>
+                  <RadioGroup
+                    row
+                    value={
+                      selectedRoleCode === 'DEFAULT_MEDICAL_REP'
+                        ? territoryScopeMode === 'BRICK'
+                          ? 'BRICK'
+                          : 'AREA'
+                        : territoryScopeMode === 'ZONE'
+                          ? 'ZONE'
+                          : 'AREA'
+                    }
+                    onChange={e => {
+                      const v = e.target.value
+                      if (selectedRoleCode === 'DEFAULT_MEDICAL_REP') {
+                        handleTerritoryScopeChange(v === 'BRICK' ? 'BRICK' : 'AREA')
+                      } else {
+                        handleTerritoryScopeChange(v === 'ZONE' ? 'ZONE' : 'AREA')
+                      }
+                    }}
+                  >
+                    {selectedRoleCode === 'DEFAULT_MEDICAL_REP' ? (
+                      <>
+                        <FormControlLabel value='BRICK' control={<Radio size='small' />} label='Single brick' />
+                        <FormControlLabel
+                          value='AREA'
+                          control={<Radio size='small' />}
+                          label='Area (recommended)'
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <FormControlLabel value='AREA' control={<Radio size='small' />} label='Area (recommended)' />
+                        <FormControlLabel value='ZONE' control={<Radio size='small' />} label='Zone' />
+                      </>
+                    )}
+                  </RadioGroup>
+                </FormControl>
+              ) : null}
+              {showTerritoryScopeModes &&
+              formTerritory &&
+              formTerritory.kind === 'ZONE' &&
+              selectedRoleCode === 'DEFAULT_MEDICAL_REP' ? (
+                <Typography variant='caption' color='warning.main' display='block' className='mbe-2'>
+                  This user’s anchor is a zone (legacy). Choose an area or single brick above to replace it, or save other
+                  fields without changing territory.
+                </Typography>
+              ) : null}
+              <Box
+                sx={{
+                  maxHeight: 280,
+                  overflow: 'auto',
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  p: 2
+                }}
+              >
+                <TerritoryTreePicker
+                  key={`terr-${selectedRoleCode}-${territoryScopeMode}`}
+                  value={formTerritory}
+                  onChange={setFormTerritory}
+                  allowedKinds={pickerAllowedKinds}
+                  onCoveragePreviewChange={onTerritoryCoveragePreview}
+                />
+              </Box>
             </Grid>
           </Grid>
         </DialogContent>
@@ -563,6 +815,32 @@ const UserListPage = () => {
                   <Typography>-</Typography>
                 )}
               </Grid>
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary' className='mbe-1'>
+                  Legacy extra coverage (read-only)
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block' className='mbe-1'>
+                  Added before intention-based territory assignment; still honored by the server. Not editable here.
+                </Typography>
+                {Array.isArray(viewItem.coverageTerritoryIds) && viewItem.coverageTerritoryIds.length ? (
+                  <div className='flex flex-wrap gap-1'>
+                    {viewItem.coverageTerritoryIds.map((t, i) =>
+                      typeof t === 'object' && t && '_id' in t ? (
+                        <Chip
+                          key={(t as Territory)._id || i}
+                          size='small'
+                          variant='outlined'
+                          label={`${(t as Territory).name}${(t as Territory).code ? ` (${(t as Territory).code})` : ''}`}
+                        />
+                      ) : (
+                        <Chip key={i} size='small' variant='outlined' label={String(t)} />
+                      )
+                    )}
+                  </div>
+                ) : (
+                  <Typography>-</Typography>
+                )}
+              </Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Last Login</Typography><Typography>{viewItem.lastLoginAt ? new Date(viewItem.lastLoginAt).toLocaleString() : '-'}</Typography></Grid>
               {viewItem.permissions && viewItem.permissions.length > 0 && (
                 <Grid size={{ xs: 12 }}><Typography variant='body2' color='text.secondary' className='mbe-1'>Permissions</Typography><div className='flex flex-wrap gap-1'>{viewItem.permissions.map(p => <Chip key={p} label={p} size='small' variant='tonal' />)}</div></Grid>
@@ -572,6 +850,18 @@ const UserListPage = () => {
         </DialogContent>
         <DialogActions><Button onClick={() => setViewItem(null)}>Close</Button></DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={territorySaveConfirmOpen}
+        onClose={() => !saving && setTerritorySaveConfirmOpen(false)}
+        onConfirm={() => { void handleConfirmTerritoryBulkSave() }}
+        title='Confirm territory coverage'
+        description={territoryBulkConfirmText || 'Assign this area or zone as the coverage anchor?'}
+        confirmText='Save'
+        confirmColor='primary'
+        icon='tabler-map-pin'
+        loading={saving}
+      />
 
       <ConfirmDialog
         open={statusConfirmOpen}

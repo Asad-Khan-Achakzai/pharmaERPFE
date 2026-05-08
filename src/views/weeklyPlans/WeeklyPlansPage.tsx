@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo, forwardRef, useCallback, useRef, type MouseEvent } from 'react'
 import type { TextFieldProps } from '@mui/material/TextField'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Typography from '@mui/material/Typography'
@@ -91,6 +91,7 @@ const WeekRangeCustomInput = forwardRef<HTMLInputElement, WeekRangeInputProps>(
 
 const WeeklyPlansPage = () => {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { hasPermission, user } = useAuth()
   const canCreate = hasPermission('weeklyPlans.create')
   const canSeeTeam = hasPermission('team.viewAllReports') || hasPermission('admin.access')
@@ -119,6 +120,7 @@ const WeeklyPlansPage = () => {
 
   const filterOpen = Boolean(filterAnchor)
   const activeFilterCount = countDateUserFilters(appliedFilters)
+  const medicalRepIdFromUrl = searchParams.get('medicalRepId')
 
   const fetchData = useCallback(async () => {
     const seq = ++fetchSeq.current
@@ -127,6 +129,8 @@ const WeeklyPlansPage = () => {
       const params: Record<string, string> = { limit: '100' }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
       if (canSeeTeam && scope === 'team') params.scope = 'team'
+      const medFromUrl = medicalRepIdFromUrl
+      if (medFromUrl && /^[a-f0-9]{24}$/i.test(medFromUrl)) params.medicalRepId = medFromUrl
       const [r, u] = await Promise.all([weeklyPlansService.list(params), usersService.assignable()])
       if (seq !== fetchSeq.current) return
       setData(r.data.data || [])
@@ -136,7 +140,7 @@ const WeeklyPlansPage = () => {
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch, scope, canSeeTeam])
+  }, [appliedFilters, debouncedSearch, scope, canSeeTeam, medicalRepIdFromUrl])
 
   useEffect(() => {
     void fetchData()

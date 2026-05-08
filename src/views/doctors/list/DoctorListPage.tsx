@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Button from '@mui/material/Button'
@@ -40,6 +41,7 @@ import { TeamScopeToggle, type TeamScope } from '@/components/team-scope/TeamSco
 import tableStyles from '@core/styles/table.module.css'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
+import { DoctorOwnershipPanel } from '@/components/doctors/DoctorMrepIntelligenceSection'
 
 export type DoctorFormState = {
   pharmacyId: string
@@ -115,6 +117,7 @@ const detailVal = (v?: string | number | null) =>
   v !== undefined && v !== null && String(v).trim() !== '' ? String(v) : '—'
 
 const DoctorListPage = () => {
+  const searchParams = useSearchParams()
   const [data, setData] = useState<Doctor[]>([])
   const [selectedPharmacy, setSelectedPharmacy] = useState<{ _id: string; name?: string } | null>(null)
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
@@ -144,7 +147,13 @@ const DoctorListPage = () => {
   const canDelete = hasPermission('doctors.delete')
   const canAssign = hasPermission('doctors.assign')
   const canSeeTeam = hasPermission('team.viewAllReports') || hasPermission('admin.access')
+  const urlWantsTeamScope = searchParams.get('scope') === 'team'
+  const assignedRepIdFromUrl = searchParams.get('assignedRepId')
   const [scope, setScope] = useState<TeamScope>('self')
+
+  useEffect(() => {
+    if (urlWantsTeamScope && canSeeTeam) setScope('team')
+  }, [urlWantsTeamScope, canSeeTeam])
 
   const fetchData = useCallback(async () => {
     const seq = ++fetchSeq.current
@@ -153,6 +162,9 @@ const DoctorListPage = () => {
       const params: Record<string, string> = { limit: '100' }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
       if (canSeeTeam && scope === 'team') params.scope = 'team'
+      if (assignedRepIdFromUrl && /^[a-f0-9]{24}$/i.test(assignedRepIdFromUrl)) {
+        params.assignedRepId = assignedRepIdFromUrl
+      }
       const docsRes = await doctorsService.list(params)
       if (seq !== fetchSeq.current) return
       setData(docsRes.data.data || [])
@@ -161,7 +173,7 @@ const DoctorListPage = () => {
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch, scope, canSeeTeam])
+  }, [appliedFilters, debouncedSearch, scope, canSeeTeam, assignedRepIdFromUrl])
 
   useEffect(() => {
     void fetchData()
@@ -437,7 +449,7 @@ const DoctorListPage = () => {
       </div>
       <TablePaginationComponent table={table as any} />
 
-      <Dialog open={!!viewItem} onClose={() => setViewItem(null)} maxWidth='md' fullWidth scroll='paper'>
+      <Dialog open={!!viewItem} onClose={() => setViewItem(null)} maxWidth='lg' fullWidth scroll='paper'>
         <DialogTitle>Doctor details</DialogTitle>
         <DialogContent dividers>
           {viewItem && (
@@ -572,6 +584,7 @@ const DoctorListPage = () => {
                 </Typography>
                 <Typography>{viewItem.patientCount != null ? String(viewItem.patientCount) : '—'}</Typography>
               </Grid>
+              <DoctorOwnershipPanel doctorId={viewItem._id} active />
             </Grid>
           )}
         </DialogContent>

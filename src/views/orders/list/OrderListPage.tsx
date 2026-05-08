@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Button from '@mui/material/Button'
@@ -82,6 +82,8 @@ const ORDER_LIST_STATUS_FILTER = [
 
 const OrderListPage = () => {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const medicalRepIdFromUrl = searchParams.get('medicalRepId')
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('orders.create')
   const canEdit = hasPermission('orders.edit')
@@ -107,6 +109,9 @@ const OrderListPage = () => {
       appendDateUserParams(params, appliedFilters, debouncedSearch)
       if (statusFilter === 'ALL') params.status = 'ALL'
       else if (statusFilter !== '') params.status = statusFilter
+      if (medicalRepIdFromUrl && /^[a-f0-9]{24}$/i.test(medicalRepIdFromUrl)) {
+        params.medicalRepId = medicalRepIdFromUrl
+      }
       const { data: res } = await ordersService.list(params)
       if (seq !== fetchSeq.current) return
       setData(Array.isArray(res?.data) ? res.data : [])
@@ -115,7 +120,7 @@ const OrderListPage = () => {
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch, statusFilter])
+  }, [appliedFilters, debouncedSearch, statusFilter, medicalRepIdFromUrl])
 
   useEffect(() => {
     fetchOrders()
