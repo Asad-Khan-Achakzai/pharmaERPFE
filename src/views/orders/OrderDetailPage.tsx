@@ -51,6 +51,7 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   const [returning, setReturning] = useState(false)
   const [invAvgByProduct, setInvAvgByProduct] = useState<Record<string, number>>({})
   const [invAvgLoaded, setInvAvgLoaded] = useState(false)
+  const [invoicePdfLoadingId, setInvoicePdfLoadingId] = useState<string | null>(null)
   const { hasPermission } = useAuth()
   const hasDeliverPerm = hasPermission('orders.deliver')
   const hasReturnPerm = hasPermission('orders.return')
@@ -70,6 +71,8 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   }
 
   const openDeliveryInvoice = async (deliveryId: string) => {
+    const id = String(deliveryId)
+    setInvoicePdfLoadingId(id)
     try {
       const res = await api.get(`/orders/${params.id}/deliveries/${deliveryId}/invoice`, {
         responseType: 'blob'
@@ -80,6 +83,8 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
       setTimeout(() => URL.revokeObjectURL(url), 120_000)
     } catch (err: unknown) {
       showApiError(err, 'Could not open invoice PDF')
+    } finally {
+      setInvoicePdfLoadingId(null)
     }
   }
 
@@ -597,8 +602,17 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                   </Typography>
                   <Typography variant='body2' color='text.secondary'>{new Date(d.deliveredAt).toLocaleString()} by {d.deliveredBy?.name}</Typography>
                   {d.invoiceNumber && (
-                    <Button size='small' onClick={() => openDeliveryInvoice(d._id)}>
-                      Download PDF
+                    <Button
+                      size='small'
+                      disabled={invoicePdfLoadingId !== null}
+                      startIcon={
+                        invoicePdfLoadingId === String(d._id) ? (
+                          <CircularProgress color='inherit' size={14} thickness={5} />
+                        ) : undefined
+                      }
+                      onClick={() => openDeliveryInvoice(d._id)}
+                    >
+                      {invoicePdfLoadingId === String(d._id) ? 'Loading…' : 'Download PDF'}
                     </Button>
                   )}
                 </div>

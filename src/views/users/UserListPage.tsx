@@ -15,11 +15,6 @@ import Stack from '@mui/material/Stack'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
-import FormControl from '@mui/material/FormControl'
-import FormLabel from '@mui/material/FormLabel'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import RadioGroup from '@mui/material/RadioGroup'
-import Radio from '@mui/material/Radio'
 import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
@@ -35,10 +30,8 @@ import type { Territory } from '@/services/territories.service'
 import { extractPaginatedList } from '@/utils/apiPaginated'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
-import {
-  TerritoryTreePicker,
-  type TerritoryCoveragePreview
-} from '@/components/territories/TerritoryTreePicker'
+import type { TerritoryCoveragePreview } from '@/components/territories/TerritoryTreePicker'
+import { UserFormCoverageSection } from '@/views/users/UserFormCoverageSection'
 import {
   allowedManagerRoleCodesForSubordinate,
   managerMatchesRmParent
@@ -93,6 +86,41 @@ type ManagerLookup = {
   isAdminCapable?: boolean
 }
 
+type TerritoryAssignmentType = 'single_brick' | 'multi_brick' | 'entire_area' | 'entire_zone'
+
+type TerritoryCoverageSummary = {
+  assignmentType: string
+  assignmentTypeKey?: string
+  brickCount: number
+  previewBricks: { _id: string; name: string; code?: string | null }[]
+}
+
+function allowedAssignmentTypes(roleCode: string): TerritoryAssignmentType[] {
+  if (roleCode === 'DEFAULT_MEDICAL_REP') return ['single_brick', 'multi_brick', 'entire_area']
+  if (roleCode === 'DEFAULT_ASM') return ['multi_brick', 'entire_area', 'entire_zone']
+  return ['single_brick', 'multi_brick', 'entire_area', 'entire_zone']
+}
+
+function defaultAssignmentForRole(roleCode: string): TerritoryAssignmentType {
+  if (roleCode === 'DEFAULT_ASM') return 'entire_area'
+  if (roleCode === 'DEFAULT_MEDICAL_REP') return 'single_brick'
+  return 'entire_area'
+}
+
+function inferAssignmentFromUser(item: User): TerritoryAssignmentType {
+  const ter = typeof item.territoryId === 'object' && item.territoryId ? item.territoryId : null
+  const cov = Array.isArray(item.coverageTerritoryIds) ? item.coverageTerritoryIds : []
+  const covObjs = cov.filter((c): c is Territory => typeof c === 'object' && c != null && 'kind' in c)
+  const covLen = covObjs.length
+  if (ter?.kind === 'ZONE' && covLen === 0) return 'entire_zone'
+  if (ter?.kind === 'AREA' && covLen === 0) return 'entire_area'
+  if (ter?.kind === 'BRICK' && covLen === 0) return 'single_brick'
+  if (ter?.kind === 'BRICK' && covLen > 0) return 'multi_brick'
+  if (ter?.kind === 'AREA' && covLen > 0) return 'entire_area'
+  if (ter?.kind === 'ZONE' && covLen > 0) return 'entire_zone'
+  return 'single_brick'
+}
+
 const columnHelper = createColumnHelper<User>()
 
 const UserListPage = () => {
@@ -114,8 +142,10 @@ const UserListPage = () => {
   })
   const [formManager, setFormManager] = useState<ManagerLookup | null>(null)
   const [formTerritory, setFormTerritory] = useState<Territory | null>(null)
-  /** Anchor granularity for MR / ASM only (RM & admin use full tree). */
-  const [territoryScopeMode, setTerritoryScopeMode] = useState<'BRICK' | 'AREA' | 'ZONE'>('AREA')
+  const [territoryAssignmentType, setTerritoryAssignmentType] = useState<TerritoryAssignmentType>('single_brick')
+  const [multiBricks, setMultiBricks] = useState<Territory[]>([])
+  const [primaryBrickId, setPrimaryBrickId] = useState<string | null>(null)
+  const [legacyNonBrickCoverage, setLegacyNonBrickCoverage] = useState<Territory[]>([])
   const [territoryBulkPreview, setTerritoryBulkPreview] = useState<TerritoryCoveragePreview | null>(null)
   const [territorySaveConfirmOpen, setTerritorySaveConfirmOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -125,6 +155,10 @@ const UserListPage = () => {
   const [statusNextActive, setStatusNextActive] = useState(true)
   const [statusLoading, setStatusLoading] = useState(false)
   const [viewItem, setViewItem] = useState<User | null>(null)
+  const [viewDetail, setViewDetail] = useState<(User & { territoryCoverageSummary?: TerritoryCoverageSummary }) | null>(
+    null
+  )
+  const [viewDetailLoading, setViewDetailLoading] = useState(false)
 
   const { hasPermission, user: authUser } = useAuth()
   const canCreate = hasPermission('users.create')
@@ -139,6 +173,20 @@ const UserListPage = () => {
   const activeFilterCount = countDateUserFilters(appliedFilters)
   const filterOpen = Boolean(filterAnchor)
 
+  const defaultRepRoleId = useMemo(
+    () => roleOptions.find(r => r.code === 'DEFAULT_MEDICAL_REP')?._id || roleOptions[0]?._id || '',
+    [roleOptions]
+  )
+
+  const selectedRoleCode = useMemo(
+    () => roleOptions.find(r => String(r._id) === String(form.roleId))?.code || '',
+    [roleOptions, form.roleId]
+  )
+
+  const assignmentOptions = useMemo(() => allowedAssignmentTypes(selectedRoleCode), [selectedRoleCode])
+
+  const coverageHydrationKey = useMemo(() => (open ? (editItem?._id ?? 'new') : ''), [open, editItem?._id])
+
   useEffect(() => {
     if (!open) {
       prevRoleIdRef.current = null
@@ -151,58 +199,16 @@ const UserListPage = () => {
     }
     if (prevRoleIdRef.current !== cur) {
       prevRoleIdRef.current = cur
-      setTerritoryScopeMode('AREA')
+      const rc = roleOptions.find(r => String(r._id) === String(cur))?.code || ''
+      const opts = allowedAssignmentTypes(rc)
+      const def = defaultAssignmentForRole(rc)
+      setTerritoryAssignmentType(opts.includes(def) ? def : opts[0] ?? 'entire_area')
       setFormTerritory(null)
+      setMultiBricks([])
+      setPrimaryBrickId(null)
+      setLegacyNonBrickCoverage([])
     }
-  }, [open, form.roleId])
-
-  const defaultRepRoleId = useMemo(
-    () => roleOptions.find(r => r.code === 'DEFAULT_MEDICAL_REP')?._id || roleOptions[0]?._id || '',
-    [roleOptions]
-  )
-
-  const selectedRoleCode = useMemo(
-    () => roleOptions.find(r => String(r._id) === String(form.roleId))?.code || '',
-    [roleOptions, form.roleId]
-  )
-
-  const pickerAllowedKinds = useMemo((): Territory['kind'][] | undefined => {
-    if (selectedRoleCode === 'DEFAULT_MEDICAL_REP') {
-      return territoryScopeMode === 'BRICK' ? ['BRICK'] : ['AREA']
-    }
-    if (selectedRoleCode === 'DEFAULT_ASM') {
-      return territoryScopeMode === 'ZONE' ? ['ZONE'] : ['AREA']
-    }
-    return undefined
-  }, [selectedRoleCode, territoryScopeMode])
-
-  const showTerritoryScopeModes = selectedRoleCode === 'DEFAULT_MEDICAL_REP' || selectedRoleCode === 'DEFAULT_ASM'
-
-  const territoryFieldLabel = showTerritoryScopeModes ? 'Territory assignment' : 'Territory'
-
-  const handleTerritoryScopeChange = (next: 'BRICK' | 'AREA' | 'ZONE') => {
-    setTerritoryScopeMode(next)
-    setFormTerritory(prev => {
-      if (!prev) return null
-      const allow: Territory['kind'][] =
-        selectedRoleCode === 'DEFAULT_MEDICAL_REP'
-          ? next === 'BRICK'
-            ? ['BRICK']
-            : ['AREA']
-          : selectedRoleCode === 'DEFAULT_ASM'
-            ? next === 'ZONE'
-              ? ['ZONE']
-              : ['AREA']
-            : ['ZONE', 'AREA', 'BRICK']
-      if (!allow.includes(prev.kind)) return null
-      return prev
-    })
-  }
-
-  const territoryFormCaption =
-    showTerritoryScopeModes
-      ? 'Choose how the territory anchor is stored. Descendant bricks are expanded on the server — you do not pick bricks manually.'
-      : 'Regional managers and admins may select a zone, area, or brick. Coverage still expands from the chosen anchor.'
+  }, [open, form.roleId, roleOptions])
 
   const territoryBulkConfirmText = useMemo(() => {
     if (!formTerritory || (formTerritory.kind !== 'AREA' && formTerritory.kind !== 'ZONE')) return ''
@@ -210,12 +216,28 @@ const UserListPage = () => {
     const n = territoryBulkPreview?.brickCount ?? 0
     const samples =
       territoryBulkPreview?.sampleBrickNames?.filter(Boolean).slice(0, 5).join(', ') || '—'
-    return `${formTerritory.name} (${kindLabel}) — ${n} brick${n === 1 ? '' : 's'} will be assigned under this anchor (examples: ${samples}). Doctor and order coverage will be recalculated from the expanded territory footprint.`
-  }, [formTerritory, territoryBulkPreview])
+    const extraBricks =
+      territoryAssignmentType === 'entire_area' || territoryAssignmentType === 'entire_zone'
+        ? multiBricks.length
+        : 0
+    const extraPhrase =
+      extraBricks > 0
+        ? ` You are also adding ${extraBricks} additional brick${extraBricks === 1 ? '' : 's'} (unioned with the hierarchy; overlaps count once).`
+        : ''
+    return `${formTerritory.name} (${kindLabel}) — ${n} brick${n === 1 ? '' : 's'} from hierarchy under this anchor (examples: ${samples}).${extraPhrase} Doctor and order coverage will be recalculated from the expanded footprint.`
+  }, [formTerritory, territoryBulkPreview, territoryAssignmentType, multiBricks.length])
 
   const onTerritoryCoveragePreview = useCallback((p: TerritoryCoveragePreview | null) => {
     setTerritoryBulkPreview(p)
   }, [])
+
+  const handleAssignmentTypeChange = (next: TerritoryAssignmentType) => {
+    setTerritoryAssignmentType(next)
+    setFormTerritory(null)
+    setMultiBricks([])
+    setPrimaryBrickId(null)
+    setLegacyNonBrickCoverage([])
+  }
 
   const loadRoles = useCallback(async () => {
     try {
@@ -282,31 +304,93 @@ const UserListPage = () => {
           : null
       )
       const ter = typeof item.territoryId === 'object' && item.territoryId ? item.territoryId : null
-      setFormTerritory(
-        ter
-          ? ({
-              _id: ter._id,
-              name: ter.name,
-              code: ter.code,
-              kind: ter.kind,
-              isActive: true
-            } as Territory)
-          : null
-      )
       const itemRoleCode = (item.roleId as Role | undefined)?.code || ''
-      if (itemRoleCode === 'DEFAULT_MEDICAL_REP') {
-        setTerritoryScopeMode(ter?.kind === 'BRICK' ? 'BRICK' : 'AREA')
-      } else if (itemRoleCode === 'DEFAULT_ASM') {
-        setTerritoryScopeMode(ter?.kind === 'ZONE' ? 'ZONE' : 'AREA')
+      const opts = allowedAssignmentTypes(itemRoleCode)
+
+      const toTerritory = (x: {
+        _id: string
+        name: string
+        code?: string | null
+        kind: Territory['kind']
+      }): Territory => ({
+        _id: x._id,
+        name: x.name,
+        code: x.code ?? undefined,
+        kind: x.kind,
+        isActive: true
+      })
+
+      const covRaw = Array.isArray(item.coverageTerritoryIds) ? item.coverageTerritoryIds : []
+      const brickPick: Territory[] = []
+      const nonBrick: Territory[] = []
+      for (const c of covRaw) {
+        if (!c || typeof c !== 'object' || !('_id' in c) || !('kind' in c)) continue
+        const ct = c as Territory
+        if (ct.kind === 'BRICK') brickPick.push(toTerritory(ct))
+        else nonBrick.push(toTerritory(ct))
+      }
+      if (ter?.kind === 'BRICK') {
+        brickPick.unshift(toTerritory(ter))
+      }
+      const seen = new Set<string>()
+      const uniqueBricks = brickPick.filter(b => {
+        const id = String(b._id)
+        if (seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+      setLegacyNonBrickCoverage(nonBrick)
+
+      let inferred = inferAssignmentFromUser(item)
+      if (!opts.includes(inferred)) inferred = opts[0] ?? 'single_brick'
+      setTerritoryAssignmentType(inferred)
+
+      const primary =
+        ter?.kind === 'BRICK' && ter._id
+          ? String(ter._id)
+          : uniqueBricks[0]?._id
+            ? String(uniqueBricks[0]._id)
+            : null
+      setPrimaryBrickId(inferred === 'multi_brick' ? primary : null)
+
+      if (inferred === 'multi_brick') {
+        setMultiBricks(uniqueBricks)
+        setFormTerritory(null)
       } else {
-        setTerritoryScopeMode('AREA')
+        if (inferred === 'entire_area' || inferred === 'entire_zone') {
+          setMultiBricks(ter?.kind === 'BRICK' ? [] : uniqueBricks)
+        } else {
+          setMultiBricks([])
+        }
+        const terOk =
+          ter &&
+          ((inferred === 'single_brick' && ter.kind === 'BRICK') ||
+            (inferred === 'entire_area' && ter.kind === 'AREA') ||
+            (inferred === 'entire_zone' && ter.kind === 'ZONE'))
+        setFormTerritory(
+          terOk
+            ? ({
+                _id: ter._id,
+                name: ter.name,
+                code: ter.code,
+                kind: ter.kind,
+                isActive: true
+              } as Territory)
+            : null
+        )
       }
     } else {
       setEditItem(null)
       setForm({ name: '', email: '', password: '', phone: '', roleId: defaultRepRoleId, employeeCode: '' })
       setFormManager(null)
       setFormTerritory(null)
-      setTerritoryScopeMode('AREA')
+      setLegacyNonBrickCoverage([])
+      setMultiBricks([])
+      setPrimaryBrickId(null)
+      const rc = roleOptions.find(r => String(r._id) === String(defaultRepRoleId))?.code || ''
+      const o = allowedAssignmentTypes(rc)
+      const def = defaultAssignmentForRole(rc)
+      setTerritoryAssignmentType(o.includes(def) ? def : o[0] ?? 'single_brick')
     }
     setTerritoryBulkPreview(null)
     setTerritorySaveConfirmOpen(false)
@@ -347,19 +431,91 @@ const UserListPage = () => {
     }
   }, [selectedRoleCode, open, formManager])
 
+  useEffect(() => {
+    if (!viewItem) {
+      setViewDetail(null)
+      return
+    }
+    let cancel = false
+    setViewDetailLoading(true)
+    usersService
+      .getById(viewItem._id)
+      .then(res => {
+        const payload = res.data as {
+          data?: User & { territoryCoverageSummary?: TerritoryCoverageSummary }
+        }
+        if (!cancel) setViewDetail(payload?.data ?? null)
+      })
+      .catch(() => {
+        if (!cancel) setViewDetail(null)
+      })
+      .finally(() => {
+        if (!cancel) setViewDetailLoading(false)
+      })
+    return () => {
+      cancel = true
+    }
+  }, [viewItem])
+
   const runSave = async () => {
-    if (selectedRoleCode === 'DEFAULT_MEDICAL_REP' && formTerritory) {
-      if (formTerritory.kind !== 'BRICK' && formTerritory.kind !== 'AREA') {
-        showApiError(
-          new Error('Medical Rep territory must be a brick or an area.'),
-          'Territory'
-        )
+    if (!assignmentOptions.includes(territoryAssignmentType)) {
+      showApiError(new Error('This territory assignment type is not allowed for this role.'), 'Territory')
+      return
+    }
+
+    let territoryId: string | null = null
+    let coverageTerritoryIds: string[] = []
+
+    if (territoryAssignmentType === 'multi_brick') {
+      if (multiBricks.length === 0) {
+        showApiError(new Error('Select at least one brick for custom multi-brick assignment.'), 'Territory')
+        return
+      }
+      const pid =
+        primaryBrickId && multiBricks.some(b => String(b._id) === String(primaryBrickId))
+          ? String(primaryBrickId)
+          : String(multiBricks[0]._id)
+      territoryId = pid
+      const extraBricks = multiBricks.map(b => String(b._id)).filter(id => id !== pid)
+      const legacyIds = legacyNonBrickCoverage.map(t => String(t._id))
+      const merged = [...extraBricks, ...legacyIds]
+      const seen = new Set<string>()
+      coverageTerritoryIds = merged.filter(id => {
+        if (id === pid) return false
+        if (seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+    } else {
+      territoryId = formTerritory?._id ? String(formTerritory._id) : null
+      const brickExtras =
+        territoryAssignmentType === 'single_brick' ? [] : multiBricks.map(b => String(b._id))
+      const legacyIds = legacyNonBrickCoverage.map(t => String(t._id))
+      const merged = [...brickExtras, ...legacyIds]
+      const seen = new Set<string>()
+      coverageTerritoryIds = merged.filter(id => {
+        if (territoryId && id === territoryId) return false
+        if (seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+    }
+
+    if (territoryAssignmentType === 'single_brick') {
+      if (!formTerritory || formTerritory.kind !== 'BRICK') {
+        showApiError(new Error('Select a brick for single-brick assignment.'), 'Territory')
         return
       }
     }
-    if (selectedRoleCode === 'DEFAULT_ASM' && formTerritory) {
-      if (formTerritory.kind !== 'AREA' && formTerritory.kind !== 'ZONE') {
-        showApiError(new Error('ASM territory must be an area or a zone.'), 'Territory')
+    if (territoryAssignmentType === 'entire_area') {
+      if (!formTerritory || formTerritory.kind !== 'AREA') {
+        showApiError(new Error('Select an area for entire-area assignment.'), 'Territory')
+        return
+      }
+    }
+    if (territoryAssignmentType === 'entire_zone') {
+      if (!formTerritory || formTerritory.kind !== 'ZONE') {
+        showApiError(new Error('Select a zone for entire-zone assignment.'), 'Territory')
         return
       }
     }
@@ -375,7 +531,8 @@ const UserListPage = () => {
         roleId: form.roleId,
         employeeCode: form.employeeCode.trim() || null,
         managerId: effectiveManager?._id || null,
-        territoryId: formTerritory?._id || null
+        territoryId,
+        coverageTerritoryIds
       }
       if (editItem) {
         if (form.password?.trim()) payload.password = form.password
@@ -398,7 +555,11 @@ const UserListPage = () => {
 
   const handleSave = () => {
     const t = formTerritory
-    if (t && (t.kind === 'AREA' || t.kind === 'ZONE')) {
+    if (
+      territoryAssignmentType !== 'multi_brick' &&
+      t &&
+      (t.kind === 'AREA' || t.kind === 'ZONE')
+    ) {
       setTerritorySaveConfirmOpen(true)
       return
     }
@@ -704,87 +865,35 @@ const UserListPage = () => {
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
-              <Typography variant='subtitle2' className='mbe-2'>
-                {territoryFieldLabel}
-              </Typography>
-              <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
-                {territoryFormCaption}
-              </Typography>
-              {showTerritoryScopeModes ? (
-                <FormControl component='fieldset' className='mbe-4'>
-                  <FormLabel component='legend'>Territory scope mode</FormLabel>
-                  <RadioGroup
-                    row
-                    value={
-                      selectedRoleCode === 'DEFAULT_MEDICAL_REP'
-                        ? territoryScopeMode === 'BRICK'
-                          ? 'BRICK'
-                          : 'AREA'
-                        : territoryScopeMode === 'ZONE'
-                          ? 'ZONE'
-                          : 'AREA'
-                    }
-                    onChange={e => {
-                      const v = e.target.value
-                      if (selectedRoleCode === 'DEFAULT_MEDICAL_REP') {
-                        handleTerritoryScopeChange(v === 'BRICK' ? 'BRICK' : 'AREA')
-                      } else {
-                        handleTerritoryScopeChange(v === 'ZONE' ? 'ZONE' : 'AREA')
-                      }
-                    }}
-                  >
-                    {selectedRoleCode === 'DEFAULT_MEDICAL_REP' ? (
-                      <>
-                        <FormControlLabel value='BRICK' control={<Radio size='small' />} label='Single brick' />
-                        <FormControlLabel
-                          value='AREA'
-                          control={<Radio size='small' />}
-                          label='Area (recommended)'
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <FormControlLabel value='AREA' control={<Radio size='small' />} label='Area (recommended)' />
-                        <FormControlLabel value='ZONE' control={<Radio size='small' />} label='Zone' />
-                      </>
-                    )}
-                  </RadioGroup>
-                </FormControl>
-              ) : null}
-              {showTerritoryScopeModes &&
-              formTerritory &&
-              formTerritory.kind === 'ZONE' &&
-              selectedRoleCode === 'DEFAULT_MEDICAL_REP' ? (
-                <Typography variant='caption' color='warning.main' display='block' className='mbe-2'>
-                  This user’s anchor is a zone (legacy). Choose an area or single brick above to replace it, or save other
-                  fields without changing territory.
-                </Typography>
-              ) : null}
-              <Box
-                sx={{
-                  maxHeight: 280,
-                  overflow: 'auto',
-                  border: 1,
-                  borderColor: 'divider',
-                  borderRadius: 1,
-                  p: 2
+              <UserFormCoverageSection
+                dialogOpen={open}
+                hydrationKey={coverageHydrationKey}
+                assignmentOptions={assignmentOptions}
+                strategy={territoryAssignmentType}
+                onStrategyChange={handleAssignmentTypeChange}
+                formTerritory={formTerritory}
+                onFormTerritoryChange={setFormTerritory}
+                multiBricks={multiBricks}
+                primaryBrickId={primaryBrickId}
+                onMultiBricksCommit={({ bricks, primaryId }) => {
+                  setMultiBricks(bricks)
+                  setPrimaryBrickId(primaryId)
                 }}
-              >
-                <TerritoryTreePicker
-                  key={`terr-${selectedRoleCode}-${territoryScopeMode}`}
-                  value={formTerritory}
-                  onChange={setFormTerritory}
-                  allowedKinds={pickerAllowedKinds}
-                  onCoveragePreviewChange={onTerritoryCoveragePreview}
-                />
-              </Box>
+                onExtrasBricksChange={bricks => {
+                  setMultiBricks(bricks)
+                  setPrimaryBrickId(null)
+                }}
+                hierarchyPreview={territoryBulkPreview}
+                onHierarchyPreviewChange={onTerritoryCoveragePreview}
+                legacyNonBrickWarning={legacyNonBrickCoverage.length > 0}
+              />
             </Grid>
           </Grid>
         </DialogContent>
         <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
       </Dialog>
 
-      <Dialog open={!!viewItem} onClose={() => setViewItem(null)} maxWidth='sm' fullWidth>
+      <Dialog open={!!viewItem} onClose={() => { setViewItem(null); setViewDetail(null) }} maxWidth='sm' fullWidth>
         <DialogTitle>User Details</DialogTitle>
         <DialogContent>
           {viewItem && (
@@ -803,24 +912,51 @@ const UserListPage = () => {
                     : '-'}
                 </Typography>
               </Grid>
-              <Grid size={{ xs: 6 }}>
-                <Typography variant='body2' color='text.secondary'>Territory</Typography>
-                {typeof viewItem.territoryId === 'object' && viewItem.territoryId ? (
-                  <Chip
-                    size='small'
-                    variant='outlined'
-                    label={`${viewItem.territoryId.name}${viewItem.territoryId.code ? ` (${viewItem.territoryId.code})` : ''}`}
-                  />
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary' className='mbe-1'>Territory assignment</Typography>
+                {viewDetailLoading ? (
+                  <CircularProgress size={24} />
                 ) : (
-                  <Typography>-</Typography>
+                  <>
+                    <Typography variant='body2' fontWeight={600}>
+                      {viewDetail?.territoryCoverageSummary?.assignmentType || '—'}
+                    </Typography>
+                    <Typography variant='caption' color='text.secondary' display='block' className='mte-1'>
+                      Primary anchor:{' '}
+                      {typeof viewItem.territoryId === 'object' && viewItem.territoryId
+                        ? `${viewItem.territoryId.name} (${viewItem.territoryId.kind})`
+                        : '—'}
+                    </Typography>
+                    <Typography variant='caption' color='text.secondary' display='block'>
+                      Effective brick count:{' '}
+                      <strong>{viewDetail?.territoryCoverageSummary?.brickCount ?? '—'}</strong>
+                    </Typography>
+                    {viewDetail?.territoryCoverageSummary?.previewBricks?.length ? (
+                      <Box className='mte-2'>
+                        <Typography variant='caption' color='text.secondary' display='block' className='mbe-1'>
+                          Covered bricks (sample)
+                        </Typography>
+                        <div className='flex flex-wrap gap-1'>
+                          {viewDetail.territoryCoverageSummary.previewBricks.map(b => (
+                            <Chip
+                              key={String(b._id)}
+                              size='small'
+                              variant='outlined'
+                              label={b.code ? `${b.name} (${b.code})` : b.name}
+                            />
+                          ))}
+                        </div>
+                      </Box>
+                    ) : null}
+                  </>
                 )}
               </Grid>
               <Grid size={{ xs: 12 }}>
                 <Typography variant='body2' color='text.secondary' className='mbe-1'>
-                  Legacy extra coverage (read-only)
+                  Stored coverage territories
                 </Typography>
                 <Typography variant='caption' color='text.secondary' display='block' className='mbe-1'>
-                  Added before intention-based territory assignment; still honored by the server. Not editable here.
+                  Unioned with primary expansion for effective footprint (may include legacy nodes).
                 </Typography>
                 {Array.isArray(viewItem.coverageTerritoryIds) && viewItem.coverageTerritoryIds.length ? (
                   <div className='flex flex-wrap gap-1'>
@@ -830,7 +966,7 @@ const UserListPage = () => {
                           key={(t as Territory)._id || i}
                           size='small'
                           variant='outlined'
-                          label={`${(t as Territory).name}${(t as Territory).code ? ` (${(t as Territory).code})` : ''}`}
+                          label={`${(t as Territory).name}${(t as Territory).code ? ` (${(t as Territory).code})` : ''} · ${(t as Territory).kind}`}
                         />
                       ) : (
                         <Chip key={i} size='small' variant='outlined' label={String(t)} />
@@ -838,7 +974,7 @@ const UserListPage = () => {
                     )}
                   </div>
                 ) : (
-                  <Typography>-</Typography>
+                  <Typography variant='body2'>None</Typography>
                 )}
               </Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Last Login</Typography><Typography>{viewItem.lastLoginAt ? new Date(viewItem.lastLoginAt).toLocaleString() : '-'}</Typography></Grid>
