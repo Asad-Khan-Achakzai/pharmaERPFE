@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Button from '@mui/material/Button'
@@ -45,6 +45,8 @@ import {
   appendDateUserParams,
   type DateUserFilterState
 } from '@/components/standard-list-toolbar'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
+import { pharmaciesService } from '@/services/pharmacies.service'
 
 type Order = {
   _id: string
@@ -68,13 +70,14 @@ const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'd
 
 const columnHelper = createColumnHelper<Order>()
 
-/** '' = default (API omits status → backend excludes CANCELLED). ALL = every status. */
+/** '' = default (API omits status → backend excludes CANCELLED). ALL = every status. RETURNS = partial + full return. */
 const ORDER_LIST_STATUS_FILTER = [
   { value: '', label: 'Active (hide cancelled)' },
   { value: 'ALL', label: 'All statuses' },
   { value: 'PENDING', label: 'Pending' },
   { value: 'PARTIALLY_DELIVERED', label: 'Partially delivered' },
   { value: 'DELIVERED', label: 'Delivered' },
+  { value: 'RETURNS', label: 'Returns (partial or full)' },
   { value: 'PARTIALLY_RETURNED', label: 'Partially returned' },
   { value: 'RETURNED', label: 'Returned' },
   { value: 'CANCELLED', label: 'Cancelled' }
@@ -82,8 +85,10 @@ const ORDER_LIST_STATUS_FILTER = [
 
 const OrderListPage = () => {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const medicalRepIdFromUrl = searchParams.get('medicalRepId')
+  const pharmacyIdFromUrl = searchParams.get('pharmacyId')
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('orders.create')
   const canEdit = hasPermission('orders.edit')
@@ -96,10 +101,80 @@ const OrderListPage = () => {
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [cancelling, setCancelling] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>('')
+  const [pharmacyLookup, setPharmacyLookup] = useState<{ _id: string; name: string } | null>(null)
+
+  const patchOrderListQuery = useCallback(
+    (mutate: (p: URLSearchParams) => void) => {
+      const p = new URLSearchParams(searchParams.toString())
+      mutate(p)
+      const qs = p.toString()
+      router.replace(qs ? `${pathname}?${qs}` : pathname)
+    },
+    [pathname, router, searchParams]
+  )
+
+  const setPharmacyFilter = useCallback(
+    (row: { _id: string; name: string } | null) => {
+      patchOrderListQuery(p => {
+        if (row?._id) p.set('pharmacyId', String(row._id))
+        else p.delete('pharmacyId')
+      })
+      setPharmacyLookup(row)
+    },
+    [patchOrderListQuery]
+  )
+
+  const clearStatusAndPharmacyFromUrl = useCallback(() => {
+    setStatusFilter('')
+    patchOrderListQuery(p => {
+      p.delete('status')
+      p.delete('pharmacyId')
+    })
+    setPharmacyLookup(null)
+  }, [patchOrderListQuery])
+
+  const setStatusFilterAndUrl = useCallback(
+    (value: string) => {
+      setStatusFilter(value)
+      patchOrderListQuery(p => {
+        if (value === '') p.delete('status')
+        else p.set('status', value)
+      })
+    },
+    [patchOrderListQuery]
+  )
+
+  useEffect(() => {
+    const s = searchParams.get('status')
+    setStatusFilter(s || '')
+  }, [searchParams])
+
+  useEffect(() => {
+    const pid = pharmacyIdFromUrl
+    if (!pid || !/^[a-f0-9]{24}$/i.test(pid)) {
+      setPharmacyLookup(null)
+      return
+    }
+    let cancel = false
+    void (async () => {
+      try {
+        const res = await pharmaciesService.getById(pid)
+        const row = res.data.data as { _id: string; name: string } | undefined
+        if (!cancel && row?._id) setPharmacyLookup({ _id: String(row._id), name: row.name })
+      } catch {
+        if (!cancel) setPharmacyLookup(null)
+      }
+    })()
+    return () => {
+      cancel = true
+    }
+  }, [pharmacyIdFromUrl])
 
   const filterOpen = Boolean(filterAnchor)
   const activeFilterCount =
-    countDateUserFilters(appliedFilters) + (statusFilter !== '' ? 1 : 0)
+    countDateUserFilters(appliedFilters) +
+    (statusFilter !== '' ? 1 : 0) +
+    (pharmacyIdFromUrl && /^[a-f0-9]{24}$/i.test(pharmacyIdFromUrl) ? 1 : 0)
 
   const fetchOrders = useCallback(async () => {
     const seq = ++fetchSeq.current
@@ -112,6 +187,9 @@ const OrderListPage = () => {
       if (medicalRepIdFromUrl && /^[a-f0-9]{24}$/i.test(medicalRepIdFromUrl)) {
         params.medicalRepId = medicalRepIdFromUrl
       }
+      if (pharmacyIdFromUrl && /^[a-f0-9]{24}$/i.test(pharmacyIdFromUrl)) {
+        params.pharmacyId = pharmacyIdFromUrl
+      }
       const { data: res } = await ordersService.list(params)
       if (seq !== fetchSeq.current) return
       setData(Array.isArray(res?.data) ? res.data : [])
@@ -120,7 +198,7 @@ const OrderListPage = () => {
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch, statusFilter, medicalRepIdFromUrl])
+  }, [appliedFilters, debouncedSearch, statusFilter, medicalRepIdFromUrl, pharmacyIdFromUrl])
 
   useEffect(() => {
     fetchOrders()
@@ -281,7 +359,7 @@ const OrderListPage = () => {
             size='small'
             label='Order status'
             value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
+            onChange={e => setStatusFilterAndUrl(e.target.value)}
           >
             {ORDER_LIST_STATUS_FILTER.map(opt => (
               <MenuItem key={opt.value || 'default'} value={opt.value}>
@@ -290,13 +368,14 @@ const OrderListPage = () => {
             ))}
           </CustomTextField>
           <Typography variant='caption' color='text.secondary' sx={{ display: 'block', mt: 1, lineHeight: 1.5 }}>
-            Default hides cancelled orders. Choose &quot;All statuses&quot; or &quot;Cancelled&quot; to include them.
+            Default hides cancelled orders. &quot;Returns (partial or full)&quot; shows both partially returned and fully
+            returned. Choose &quot;All statuses&quot; or &quot;Cancelled&quot; to include every order.
           </Typography>
         </Box>
         <Divider sx={{ my: 1 }} />
         <DateAndCreatedByFilterPanel
           title='More filters'
-          description='Narrow the list by when the order was created and who created it.'
+          description='Narrow the list by pharmacy, when the order was created, and who created it.'
           dateSectionLabel='Created date'
           createdByHelperText='Matches the teammate who saved the order. Older rows may not have this set.'
           datePickerId='date-range-picker-months'
@@ -305,7 +384,33 @@ const OrderListPage = () => {
           filterAnchor={filterAnchor}
           open={filterOpen}
           onClose={closeFilterPopover}
-          onClearAllExtras={() => setStatusFilter('')}
+          onClearAllExtras={clearStatusAndPharmacyFromUrl}
+          beforeDateSection={
+            <>
+              <Typography
+                variant='overline'
+                sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: '0.08em', display: 'block', mb: 1 }}
+              >
+                Pharmacy
+              </Typography>
+              <LookupAutocomplete
+                fullWidth
+                value={pharmacyLookup}
+                onChange={v =>
+                  setPharmacyFilter(
+                    v && typeof v === 'object' && '_id' in v ? { _id: String(v._id), name: String(v.name) } : null
+                  )
+                }
+                fetchOptions={search =>
+                  pharmaciesService.lookup({ limit: 25, ...(search ? { search } : {}) }).then(r => r.data.data || [])
+                }
+                label='Limit list to one pharmacy'
+                placeholder='Search by pharmacy name…'
+                helperText='Applied immediately. Deep links from Financial workspace fill this when you open the filter panel.'
+                fetchErrorMessage='Failed to load pharmacies'
+              />
+            </>
+          }
         />
       </ListFilterPopover>
 

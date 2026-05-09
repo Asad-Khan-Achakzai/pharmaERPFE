@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -21,6 +22,9 @@ import TableRow from '@mui/material/TableRow'
 import TableContainer from '@mui/material/TableContainer'
 import Paper from '@mui/material/Paper'
 import Chip from '@mui/material/Chip'
+import TablePagination from '@mui/material/TablePagination'
+import Checkbox from '@mui/material/Checkbox'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import Skeleton from '@mui/material/Skeleton'
 import { showApiError } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
@@ -32,7 +36,6 @@ import FinancialPositionSection from '@/views/reports/FinancialPositionSection'
 import TableSkeleton from '@/components/skeletons/TableSkeleton'
 
 let financialReportsCache: {
-  pharmacyBal: any
   distBal: any
   periodData: any
 } | null = null
@@ -58,43 +61,88 @@ const FinancialReportsSection = () => {
   const [collectorType, setCollectorType] = useState('')
   const [settlementDirection, setSettlementDirection] = useState('')
 
-  const [pharmacyBal, setPharmacyBal] = useState<any>(financialReportsCache?.pharmacyBal ?? null)
+  const [pharmacyBal, setPharmacyBal] = useState<any>(null)
   const [distBal, setDistBal] = useState<any>(financialReportsCache?.distBal ?? null)
   const [periodData, setPeriodData] = useState<any>(financialReportsCache?.periodData ?? null)
-  const [loadingBal, setLoadingBal] = useState(!financialReportsCache?.pharmacyBal || !financialReportsCache?.distBal)
+  const [loadingDist, setLoadingDist] = useState(!financialReportsCache?.distBal)
+  const [loadingPharmacy, setLoadingPharmacy] = useState(true)
   const [loadingPeriod, setLoadingPeriod] = useState(false)
 
-  const [detailOpen, setDetailOpen] = useState<'pharmacy' | 'distributor' | null>(null)
-  const [detailId, setDetailId] = useState<string | null>(null)
+  const [pharmacySearch, setPharmacySearch] = useState('')
+  const [debouncedPharmacySearch, setDebouncedPharmacySearch] = useState('')
+  const [pharmacyPage, setPharmacyPage] = useState(1)
+  const [pharmacyRowsPerPage, setPharmacyRowsPerPage] = useState(25)
+  const [pharmacyBalanceOnly, setPharmacyBalanceOnly] = useState(false)
+  const [pharmacySortBy, setPharmacySortBy] = useState<
+    'receivableFromPharmacy' | 'name' | 'city' | 'advanceOrCreditFromPharmacy' | 'outstanding'
+  >('receivableFromPharmacy')
+  const [pharmacySortOrder, setPharmacySortOrder] = useState<'asc' | 'desc'>('desc')
+
+  const [detailOpen, setDetailOpen] = useState(false)
   const [detailBody, setDetailBody] = useState<any>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
-  const loadBalances = useCallback(async () => {
-    const hasCache = Boolean(financialReportsCache?.pharmacyBal && financialReportsCache?.distBal)
-    if (!hasCache) setLoadingBal(true)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedPharmacySearch(pharmacySearch.trim()), 400)
+    return () => clearTimeout(t)
+  }, [pharmacySearch])
+
+  useEffect(() => {
+    setPharmacyPage(1)
+  }, [debouncedPharmacySearch, pharmacyBalanceOnly, pharmacyRowsPerPage, pharmacySortBy, pharmacySortOrder])
+
+  const loadDistributors = useCallback(async () => {
+    const hasCache = Boolean(financialReportsCache?.distBal)
+    if (!hasCache) setLoadingDist(true)
     try {
-      const [pb, db] = await Promise.all([
-        reportsService.pharmacyBalances(),
-        reportsService.distributorBalances()
-      ])
-      const next = {
-        pharmacyBal: pb.data.data,
-        distBal: db.data.data,
+      const db = await reportsService.distributorBalances()
+      const nextDist = db.data.data
+      financialReportsCache = {
+        distBal: nextDist,
         periodData: financialReportsCache?.periodData ?? null
       }
-      financialReportsCache = next
-      setPharmacyBal(next.pharmacyBal)
-      setDistBal(next.distBal)
+      setDistBal(nextDist)
     } catch (err) {
-      showApiError(err, 'Failed to load balances')
+      showApiError(err, 'Failed to load distributor balances')
     } finally {
-      setLoadingBal(false)
+      setLoadingDist(false)
     }
   }, [])
 
+  const loadPharmacyBalances = useCallback(async () => {
+    setLoadingPharmacy(true)
+    try {
+      const pb = await reportsService.pharmacyBalances({
+        paginate: 'true',
+        page: String(pharmacyPage),
+        limit: String(pharmacyRowsPerPage),
+        ...(debouncedPharmacySearch ? { search: debouncedPharmacySearch } : {}),
+        ...(pharmacyBalanceOnly ? { hasBalanceOnly: 'true' } : {}),
+        sortBy: pharmacySortBy,
+        sortOrder: pharmacySortOrder
+      })
+      setPharmacyBal(pb.data.data)
+    } catch (err) {
+      showApiError(err, 'Failed to load pharmacy balances')
+    } finally {
+      setLoadingPharmacy(false)
+    }
+  }, [
+    pharmacyPage,
+    pharmacyRowsPerPage,
+    debouncedPharmacySearch,
+    pharmacyBalanceOnly,
+    pharmacySortBy,
+    pharmacySortOrder
+  ])
+
   useEffect(() => {
-    loadBalances()
-  }, [loadBalances])
+    void loadDistributors()
+  }, [loadDistributors])
+
+  useEffect(() => {
+    void loadPharmacyBalances()
+  }, [loadPharmacyBalances])
 
   const loadPeriod = async () => {
     setLoadingPeriod(true)
@@ -109,7 +157,6 @@ const FinancialReportsSection = () => {
 
       const res = await reportsService.financialOverview(params)
       const next = {
-        pharmacyBal: financialReportsCache?.pharmacyBal ?? pharmacyBal,
         distBal: financialReportsCache?.distBal ?? distBal,
         periodData: res.data.data
       }
@@ -122,24 +169,8 @@ const FinancialReportsSection = () => {
     }
   }
 
-  const openPharmacyDetail = async (id: string) => {
-    setDetailOpen('pharmacy')
-    setDetailId(id)
-    setLoadingDetail(true)
-    setDetailBody(null)
-    try {
-      const res = await reportsService.pharmacyBalanceDetail(id)
-      setDetailBody(res.data.data)
-    } catch (err) {
-      showApiError(err, 'Failed to load pharmacy ledger detail')
-    } finally {
-      setLoadingDetail(false)
-    }
-  }
-
   const openDistributorDetail = async (id: string) => {
-    setDetailOpen('distributor')
-    setDetailId(id)
+    setDetailOpen(true)
     setLoadingDetail(true)
     setDetailBody(null)
     try {
@@ -154,6 +185,7 @@ const FinancialReportsSection = () => {
 
   const pRows = pharmacyBal?.rows || []
   const pTotals = pharmacyBal?.totals
+  const pPagination = pharmacyBal?.pagination
   const dRows = distBal?.rows || []
   const dTotals = distBal?.totals
 
@@ -179,125 +211,213 @@ const FinancialReportsSection = () => {
         <Card>
           <CardHeader title='Current balances (all pharmacies & distributors)' />
           <CardContent>
-            {loadingBal ? (
-              <TableSkeleton columns={4} rows={6} />
-            ) : (
-              <Grid container spacing={4}>
-                <Grid size={{ xs: 12, lg: 6 }}>
-                  <Typography variant='subtitle2' className='mbe-2'>
-                    Pharmacy receivables
-                  </Typography>
-                  {pTotals && (
-                    <Typography variant='body2' className='mbe-2'>
-                      Total owed by pharmacies: <strong>{formatPKR(pTotals.totalReceivable)}</strong> · Pharmacy credit
-                      balance: <strong>{formatPKR(pTotals.totalPharmacyCreditBalance)}</strong>
+            <Grid container spacing={4}>
+              <Grid size={{ xs: 12, lg: 6 }}>
+                {loadingPharmacy ? (
+                  <TableSkeleton columns={4} rows={6} />
+                ) : (
+                  <>
+                    <Typography variant='subtitle2' className='mbe-2'>
+                      Pharmacy receivables
                     </Typography>
-                  )}
-                  <TableContainer component={Paper} variant='outlined'>
-                    <Table size='small'>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Pharmacy</TableCell>
-                          <TableCell align='right'>Owed to company</TableCell>
-                          <TableCell align='right'>Credit / advance</TableCell>
-                          <TableCell width={80} />
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {pRows.length === 0 ? (
+                    {pTotals && (
+                      <Typography variant='body2' className='mbe-2'>
+                        Total owed by pharmacies (company-wide): <strong>{formatPKR(pTotals.totalReceivable)}</strong> ·
+                        Pharmacy credit balance: <strong>{formatPKR(pTotals.totalPharmacyCreditBalance)}</strong>
+                      </Typography>
+                    )}
+                    {pPagination ? (
+                      <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+                        {pPagination.total === 0
+                          ? 'No pharmacies match this filter.'
+                          : `Showing ${(pharmacyPage - 1) * pharmacyRowsPerPage + 1}–${Math.min(
+                              pharmacyPage * pharmacyRowsPerPage,
+                              pPagination.total
+                            )} of ${pPagination.total}`}
+                      </Typography>
+                    ) : null}
+                    <div className='flex flex-wrap gap-3 items-end mbe-3'>
+                      <CustomTextField
+                        label='Search pharmacies'
+                        value={pharmacySearch}
+                        onChange={e => setPharmacySearch(e.target.value)}
+                        placeholder='Name, city, phone'
+                        sx={{ minWidth: 200 }}
+                      />
+                      <CustomTextField
+                        select
+                        label='Sort by'
+                        value={pharmacySortBy}
+                        onChange={e =>
+                          setPharmacySortBy(
+                            e.target.value as
+                              | 'receivableFromPharmacy'
+                              | 'name'
+                              | 'city'
+                              | 'advanceOrCreditFromPharmacy'
+                              | 'outstanding'
+                          )
+                        }
+                        sx={{ minWidth: 170 }}
+                      >
+                        <MenuItem value='receivableFromPharmacy'>Amount owed</MenuItem>
+                        <MenuItem value='name'>Name</MenuItem>
+                        <MenuItem value='city'>City</MenuItem>
+                        <MenuItem value='advanceOrCreditFromPharmacy'>Credit / advance</MenuItem>
+                        <MenuItem value='outstanding'>Net outstanding</MenuItem>
+                      </CustomTextField>
+                      <CustomTextField
+                        select
+                        label='Order'
+                        value={pharmacySortOrder}
+                        onChange={e => setPharmacySortOrder(e.target.value as 'asc' | 'desc')}
+                        sx={{ minWidth: 120 }}
+                      >
+                        <MenuItem value='desc'>Descending</MenuItem>
+                        <MenuItem value='asc'>Ascending</MenuItem>
+                      </CustomTextField>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={pharmacyBalanceOnly}
+                            onChange={e => setPharmacyBalanceOnly(e.target.checked)}
+                          />
+                        }
+                        label='Non-zero balance only'
+                      />
+                    </div>
+                    <TableContainer component={Paper} variant='outlined'>
+                      <Table size='small'>
+                        <TableHead>
                           <TableRow>
-                            <TableCell colSpan={4}>
-                              No pharmacies
-                            </TableCell>
+                            <TableCell>Pharmacy</TableCell>
+                            <TableCell align='right'>Owed to company</TableCell>
+                            <TableCell align='right'>Credit / advance</TableCell>
+                            <TableCell width={120} />
                           </TableRow>
-                        ) : (
-                          pRows.map((row: any) => (
-                            <TableRow key={row.pharmacyId}>
-                              <TableCell>
-                                {row.name}
-                                <Typography variant='caption' display='block' color='text.secondary'>
-                                  {row.city}
-                                </Typography>
-                              </TableCell>
-                              <TableCell align='right'>{formatPKR(row.receivableFromPharmacy)}</TableCell>
-                              <TableCell align='right'>{formatPKR(row.advanceOrCreditFromPharmacy)}</TableCell>
-                              <TableCell>
-                                <Button size='small' onClick={() => openPharmacyDetail(row.pharmacyId)}>
-                                  Ledger
-                                </Button>
+                        </TableHead>
+                        <TableBody>
+                          {pRows.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4}>
+                                No pharmacies match your search or filters.
                               </TableCell>
                             </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Grid>
-                <Grid size={{ xs: 12, lg: 6 }}>
-                  <Typography variant='subtitle2' className='mbe-2'>
-                    Distributor clearing
-                  </Typography>
-                  {distBal?.helpShort && (
-                    <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
-                      {distBal.helpShort}
-                    </Typography>
-                  )}
-                  {dTotals && (
-                    <Typography variant='body2' className='mbe-2'>
-                      <strong>Remittance due</strong> (distributor collected cash for you):{' '}
-                      <strong>{formatPKR(dTotals.sumRemittanceDueFromDistributors ?? 0)}</strong>
-                      {' · '}
-                      <strong>Commission payable</strong> (you collected; owe distributor on TP):{' '}
-                      <strong>{formatPKR(dTotals.sumCommissionPayableByCompanyToDistributors ?? 0)}</strong>
-                      {' · '}
-                      Ledger net (audit): distributors {formatPKR(dTotals.sumNetOwedByDistributorsToCompany)} · company{' '}
-                      {formatPKR(dTotals.sumNetOwedByCompanyToDistributors)}
-                    </Typography>
-                  )}
-                  <TableContainer component={Paper} variant='outlined'>
-                    <Table size='small'>
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Distributor</TableCell>
-                          <TableCell align='right'>Remittance due</TableCell>
-                          <TableCell align='right'>Comm. payable</TableCell>
-                          <TableCell align='right'>Ledger net</TableCell>
-                          <TableCell width={80} />
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {dRows.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={5}>
-                              No distributors
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          dRows.map((row: any) => (
-                            <TableRow key={row.distributorId}>
-                              <TableCell>
-                                {row.name}
-                                <Typography variant='caption' display='block' color='text.secondary'>
-                                  {row.city}
-                                </Typography>
-                              </TableCell>
-                              <TableCell align='right'>{formatPKR(row.remittanceDueFromDistributor ?? 0)}</TableCell>
-                              <TableCell align='right'>{formatPKR(row.commissionPayableByCompanyToDistributor ?? 0)}</TableCell>
-                              <TableCell align='right'>{formatPKR(Math.max(0, row.netDistributorOwesCompany))}</TableCell>
-                              <TableCell>
-                                <Button size='small' onClick={() => openDistributorDetail(row.distributorId)}>
-                                  Ledger
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Grid>
+                          ) : (
+                            pRows.map((row: any) => (
+                              <TableRow hover key={row.pharmacyId}>
+                                <TableCell>
+                                  {row.name}
+                                  <Typography variant='caption' display='block' color='text.secondary'>
+                                    {row.city}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell align='right'>{formatPKR(row.receivableFromPharmacy)}</TableCell>
+                                <TableCell align='right'>{formatPKR(row.advanceOrCreditFromPharmacy)}</TableCell>
+                                <TableCell>
+                                  <Button
+                                    size='small'
+                                    component={Link}
+                                    href={`/reports/financial/pharmacies/${row.pharmacyId}/ledger`}
+                                  >
+                                    View account
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                    {pPagination ? (
+                      <TablePagination
+                        component='div'
+                        count={pPagination.total}
+                        page={pharmacyPage - 1}
+                        onPageChange={(_, p) => setPharmacyPage(p + 1)}
+                        rowsPerPage={pharmacyRowsPerPage}
+                        onRowsPerPageChange={e => {
+                          setPharmacyRowsPerPage(parseInt(e.target.value, 10))
+                          setPharmacyPage(1)
+                        }}
+                        rowsPerPageOptions={[10, 25, 50]}
+                      />
+                    ) : null}
+                  </>
+                )}
               </Grid>
-            )}
+              <Grid size={{ xs: 12, lg: 6 }}>
+                {loadingDist ? (
+                  <TableSkeleton columns={5} rows={6} />
+                ) : (
+                  <>
+                    <Typography variant='subtitle2' className='mbe-2'>
+                      Distributor clearing
+                    </Typography>
+                    {distBal?.helpShort && (
+                      <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+                        {distBal.helpShort}
+                      </Typography>
+                    )}
+                    {dTotals && (
+                      <Typography variant='body2' className='mbe-2'>
+                        <strong>Remittance due</strong> (distributor collected cash for you):{' '}
+                        <strong>{formatPKR(dTotals.sumRemittanceDueFromDistributors ?? 0)}</strong>
+                        {' · '}
+                        <strong>Commission payable</strong> (you collected; owe distributor on TP):{' '}
+                        <strong>{formatPKR(dTotals.sumCommissionPayableByCompanyToDistributors ?? 0)}</strong>
+                        {' · '}
+                        Ledger net (audit): distributors {formatPKR(dTotals.sumNetOwedByDistributorsToCompany)} · company{' '}
+                        {formatPKR(dTotals.sumNetOwedByCompanyToDistributors)}
+                      </Typography>
+                    )}
+                    <TableContainer component={Paper} variant='outlined'>
+                      <Table size='small'>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Distributor</TableCell>
+                            <TableCell align='right'>Remittance due</TableCell>
+                            <TableCell align='right'>Comm. payable</TableCell>
+                            <TableCell align='right'>Ledger net</TableCell>
+                            <TableCell width={80} />
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {dRows.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5}>
+                                No distributors
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            dRows.map((row: any) => (
+                              <TableRow key={row.distributorId}>
+                                <TableCell>
+                                  {row.name}
+                                  <Typography variant='caption' display='block' color='text.secondary'>
+                                    {row.city}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell align='right'>{formatPKR(row.remittanceDueFromDistributor ?? 0)}</TableCell>
+                                <TableCell align='right'>
+                                  {formatPKR(row.commissionPayableByCompanyToDistributor ?? 0)}
+                                </TableCell>
+                                <TableCell align='right'>{formatPKR(Math.max(0, row.netDistributorOwesCompany))}</TableCell>
+                                <TableCell>
+                                  <Button size='small' onClick={() => openDistributorDetail(row.distributorId)}>
+                                    Ledger
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </>
+                )}
+              </Grid>
+            </Grid>
           </CardContent>
         </Card>
       </Grid>
@@ -456,10 +576,8 @@ const FinancialReportsSection = () => {
         </Card>
       </Grid>
 
-      <Dialog open={!!detailOpen} onClose={() => setDetailOpen(null)} maxWidth='sm' fullWidth>
-        <DialogTitle>
-          {detailOpen === 'pharmacy' ? 'Pharmacy ledger' : 'Distributor clearing'} detail
-        </DialogTitle>
+      <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth='sm' fullWidth>
+        <DialogTitle>Distributor clearing detail</DialogTitle>
         <DialogContent>
           {loadingDetail ? (
             <div className='p-2'>
@@ -469,53 +587,44 @@ const FinancialReportsSection = () => {
             </div>
           ) : detailBody ? (
             <div className='flex flex-col gap-2 p-2'>
-              {detailOpen === 'pharmacy' && (
-                <>
-                  <Typography fontWeight={600}>{detailBody.pharmacy?.name}</Typography>
-                  <Typography variant='body2'>Net outstanding: {formatPKR(detailBody.netOutstanding)}</Typography>
-                </>
-              )}
-              {detailOpen === 'distributor' && (
-                <>
-                  <Typography fontWeight={600}>{detailBody.distributor?.name}</Typography>
-                  {detailBody.obligations && (
-                    <Paper variant='outlined' className='p-3 mbe-2'>
-                      <Typography variant='subtitle2' className='mbe-1'>
-                        Business obligations
-                      </Typography>
-                      <Typography variant='body2'>
-                        Remittance due from distributor: {formatPKR(detailBody.obligations.remittanceDueFromDistributor)}
-                      </Typography>
-                      <Typography variant='body2'>
-                        Commission payable to distributor: {formatPKR(detailBody.obligations.commissionPayableByCompanyToDistributor)}
-                      </Typography>
-                    </Paper>
-                  )}
-                  <Typography variant='body2'>
-                    Ledger net (DR−CR, all types): {formatPKR(detailBody.netDistributorOwesCompany)}
+              <Typography fontWeight={600}>{detailBody.distributor?.name}</Typography>
+              {detailBody.obligations && (
+                <Paper variant='outlined' className='p-3 mbe-2'>
+                  <Typography variant='subtitle2' className='mbe-1'>
+                    Business obligations
                   </Typography>
-                  {detailBody.clearingHelp && (
-                    <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
-                      {detailBody.clearingHelp}
-                    </Typography>
-                  )}
-                  {detailBody.deliverySplit && (
-                    <Paper variant='outlined' className='p-3 mbe-2'>
-                      <Typography variant='subtitle2' className='mbe-1'>
-                        Legacy DELIVERY ledger postings
-                      </Typography>
-                      <Typography variant='body2'>
-                        Company share (debit): {formatPKR(detailBody.deliverySplit.companyShareOnDeliveries)}
-                      </Typography>
-                      <Typography variant='body2'>
-                        Distributor commission on TP (credit): {formatPKR(detailBody.deliverySplit.distributorCommissionOnTp)}
-                      </Typography>
-                      <Typography variant='caption' color='text.secondary' display='block' className='mts-1'>
-                        {detailBody.deliverySplit.note}
-                      </Typography>
-                    </Paper>
-                  )}
-                </>
+                  <Typography variant='body2'>
+                    Remittance due from distributor: {formatPKR(detailBody.obligations.remittanceDueFromDistributor)}
+                  </Typography>
+                  <Typography variant='body2'>
+                    Commission payable to distributor:{' '}
+                    {formatPKR(detailBody.obligations.commissionPayableByCompanyToDistributor)}
+                  </Typography>
+                </Paper>
+              )}
+              <Typography variant='body2'>
+                Ledger net (DR−CR, all types): {formatPKR(detailBody.netDistributorOwesCompany)}
+              </Typography>
+              {detailBody.clearingHelp && (
+                <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+                  {detailBody.clearingHelp}
+                </Typography>
+              )}
+              {detailBody.deliverySplit && (
+                <Paper variant='outlined' className='p-3 mbe-2'>
+                  <Typography variant='subtitle2' className='mbe-1'>
+                    Legacy DELIVERY ledger postings
+                  </Typography>
+                  <Typography variant='body2'>
+                    Company share (debit): {formatPKR(detailBody.deliverySplit.companyShareOnDeliveries)}
+                  </Typography>
+                  <Typography variant='body2'>
+                    Distributor commission on TP (credit): {formatPKR(detailBody.deliverySplit.distributorCommissionOnTp)}
+                  </Typography>
+                  <Typography variant='caption' color='text.secondary' display='block' className='mts-1'>
+                    {detailBody.deliverySplit.note}
+                  </Typography>
+                </Paper>
               )}
               <Table size='small'>
                 <TableHead>
@@ -541,7 +650,7 @@ const FinancialReportsSection = () => {
           ) : null}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDetailOpen(null)}>Close</Button>
+          <Button onClick={() => setDetailOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Grid>

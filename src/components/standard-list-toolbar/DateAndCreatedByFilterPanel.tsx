@@ -1,6 +1,6 @@
 'use client'
 
-import { forwardRef, useEffect, useState } from 'react'
+import { forwardRef, useEffect, useState, type ReactNode } from 'react'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import Stack from '@mui/material/Stack'
@@ -71,6 +71,8 @@ type PanelProps = {
   onClose: () => void
   /** Runs after date/user filters are reset (e.g. reset extra list filters like order status). */
   onClearAllExtras?: () => void
+  /** Rendered after the panel description and before the date range (e.g. pharmacy filter). */
+  beforeDateSection?: ReactNode
 }
 
 export function DateAndCreatedByFilterPanel({
@@ -85,7 +87,8 @@ export function DateAndCreatedByFilterPanel({
   filterAnchor,
   open,
   onClose,
-  onClearAllExtras
+  onClearAllExtras,
+  beforeDateSection
 }: PanelProps) {
   const theme = useTheme()
   const isCompactCalendarViewport = useMediaQuery(theme.breakpoints.down('sm'))
@@ -151,6 +154,8 @@ export function DateAndCreatedByFilterPanel({
       <Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
         {description}
       </Typography>
+
+      {beforeDateSection ? <Box sx={{ mb: 2 }}>{beforeDateSection}</Box> : null}
 
       <Typography
         variant='overline'

@@ -15,9 +15,20 @@ export const reportsService = {
   /** Full snapshot: balances + optional period (pass from/to for collections, settlements, cash summary). */
   financialOverview: (params?: Record<string, string | undefined>) =>
     api.get('/reports/financial/overview', { params }),
-  pharmacyBalances: (params?: { pharmacyId?: string }) =>
-    api.get('/reports/financial/pharmacy-balances', { params }),
+  pharmacyBalances: (
+    params?: {
+      pharmacyId?: string
+      paginate?: string
+      page?: string
+      limit?: string
+      search?: string
+      hasBalanceOnly?: string
+      sortBy?: string
+      sortOrder?: 'asc' | 'desc' | string
+    }
+  ) => api.get('/reports/financial/pharmacy-balances', { params }),
   pharmacyBalanceDetail: (id: string) => api.get(`/reports/financial/pharmacies/${id}/detail`),
+  pharmacyFinancialWorkspace: (id: string) => api.get(`/reports/financial/pharmacies/${id}/workspace`),
   distributorBalances: (params?: { distributorId?: string }) =>
     api.get('/reports/financial/distributor-balances', { params }),
   distributorBalanceDetail: (id: string) => api.get(`/reports/financial/distributors/${id}/detail`),

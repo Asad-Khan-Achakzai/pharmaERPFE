@@ -1,6 +1,6 @@
 'use client'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
@@ -22,6 +22,7 @@ import { distributorsService } from '@/services/distributors.service'
 
 const RecordPaymentPage = () => {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [selectedPharmacy, setSelectedPharmacy] = useState<any | null>(null)
   const [selectedDistributor, setSelectedDistributor] = useState<any | null>(null)
   const [form, setForm] = useState({
@@ -34,6 +35,27 @@ const RecordPaymentPage = () => {
     notes: ''
   })
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const pid = searchParams.get('pharmacyId')
+    if (!pid || !/^[a-f0-9]{24}$/i.test(pid)) return
+    let cancel = false
+    void (async () => {
+      try {
+        const r = await pharmaciesService.getById(pid)
+        const row = r.data.data
+        if (!cancel && row) {
+          setSelectedPharmacy(row)
+          setForm(p => ({ ...p, pharmacyId: String(row._id) }))
+        }
+      } catch {
+        /* keep manual selection */
+      }
+    })()
+    return () => {
+      cancel = true
+    }
+  }, [searchParams])
 
   const needsDistributor = form.collectorType === 'DISTRIBUTOR'
   const isFormValid =
