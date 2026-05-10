@@ -56,8 +56,8 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   const hasDeliverPerm = hasPermission('orders.deliver')
   const hasReturnPerm = hasPermission('orders.return')
   const hasEditPerm = hasPermission('orders.edit')
-  /** Order-level gross profit / margin — same gate as company financials elsewhere */
-  const canSeeOrderProfitLayer = hasPermission('admin.access')
+  /** Order-level cost, profit, and company-side sales lines — same gate as company financials elsewhere */
+  const canSeeOrderAdminFinancials = hasPermission('admin.access')
 
   const fetchOrder = async () => {
     try {
@@ -283,6 +283,13 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
     order.pharmacyDiscountAmount != null ||
     order.totalAmount != null
   const grossTotal = order.totalAmount ?? order.totalOrderedAmount
+  const itemsTableMinWidth = hasOrderFinancialSnap
+    ? canSeeOrderAdminFinancials
+      ? 1180
+      : 920
+    : canSeeOrderAdminFinancials
+      ? 720
+      : 620
 
   const statRow = (label: ReactNode, value: ReactNode) => (
     <Stack direction='row' justifyContent='space-between' alignItems='flex-start' gap={1} sx={{ py: 0.5 }}>
@@ -358,60 +365,66 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                       </>,
                       pk(order.amountAfterPharmacyDiscount)
                     )}
-                    {statRow(FIN_LABELS.distributorCommission, pk(order.distributorCommissionAmount))}
-                    {statRow(
+                    {canSeeOrderAdminFinancials ? (
                       <>
-                        {FIN_LABELS.netSalesCompany} <FinInfoTip title={FIN_TOOLTIPS.customerVsCompany} />
-                      </>,
-                      <Typography component='span' fontWeight={600} color='primary.main'>
-                        {pk(order.finalCompanyRevenue)}
-                      </Typography>
-                    )}
-                    {order.totalBonusQuantity != null &&
-                      order.totalBonusQuantity > 0 &&
-                      statRow(
-                        <>
-                          Bonus units (order) <FinInfoTip title={FIN_TOOLTIPS.bonusCostVsRevenue} />
-                        </>,
-                        order.totalBonusQuantity
-                      )}
+                        {statRow(FIN_LABELS.distributorCommission, pk(order.distributorCommissionAmount))}
+                        {statRow(
+                          <>
+                            {FIN_LABELS.netSalesCompany} <FinInfoTip title={FIN_TOOLTIPS.customerVsCompany} />
+                          </>,
+                          <Typography component='span' fontWeight={600} color='primary.main'>
+                            {pk(order.finalCompanyRevenue)}
+                          </Typography>
+                        )}
+                        {order.totalBonusQuantity != null &&
+                          order.totalBonusQuantity > 0 &&
+                          statRow(
+                            <>
+                              Bonus units (order) <FinInfoTip title={FIN_TOOLTIPS.bonusCostVsRevenue} />
+                            </>,
+                            order.totalBonusQuantity
+                          )}
+                      </>
+                    ) : null}
                   </FinancialLayerSection>
 
-                  <FinancialLayerSection layer='cost'>
-                    {order.totalCastingCost != null ? (
-                      statRow(
-                        <>
-                          {FIN_LABELS.estimatedCostStandard}{' '}
-                          <FinInfoTip title={FIN_TOOLTIPS.standardVsAvg} />
-                        </>,
-                        pk(order.totalCastingCost)
-                      )
-                    ) : (
-                      <Typography variant='body2' color='text.secondary'>
-                        No estimated catalog (casting) total on this order.
-                      </Typography>
-                    )}
-                    {statRow(
-                      <>
-                        {FIN_LABELS.inventoryCostAvg} ({profitEstimate.basisLabel || '—'})
-                        <FinInfoTip title={FIN_TOOLTIPS.standardVsAvg} />
-                      </>,
-                      profitEstimate.loading
-                        ? '…'
-                        : profitEstimate.missing || profitEstimate.weightedAvgCost == null
-                          ? 'Not available'
-                          : `${pk(profitEstimate.weightedAvgCost)} / unit`
-                    )}
-                    {!profitEstimate.loading &&
-                      !profitEstimate.missing &&
-                      profitEstimate.eligibleUnits > 0 && (
-                        <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.5 }}>
-                          {FIN_LABELS.inventoryCostAvgCogs}: {pk(profitEstimate.totalAvgCogs)}
+                  {canSeeOrderAdminFinancials ? (
+                    <FinancialLayerSection layer='cost'>
+                      {order.totalCastingCost != null ? (
+                        statRow(
+                          <>
+                            {FIN_LABELS.estimatedCostStandard}{' '}
+                            <FinInfoTip title={FIN_TOOLTIPS.standardVsAvg} />
+                          </>,
+                          pk(order.totalCastingCost)
+                        )
+                      ) : (
+                        <Typography variant='body2' color='text.secondary'>
+                          No estimated catalog (casting) total on this order.
                         </Typography>
                       )}
-                  </FinancialLayerSection>
+                      {statRow(
+                        <>
+                          {FIN_LABELS.inventoryCostAvg} ({profitEstimate.basisLabel || '—'})
+                          <FinInfoTip title={FIN_TOOLTIPS.standardVsAvg} />
+                        </>,
+                        profitEstimate.loading
+                          ? '…'
+                          : profitEstimate.missing || profitEstimate.weightedAvgCost == null
+                            ? 'Not available'
+                            : `${pk(profitEstimate.weightedAvgCost)} / unit`
+                      )}
+                      {!profitEstimate.loading &&
+                        !profitEstimate.missing &&
+                        profitEstimate.eligibleUnits > 0 && (
+                          <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.5 }}>
+                            {FIN_LABELS.inventoryCostAvgCogs}: {pk(profitEstimate.totalAvgCogs)}
+                          </Typography>
+                        )}
+                    </FinancialLayerSection>
+                  ) : null}
 
-                  {canSeeOrderProfitLayer ? (
+                  {canSeeOrderAdminFinancials ? (
                     <FinancialLayerSection layer='profit'>
                       <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
                         {FIN_LABELS.estimatedGrossProfitCompany}. {FIN_TOOLTIPS.estimatedGrossProfitCompany}
@@ -493,8 +506,13 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                         Delivered / returned: {item.deliveredQty} / {item.returnedQty}
                       </Typography>
                       <Typography variant='body2'>
-                        TP: ₨ {item.tpAtTime?.toFixed(2)} · {FIN_LABELS.standardCostCatalog}: ₨{' '}
-                        {item.castingAtTime?.toFixed(2)}
+                        TP: ₨ {item.tpAtTime?.toFixed(2)}
+                        {canSeeOrderAdminFinancials ? (
+                          <>
+                            {' '}
+                            · {FIN_LABELS.standardCostCatalog}: ₨ {item.castingAtTime?.toFixed(2)}
+                          </>
+                        ) : null}
                       </Typography>
                       {hasOrderFinancialSnap && (
                         <>
@@ -506,10 +524,14 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                           <Typography variant='body2'>
                             {FIN_LABELS.netSalesCustomer}: {pk(item.netAfterPharmacy)}
                           </Typography>
-                          <Typography variant='body2'>{FIN_LABELS.distributorCommission}: {pk(item.distributorCommissionAmount)}</Typography>
-                          <Typography variant='body2' fontWeight={600}>
-                            {FIN_LABELS.netSalesCompany}: {pk(item.finalCompanyAmount)}
-                          </Typography>
+                          {canSeeOrderAdminFinancials ? (
+                            <>
+                              <Typography variant='body2'>{FIN_LABELS.distributorCommission}: {pk(item.distributorCommissionAmount)}</Typography>
+                              <Typography variant='body2' fontWeight={600}>
+                                {FIN_LABELS.netSalesCompany}: {pk(item.finalCompanyAmount)}
+                              </Typography>
+                            </>
+                          ) : null}
                         </>
                       )}
                     </Stack>
@@ -529,7 +551,7 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
               <table
                 style={{
                   width: '100%',
-                  minWidth: hasOrderFinancialSnap ? 1180 : 720,
+                  minWidth: itemsTableMinWidth,
                   borderCollapse: 'collapse',
                   tableLayout: 'auto'
                 }}
@@ -543,14 +565,20 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Delivered</th>
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Returned</th>
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>TP</th>
-                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Std. cost (catalog)</th>
+                  {canSeeOrderAdminFinancials ? (
+                    <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Std. cost (catalog)</th>
+                  ) : null}
                   {hasOrderFinancialSnap && (
                     <>
                       <th style={{ padding: 8, whiteSpace: 'nowrap' }}>{FIN_LABELS.grossSalesTp}</th>
                       <th style={{ padding: 8, whiteSpace: 'nowrap' }}>{FIN_LABELS.pharmacyDiscount}</th>
                       <th style={{ padding: 8, whiteSpace: 'nowrap' }}>{FIN_LABELS.netSalesCustomer}</th>
-                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Dist. comm.</th>
-                      <th style={{ padding: 8, whiteSpace: 'nowrap', minWidth: 120 }}>{FIN_LABELS.netSalesCompany}</th>
+                      {canSeeOrderAdminFinancials ? (
+                        <>
+                          <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Dist. comm.</th>
+                          <th style={{ padding: 8, whiteSpace: 'nowrap', minWidth: 120 }}>{FIN_LABELS.netSalesCompany}</th>
+                        </>
+                      ) : null}
                     </>
                   )}
                 </tr>
@@ -565,14 +593,20 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                     <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{item.deliveredQty}</td>
                     <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{item.returnedQty}</td>
                     <td style={{ padding: 8, whiteSpace: 'nowrap' }}>₨ {item.tpAtTime?.toFixed(2)}</td>
-                    <td style={{ padding: 8, whiteSpace: 'nowrap' }}>₨ {item.castingAtTime?.toFixed(2)}</td>
+                    {canSeeOrderAdminFinancials ? (
+                      <td style={{ padding: 8, whiteSpace: 'nowrap' }}>₨ {item.castingAtTime?.toFixed(2)}</td>
+                    ) : null}
                     {hasOrderFinancialSnap && (
                       <>
                         <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{pk(item.grossAmount)}</td>
                         <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{pk(item.pharmacyDiscountAmount)}</td>
                         <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{pk(item.netAfterPharmacy)}</td>
-                        <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{pk(item.distributorCommissionAmount)}</td>
-                        <td style={{ padding: 8, whiteSpace: 'nowrap', minWidth: 112 }}>{pk(item.finalCompanyAmount)}</td>
+                        {canSeeOrderAdminFinancials ? (
+                          <>
+                            <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{pk(item.distributorCommissionAmount)}</td>
+                            <td style={{ padding: 8, whiteSpace: 'nowrap', minWidth: 112 }}>{pk(item.finalCompanyAmount)}</td>
+                          </>
+                        ) : null}
                       </>
                     )}
                   </tr>
@@ -594,11 +628,14 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                 <div key={d._id} className='mbe-3 pbe-3' style={{ borderBottom: '1px solid #eee' }}>
                   <Typography fontWeight={500}>{d.invoiceNumber}</Typography>
                   <Typography variant='body2'>
-                    {FIN_LABELS.netSalesCustomer}: {pk(d.pharmacyNetPayable ?? d.totalAmount)} · {FIN_LABELS.netSalesCompany}:{' '}
-                    {pk(d.companyShareTotal)}
-                    {canSeeOrderProfitLayer
-                      ? ` · ${FIN_LABELS.salesMarginCustomerBasis}: ${pk(d.totalProfit)}`
-                      : null}
+                    {FIN_LABELS.netSalesCustomer}: {pk(d.pharmacyNetPayable ?? d.totalAmount)}
+                    {canSeeOrderAdminFinancials ? (
+                      <>
+                        {' '}
+                        · {FIN_LABELS.netSalesCompany}: {pk(d.companyShareTotal)} · {FIN_LABELS.salesMarginCustomerBasis}:{' '}
+                        {pk(d.totalProfit)}
+                      </>
+                    ) : null}
                   </Typography>
                   <Typography variant='body2' color='text.secondary'>{new Date(d.deliveredAt).toLocaleString()} by {d.deliveredBy?.name}</Typography>
                   {d.invoiceNumber && (
