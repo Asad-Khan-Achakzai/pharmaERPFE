@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -17,7 +17,7 @@ import Stack from '@mui/material/Stack'
 import MenuItem from '@mui/material/MenuItem'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
-import { createColumnHelper, flexRender, getCoreRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
+import { createColumnHelper, flexRender, getCoreRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
 import type { ColumnDef } from '@tanstack/react-table'
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
@@ -136,6 +136,8 @@ const DoctorListPage = () => {
   const [viewItem, setViewItem] = useState<Doctor | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [assignTarget, setAssignTarget] = useState<Doctor | null>(null)
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
+  const [totalEntries, setTotalEntries] = useState(0)
 
   const isFormValid = form.name.trim() !== ''
 
@@ -157,11 +159,19 @@ const DoctorListPage = () => {
     if (urlWantsTeamScope && canSeeTeam) setScope('team')
   }, [urlWantsTeamScope, canSeeTeam])
 
+  /** New filters / search should reset to page 1 before fetch (avoid a stale-page request). */
+  useLayoutEffect(() => {
+    setPagination(p => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }))
+  }, [appliedFilters, debouncedSearch, scope, canSeeTeam, assignedRepIdFromUrl, underTerritoryIdFromUrl])
+
   const fetchData = useCallback(async () => {
     const seq = ++fetchSeq.current
     setLoading(true)
     try {
-      const params: Record<string, string> = { limit: '100' }
+      const params: Record<string, string> = {
+        page: String(pagination.pageIndex + 1),
+        limit: String(pagination.pageSize)
+      }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
       if (canSeeTeam && scope === 'team') params.scope = 'team'
       if (assignedRepIdFromUrl && /^[a-f0-9]{24}$/i.test(assignedRepIdFromUrl)) {
@@ -173,12 +183,23 @@ const DoctorListPage = () => {
       const docsRes = await doctorsService.list(params)
       if (seq !== fetchSeq.current) return
       setData(docsRes.data.data || [])
+      const pag = docsRes.data.pagination
+      setTotalEntries(typeof pag?.total === 'number' ? pag.total : 0)
     } catch (err) {
       if (seq === fetchSeq.current) showApiError(err, 'Failed to load data')
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch, scope, canSeeTeam, assignedRepIdFromUrl, underTerritoryIdFromUrl])
+  }, [
+    pagination.pageIndex,
+    pagination.pageSize,
+    appliedFilters,
+    debouncedSearch,
+    scope,
+    canSeeTeam,
+    assignedRepIdFromUrl,
+    underTerritoryIdFromUrl
+  ])
 
   useEffect(() => {
     void fetchData()
@@ -352,10 +373,12 @@ const DoctorListPage = () => {
   const table = useReactTable({
     data,
     columns,
+    manualPagination: true,
+    pageCount: Math.max(1, Math.ceil(totalEntries / pagination.pageSize)),
+    state: { pagination },
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel()
+    getSortedRowModel: getSortedRowModel()
   })
 
   const openFilterPopover = (e: MouseEvent<HTMLElement>) => setFilterAnchor(e.currentTarget)
@@ -457,7 +480,7 @@ const DoctorListPage = () => {
           </tbody>
         </table>
       </div>
-      <TablePaginationComponent table={table as any} />
+      <TablePaginationComponent table={table as any} serverPagination={{ total: totalEntries }} />
 
       <Dialog open={!!viewItem} onClose={() => setViewItem(null)} maxWidth='lg' fullWidth scroll='paper'>
         <DialogTitle>Doctor details</DialogTitle>
