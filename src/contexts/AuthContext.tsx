@@ -62,6 +62,9 @@ export interface User {
     mrepMultiTerritory?: boolean
     mrepOwnershipAudit?: boolean
   }
+  /** When set, another user may act on this user’s attendance approvals until the given time. */
+  attendanceApproveDelegateUserId?: string | null
+  attendanceApproveDelegateUntil?: string | null
 }
 
 interface AuthContextType {
@@ -110,7 +113,9 @@ function authUserEquivalent(a: User | null, b: User | null): boolean {
     idKey(a.activeCompanyId) === idKey(b.activeCompanyId) &&
     JSON.stringify(a.allowedCompanies || []) === JSON.stringify(b.allowedCompanies || []) &&
     JSON.stringify(a.territoryId ?? null) === JSON.stringify(b.territoryId ?? null) &&
-    JSON.stringify(a.coverageTerritoryIds ?? []) === JSON.stringify(b.coverageTerritoryIds ?? [])
+    JSON.stringify(a.coverageTerritoryIds ?? []) === JSON.stringify(b.coverageTerritoryIds ?? []) &&
+    String(a.attendanceApproveDelegateUserId ?? '') === String(b.attendanceApproveDelegateUserId ?? '') &&
+    String(a.attendanceApproveDelegateUntil ?? '') === String(b.attendanceApproveDelegateUntil ?? '')
   )
 }
 

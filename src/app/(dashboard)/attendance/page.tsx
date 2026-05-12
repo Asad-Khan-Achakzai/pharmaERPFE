@@ -1,5 +1,5 @@
-import AttendancePage from '@/views/attendance/AttendancePage'
+import AttendanceEntryRedirect from '@/views/attendance/AttendanceEntryRedirect'
 
 export default function Page() {
-  return <AttendancePage />
+  return <AttendanceEntryRedirect />
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, type MouseEvent } from 'react'
+import { memo, useEffect, useMemo, useState, type MouseEvent } from 'react'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
@@ -15,6 +15,7 @@ import TableCell from '@mui/material/TableCell'
 import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
+import TablePagination from '@mui/material/TablePagination'
 import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import MenuItem from '@mui/material/MenuItem'
@@ -29,6 +30,8 @@ const statusDisplay = (s: string) => {
   switch (s) {
     case 'PRESENT':
       return 'Present'
+    case 'LATE_CHECKIN_PENDING':
+      return 'Late check-in (pending)'
     case 'HALF_DAY':
       return 'Half-Day'
     case 'ABSENT':
@@ -44,11 +47,14 @@ const statusDisplay = (s: string) => {
 
 const statusChipColor = (s: string): 'success' | 'warning' | 'error' | 'default' | 'info' => {
   if (s === 'PRESENT') return 'success'
+  if (s === 'LATE_CHECKIN_PENDING') return 'warning'
   if (s === 'HALF_DAY') return 'info'
   if (s === 'LEAVE') return 'default'
   if (s === 'ABSENT' || s === 'NOT_MARKED') return 'error'
   return 'default'
 }
+
+const NO_SHIFT_FILTER = '__no_shift__'
 
 const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
   showCompanyAttendance,
@@ -68,7 +74,6 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
   setSortDir,
   filterStatus,
   setFilterStatus,
-  tableRows,
   adminAttendanceBusy,
   openStatusMenu,
   donutOptions,
@@ -94,7 +99,6 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
   setSortDir: (v: 'asc' | 'desc') => void
   filterStatus: string
   setFilterStatus: (v: string) => void
-  tableRows: TodayEmployee[]
   adminAttendanceBusy: boolean
   openStatusMenu: (e: MouseEvent<HTMLElement>, row: TodayEmployee) => void
   donutOptions: ApexOptions
@@ -104,7 +108,70 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
   /** When true, “My attendance” is rendered in the dashboard hero row; skip it here. */
   splitMyAttendance?: boolean
 }) {
+  const [shiftFilter, setShiftFilter] = useState('')
+  const [teamPage, setTeamPage] = useState(0)
+  const [teamRowsPerPage, setTeamRowsPerPage] = useState(10)
+
+  const employees = todayBoard?.employees ?? []
+
+  const scheduleFilterOptions = useMemo(() => {
+    const byId = new Map<string, string>()
+    for (const e of employees) {
+      const id = e.shiftId?.trim()
+      if (!id) continue
+      const label = (e.scheduleLabel || e.shiftName || 'Schedule').trim()
+      if (!byId.has(id)) byId.set(id, label)
+    }
+    return Array.from(byId.entries())
+      .map(([shiftId, label]) => ({ shiftId, label }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [employees])
+
+  const hasEmployeesWithoutSchedule = useMemo(
+    () => employees.some(e => !e.shiftId),
+    [employees]
+  )
+
+  const showShiftFilterUi =
+    scheduleFilterOptions.length > 0 || hasEmployeesWithoutSchedule
+
+  const filteredRows = useMemo(() => {
+    if (!employees.length) return []
+    let list = [...employees]
+    if (filterStatus) list = list.filter(e => e.status === filterStatus)
+    if (shiftFilter === NO_SHIFT_FILTER) {
+      list = list.filter(e => !e.shiftId)
+    } else if (shiftFilter) {
+      list = list.filter(e => e.shiftId === shiftFilter)
+    }
+    list.sort((a, b) => {
+      const dir = sortDir === 'asc' ? 1 : -1
+      if (sortBy === 'name') return dir * a.name.localeCompare(b.name)
+      return dir * a.status.localeCompare(b.status)
+    })
+    return list
+  }, [employees, filterStatus, shiftFilter, sortBy, sortDir])
+
+  useEffect(() => {
+    setTeamPage(0)
+  }, [filterStatus, sortBy, sortDir, shiftFilter])
+
+  useEffect(() => {
+    const maxPage = Math.max(0, Math.ceil(filteredRows.length / teamRowsPerPage) - 1)
+    if (teamPage > maxPage) setTeamPage(maxPage)
+  }, [filteredRows.length, teamRowsPerPage, teamPage])
+
+  const pagedRows = useMemo(() => {
+    const start = teamPage * teamRowsPerPage
+    return filteredRows.slice(start, start + teamRowsPerPage)
+  }, [filteredRows, teamPage, teamRowsPerPage])
+
   if (!showCompanyAttendance && !showMyAttendance) return null
+  const showScheduleCol = employees.some(
+    r => Boolean(r.scheduleLabel || r.shiftName)
+  )
+  const scheduleText = (r: TodayEmployee) =>
+    r.scheduleLabel || r.shiftName || '—'
   const content = (
     <Grid container spacing={3}>
         {showMyAttendance && !splitMyAttendance && (
@@ -192,12 +259,51 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
                         >
                           <MenuItem value=''>All</MenuItem>
                           <MenuItem value='PRESENT'>Present</MenuItem>
+                          <MenuItem value='LATE_CHECKIN_PENDING'>Late check-in (pending)</MenuItem>
                           <MenuItem value='HALF_DAY'>Half-Day</MenuItem>
                           <MenuItem value='ABSENT'>Absent</MenuItem>
                           <MenuItem value='LEAVE'>Leave</MenuItem>
                           <MenuItem value='NOT_MARKED'>Not marked</MenuItem>
                         </CustomTextField>
+                        {showShiftFilterUi ? (
+                          <CustomTextField
+                            select
+                            size='small'
+                            label='Schedule / shift'
+                            value={shiftFilter}
+                            onChange={e => setShiftFilter(e.target.value)}
+                            sx={{ minWidth: 200 }}
+                          >
+                            <MenuItem value=''>All schedules</MenuItem>
+                            {hasEmployeesWithoutSchedule ? (
+                              <MenuItem value={NO_SHIFT_FILTER}>No schedule assigned</MenuItem>
+                            ) : null}
+                            {scheduleFilterOptions.map(o => (
+                              <MenuItem key={o.shiftId} value={o.shiftId}>
+                                {o.label}
+                              </MenuItem>
+                            ))}
+                          </CustomTextField>
+                        ) : null}
+                        {(filterStatus || shiftFilter) && (
+                          <Button
+                            size='small'
+                            variant='text'
+                            onClick={() => {
+                              setFilterStatus('')
+                              setShiftFilter('')
+                            }}
+                          >
+                            Clear filters
+                          </Button>
+                        )}
                       </div>
+                      {employees.length > 0 && !showShiftFilterUi ? (
+                        <Typography variant='caption' color='text.secondary' display='block' className='mbe-3'>
+                          Schedules appear here when attendance policies and shifts are configured under{' '}
+                          <strong>Attendance → Settings</strong>.
+                        </Typography>
+                      ) : null}
                       <Box sx={{ display: { xs: 'none', md: 'block' } }}>
                         <TableContainer component={Paper} variant='outlined'>
                           <Table size='small'>
@@ -205,22 +311,28 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
                               <TableRow>
                                 <TableCell>Name</TableCell>
                                 <TableCell>Status</TableCell>
+                                {showScheduleCol ? <TableCell>Schedule</TableCell> : null}
                                 <TableCell align='right'>Check-in (PT)</TableCell>
                                 <TableCell align='right'>Check-out (PT)</TableCell>
                                 {isAdmin && <TableCell align='right'>Actions</TableCell>}
                               </TableRow>
                             </TableHead>
                             <TableBody>
-                              {tableRows.length === 0 ? (
+                              {filteredRows.length === 0 ? (
                                 <TableRow>
-                                  <TableCell colSpan={isAdmin ? 5 : 4} align='center'>
+                                  <TableCell
+                                    colSpan={
+                                      4 + (showScheduleCol ? 1 : 0) + (isAdmin ? 1 : 0)
+                                    }
+                                    align='center'
+                                  >
                                     <Typography color='text.secondary' variant='body2'>
                                       No rows match the current filters.
                                     </Typography>
                                   </TableCell>
                                 </TableRow>
                               ) : (
-                                tableRows.map(row => (
+                                pagedRows.map(row => (
                                   <TableRow
                                     key={row.employeeId}
                                     hover
@@ -237,6 +349,9 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
                                         color={statusChipColor(row.status)}
                                       />
                                     </TableCell>
+                                    {showScheduleCol ? (
+                                      <TableCell>{scheduleText(row)}</TableCell>
+                                    ) : null}
                                     <TableCell align='right'>
                                       {row.checkInTime ?? '—'}
                                     </TableCell>
@@ -262,13 +377,35 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
                             </TableBody>
                           </Table>
                         </TableContainer>
+                        <TablePagination
+                          component='div'
+                          count={filteredRows.length}
+                          page={teamPage}
+                          onPageChange={(_, p) => setTeamPage(p)}
+                          rowsPerPage={teamRowsPerPage}
+                          onRowsPerPageChange={e => {
+                            setTeamRowsPerPage(Number(e.target.value))
+                            setTeamPage(0)
+                          }}
+                          rowsPerPageOptions={[5, 10, 25, 50]}
+                          showFirstButton
+                          showLastButton
+                          labelDisplayedRows={({ from, to, count }) =>
+                            `${from}–${to} of ${count !== -1 ? count : `more than ${to}`}`
+                          }
+                        />
                       </Box>
                       <Box sx={{ display: { xs: 'block', md: 'none' } }}>
                         <MobileCardList
-                          items={tableRows.map(row => ({
+                          items={pagedRows.map(row => ({
                             id: row.employeeId,
                             title: row.name,
-                            subtitle: `In: ${row.checkInTime ?? '—'} · Out: ${row.checkOutTime ?? '—'}`,
+                            subtitle: [
+                              showScheduleCol ? `Schedule: ${scheduleText(row)}` : null,
+                              `In: ${row.checkInTime ?? '—'} · Out: ${row.checkOutTime ?? '—'}`
+                            ]
+                              .filter(Boolean)
+                              .join(' · '),
                             value: statusDisplay(row.status),
                             tone: statusChipColor(row.status),
                             action: isAdmin ? (
@@ -285,6 +422,23 @@ const DashboardAttendanceSection = memo(function DashboardAttendanceSection({
                             ) : undefined
                           }))}
                           emptyText='No rows match the current filters.'
+                        />
+                        <TablePagination
+                          component='div'
+                          count={filteredRows.length}
+                          page={teamPage}
+                          onPageChange={(_, p) => setTeamPage(p)}
+                          rowsPerPage={teamRowsPerPage}
+                          onRowsPerPageChange={e => {
+                            setTeamRowsPerPage(Number(e.target.value))
+                            setTeamPage(0)
+                          }}
+                          rowsPerPageOptions={[5, 10, 25]}
+                          showFirstButton
+                          showLastButton
+                          labelDisplayedRows={({ from, to, count }) =>
+                            `${from}–${to} of ${count !== -1 ? count : `more than ${to}`}`
+                          }
                         />
                       </Box>
                     </Grid>

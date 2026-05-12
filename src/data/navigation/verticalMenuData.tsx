@@ -131,7 +131,7 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
         children: [
           { label: 'Payroll Overview', href: '/payroll', permission: 'payroll.view' },
           { label: 'Salary Structure', href: '/salary-structure', permission: 'payroll.view' },
-          { label: 'Attendance', href: '/attendance', permission: 'attendance.view' }
+          { label: 'Attendance', href: '/attendance/me', permission: 'attendance.view' }
         ]
       },
       {

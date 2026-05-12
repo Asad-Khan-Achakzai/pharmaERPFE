@@ -19,7 +19,7 @@ export function QuickActionsWidget({ sx }: { sx?: SxProps<Theme> }) {
     const actionCatalog: QuickAction[] = [
       { key: 'orders', label: 'Orders', href: '/orders/list', icon: 'tabler-clipboard-list' },
       { key: 'visits', label: 'Visits', href: '/visits/today', icon: 'tabler-map-pin' },
-      { key: 'attendance', label: 'Attendance', href: '/attendance', icon: 'tabler-calendar-check' },
+      { key: 'attendance', label: 'Attendance', href: '/attendance/me', icon: 'tabler-calendar-check' },
       { key: 'targets', label: 'Targets', href: '/targets', icon: 'tabler-target' },
       { key: 'reports', label: 'Reports', href: '/reports', icon: 'tabler-chart-line' },
       { key: 'inventory', label: 'Inventory', href: '/inventory', icon: 'tabler-packages' },

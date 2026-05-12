@@ -1,11 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react'
+import Link from 'next/link'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 import Typography from '@mui/material/Typography'
+import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
+import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import Skeleton from '@mui/material/Skeleton'
 import Menu from '@mui/material/Menu'
@@ -35,6 +38,7 @@ import MyAttendanceCard from '@/views/dashboard/MyAttendanceCard'
 import DashboardChartsSection from '@/views/dashboard/DashboardChartsSection'
 import DashboardSupplierSection from '@/views/dashboard/DashboardSupplierSection'
 import DashboardAttendanceSection from '@/views/dashboard/DashboardAttendanceSection'
+import DashboardAttendanceActionCenter from '@/views/dashboard/DashboardAttendanceActionCenter'
 import DashboardQuickActions, { type QuickAction } from '@/views/dashboard/DashboardQuickActions'
 import RepExecutionSection from '@/views/dashboard/RepExecutionSection'
 import { TeamSummaryWidget } from '@/views/dashboard/dashboard/engine/widgets/TeamSummaryWidget'
@@ -86,9 +90,18 @@ const LegacyDashboardView = () => {
    */
   const attendanceScope = useMemo(() => {
     if (!user) return { team: false }
-    /** “Employees working today” is executive dashboard only; My attendance stays for everyone */
+    const canTeamData =
+      hasPermission('admin.access') ||
+      hasPermission('attendance.viewCompany') ||
+      hasPermission('attendance.viewTeam') ||
+      hasPermission('attendance.viewEscalations') ||
+      hasPermission('attendance.approve') ||
+      hasPermission('attendance.approve.direct') ||
+      hasPermission('attendance.approve.escalated')
+    const canSeeAttendanceShortcut =
+      hasPermission('attendance.view') || hasPermission('attendance.mark') || hasPermission('attendance.viewTeam')
     return {
-      team: hasPermission('admin.access') && hasPermission('attendance.view')
+      team: canTeamData && canSeeAttendanceShortcut
     }
   }, [user, hasPermission])
 
@@ -555,8 +568,13 @@ const LegacyDashboardView = () => {
   const handleCheckIn = async () => {
     setCheckingIn(true)
     try {
-      await attendanceService.checkIn()
-      showSuccess('Checked in')
+      const res = await attendanceService.checkIn()
+      const doc = res.data?.data as { lateCheckInApprovalStatus?: string } | undefined
+      if (doc?.lateCheckInApprovalStatus === 'PENDING') {
+        showSuccess('Check-in sent to your manager for approval')
+      } else {
+        showSuccess('Checked in')
+      }
       await loadAttendanceWidgets()
     } catch (err) {
       showApiError(err, 'Could not check in')
@@ -635,18 +653,6 @@ const LegacyDashboardView = () => {
       setAdminAttendanceBusy(false)
     }
   }
-
-  const tableRows = useMemo(() => {
-    if (!todayBoard?.employees?.length) return []
-    let list = [...todayBoard.employees]
-    if (filterStatus) list = list.filter(e => e.status === filterStatus)
-    list.sort((a, b) => {
-      const dir = sortDir === 'asc' ? 1 : -1
-      if (sortBy === 'name') return dir * a.name.localeCompare(b.name)
-      return dir * a.status.localeCompare(b.status)
-    })
-    return list
-  }, [todayBoard, sortBy, sortDir, filterStatus])
 
   const donutOptions: ApexOptions = useMemo(() => {
     const d = todayBoard?.distribution
@@ -752,7 +758,7 @@ const LegacyDashboardView = () => {
     const actionCatalog: QuickAction[] = [
       { key: 'orders', label: 'Orders', href: '/orders/list', icon: 'tabler-clipboard-list' },
       { key: 'visits', label: 'Visits', href: '/visits/today', icon: 'tabler-map-pin' },
-      { key: 'attendance', label: 'Attendance', href: '/attendance', icon: 'tabler-calendar-check' },
+      { key: 'attendance', label: 'Attendance', href: '/attendance/me', icon: 'tabler-calendar-check' },
       { key: 'targets', label: 'Targets', href: '/targets', icon: 'tabler-target' },
       { key: 'reports', label: 'Reports', href: '/reports', icon: 'tabler-chart-line' },
       { key: 'inventory', label: 'Inventory', href: '/inventory', icon: 'tabler-packages' },
@@ -795,15 +801,62 @@ const LegacyDashboardView = () => {
             highlight={welcomeHighlight}
           />
           {showMyAttendance ? (
-            <MyAttendanceCard
-              meTodayLoading={meTodayLoading}
-              meToday={meToday}
-              checkingIn={checkingIn}
-              checkingOut={checkingOut}
-              handleCheckIn={handleCheckIn}
-              handleCheckOut={handleCheckOut}
-              formatPstHm={formatPstHm}
-            />
+            <>
+              <MyAttendanceCard
+                meTodayLoading={meTodayLoading}
+                meToday={meToday}
+                checkingIn={checkingIn}
+                checkingOut={checkingOut}
+                handleCheckIn={handleCheckIn}
+                handleCheckOut={handleCheckOut}
+                formatPstHm={formatPstHm}
+              />
+              <Button component={Link} href='/attendance/me' size='small' variant='text' sx={{ alignSelf: 'flex-start', pl: 0.5 }}>
+                Open full day & history
+              </Button>
+            </>
+          ) : null}
+          <DashboardAttendanceActionCenter onAttendanceRefresh={() => void loadAttendanceWidgets()} />
+          {showMyAttendance &&
+          (hasPermission('attendance.viewTeam') ||
+            hasPermission('attendance.approve') ||
+            hasPermission('attendance.approve.direct') ||
+            hasPermission('attendance.approve.escalated') ||
+            hasPermission('admin.access')) ? (
+            <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
+              <CardContent sx={{ py: 2.5 }}>
+                <Typography variant='subtitle2' fontWeight={600}>
+                  Team attendance
+                </Typography>
+                <Typography variant='body2' color='text.secondary' sx={{ mb: 1.5, mt: 0.5 }}>
+                  Approvals, alerts, and who is present today.
+                </Typography>
+                {todayBoard?.summary ? (
+                  <Stack direction='row' flexWrap='wrap' gap={0.75} sx={{ mb: 1.5 }}>
+                    <Chip
+                      size='small'
+                      variant='tonal'
+                      label={`Present: ${todayBoard.summary.presentPayroll ?? todayBoard.summary.present ?? 0}`}
+                      color='success'
+                    />
+                    <Chip
+                      size='small'
+                      variant='outlined'
+                      color={(todayBoard.summary.pendingLateApproval ?? 0) > 0 ? 'warning' : 'default'}
+                      label={`Late pending: ${todayBoard.summary.pendingLateApproval ?? 0}`}
+                    />
+                    <Chip
+                      size='small'
+                      variant='outlined'
+                      label={`Open checkout: ${todayBoard.summary.missingCheckoutToday ?? 0}`}
+                    />
+                  </Stack>
+                ) : null}
+                <Button variant='tonal' component={Link} href='/attendance/team' size='small'>
+                  Open team attendance
+                </Button>
+              </CardContent>
+            </Card>
           ) : null}
         </Stack>
       </Grid>
@@ -902,7 +955,6 @@ const LegacyDashboardView = () => {
                 setSortDir={setSortDir}
                 filterStatus={filterStatus}
                 setFilterStatus={setFilterStatus}
-                tableRows={tableRows}
                 adminAttendanceBusy={adminAttendanceBusy}
                 openStatusMenu={openStatusMenu}
                 donutOptions={donutOptions}
@@ -934,7 +986,6 @@ const LegacyDashboardView = () => {
             setSortDir={setSortDir}
             filterStatus={filterStatus}
             setFilterStatus={setFilterStatus}
-            tableRows={tableRows}
             adminAttendanceBusy={adminAttendanceBusy}
             openStatusMenu={openStatusMenu}
             donutOptions={donutOptions}

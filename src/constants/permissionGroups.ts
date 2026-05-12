@@ -13,7 +13,11 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'weeklyPlans.approve': 'Approve or reject submitted weekly plans',
   'procurement.return': 'Record purchase returns against posted receipts',
   'procurement.grnReverse': 'Reverse a posted goods receipt (emergency / admin)',
-  'procurement.cancelPo': 'Cancel supplier orders that have no receipts'
+  'procurement.cancelPo': 'Cancel supplier orders that have no receipts',
+  'attendance.viewTeam': 'View team attendance reports and today board (with attendance.view)',
+  'attendance.approve': 'Approve attendance requests (covers direct and escalated inbox actions)',
+  'attendance.viewEscalations': "View today's attendance exception summaries (late / open checkout)",
+  'attendance.override': 'Mark absent or set today status without full administrator role'
 }
 
 export const PERMISSION_GROUPS: Record<string, string[]> = {
@@ -38,7 +42,19 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   ],
   expenses: ['expenses.view', 'expenses.create', 'expenses.edit', 'expenses.delete'],
   payroll: ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.pay'],
-  attendance: ['attendance.view', 'attendance.mark'],
+  attendance: [
+    'attendance.view',
+    'attendance.viewTeam',
+    'attendance.mark',
+    'attendance.request.create',
+    'attendance.approve',
+    'attendance.approve.direct',
+    'attendance.approve.escalated',
+    'attendance.viewEscalations',
+    'attendance.override',
+    'attendance.matrix.manage',
+    'attendance.governance.view'
+  ],
   reports: ['reports.view'],
   suppliers: ['suppliers.view', 'suppliers.manage'],
   procurement: [

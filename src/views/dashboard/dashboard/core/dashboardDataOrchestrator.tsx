@@ -92,7 +92,8 @@ export function DashboardV3DataProvider({
   const canWeekly = has('weeklyPlans.view')
   const canTargets = has('targets.view')
   /** Team “who’s in” — company admins with attendance visibility */
-  const canTeam = canSeeCompanyFinancials && has('attendance.view')
+  const canTeam =
+    canSeeCompanyFinancials && (has('attendance.view') || has('attendance.viewTeam'))
   /** Load “my today” for every signed-in user so the dashboard card can show read-only status without `attendance.mark`. */
   const canLoadMeToday = Boolean(user?._id)
   const canSup = canSeeCompanyFinancials && has('suppliers.view')

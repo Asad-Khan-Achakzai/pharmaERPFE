@@ -1,5 +1,8 @@
 'use client'
 
+import Link from 'next/link'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import { useCallback, useState } from 'react'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { attendanceService } from '@/services/attendance.service'
@@ -28,8 +31,13 @@ export function MyAttendanceWidget() {
   const handleCheckIn = async () => {
     setCheckingIn(true)
     try {
-      await attendanceService.checkIn()
-      showSuccess('Checked in')
+      const res = await attendanceService.checkIn()
+      const doc = res.data?.data as { lateCheckInApprovalStatus?: string } | undefined
+      if (doc?.lateCheckInApprovalStatus === 'PENDING') {
+        showSuccess('Check-in sent to your manager for approval')
+      } else {
+        showSuccess('Checked in')
+      }
       await refetch()
     } catch (err) {
       showApiError(err, 'Could not check in')
@@ -52,14 +60,19 @@ export function MyAttendanceWidget() {
   }
 
   return (
-    <MyAttendanceCard
-      meTodayLoading={d.meTodayLoading}
-      meToday={d.meToday}
-      checkingIn={checkingIn}
-      checkingOut={checkingOut}
-      handleCheckIn={handleCheckIn}
-      handleCheckOut={handleCheckOut}
-      formatPstHm={formatPstHm}
-    />
+    <Box>
+      <MyAttendanceCard
+        meTodayLoading={d.meTodayLoading}
+        meToday={d.meToday}
+        checkingIn={checkingIn}
+        checkingOut={checkingOut}
+        handleCheckIn={handleCheckIn}
+        handleCheckOut={handleCheckOut}
+        formatPstHm={formatPstHm}
+      />
+      <Button component={Link} href='/attendance/me' size='small' variant='text' sx={{ mt: 1, pl: 1 }}>
+        Open full workday & history
+      </Button>
+    </Box>
   )
 }

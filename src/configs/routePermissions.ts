@@ -21,6 +21,10 @@ export const routePermissions: Array<{ path: string; permission: string }> = [
   { path: '/weekly-plans', permission: 'weeklyPlans.view' },
   { path: '/expenses', permission: 'expenses.view' },
   { path: '/salary-structure', permission: 'payroll.view' },
+  /** Attendance sub-routes: see AuthGuard for `attendance.sub.*` resolution (must stay before `/attendance`). */
+  { path: '/attendance/admin', permission: 'attendance.sub.admin' },
+  { path: '/attendance/team', permission: 'attendance.sub.team' },
+  { path: '/attendance/me', permission: 'attendance.view' },
   { path: '/attendance', permission: 'attendance.view' },
   { path: '/payroll', permission: 'payroll.view' },
   { path: '/reports', permission: 'reports.view' },

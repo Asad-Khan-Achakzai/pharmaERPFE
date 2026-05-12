@@ -24,6 +24,38 @@ function userCanAccessRequiredPermission(
     if (user.userType === 'PLATFORM') return true
     return (user.permissions || []).includes(requiredPermission)
   }
+  if (requiredPermission === 'attendance.view') {
+    return (
+      hasPermission('attendance.view') ||
+      hasPermission('attendance.viewTeam') ||
+      hasPermission('attendance.mark') ||
+      hasPermission('attendance.request.create') ||
+      hasPermission('attendance.governance.view') ||
+      hasPermission('attendance.viewEscalations') ||
+      hasPermission('attendance.matrix.manage') ||
+      hasPermission('attendance.approve') ||
+      hasPermission('attendance.approve.direct') ||
+      hasPermission('attendance.approve.escalated')
+    )
+  }
+  if (requiredPermission === 'attendance.sub.admin') {
+    return (
+      hasPermission('admin.access') ||
+      hasPermission('attendance.governance.view') ||
+      hasPermission('attendance.matrix.manage')
+    )
+  }
+  if (requiredPermission === 'attendance.sub.team') {
+    return (
+      hasPermission('admin.access') ||
+      hasPermission('attendance.viewCompany') ||
+      hasPermission('attendance.viewTeam') ||
+      hasPermission('attendance.viewEscalations') ||
+      hasPermission('attendance.approve') ||
+      hasPermission('attendance.approve.direct') ||
+      hasPermission('attendance.approve.escalated')
+    )
+  }
   return hasPermission(requiredPermission)
 }
 

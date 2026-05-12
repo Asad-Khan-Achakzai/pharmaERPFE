@@ -843,7 +843,7 @@ const UserListPage = () => {
                 label='Employee code'
                 value={form.employeeCode}
                 onChange={e => setForm(p => ({ ...p, employeeCode: e.target.value }))}
-                helperText='Optional HR identifier (e.g. EMP-1023).'
+                helperText='Optional staff identifier (e.g. EMP-1023).'
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>

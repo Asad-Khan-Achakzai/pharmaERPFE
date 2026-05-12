@@ -214,7 +214,7 @@ export const WIDGET_REGISTRY: EngineWidgetDefinition[] = [
     component: AttendanceTeamWidget,
     permissions: [],
     gate: (h, ctx) =>
-      ctx.isFullDashboardUser && (h('attendance.view') || h('attendance.mark')),
+      ctx.isFullDashboardUser && (h('attendance.view') || h('attendance.viewTeam') || h('attendance.mark')),
     allowedModes: ['EXECUTION', 'MONITORING', 'HYBRID'],
     priority: 300,
     modeAxis: 'neutral',
