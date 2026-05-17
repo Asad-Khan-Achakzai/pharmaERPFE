@@ -36,9 +36,15 @@ type MrepRow = {
     unplannedRatio?: number | null
     visited?: number
   }
-  target?: { salesAchievementPercent?: number | null }
+  target?: {
+    salesTarget?: number | null
+    achievedSales?: number | null
+    salesAchievementPercent?: number | null
+  }
   attendanceScorePercent?: number | null
-  ordersInPeriod?: { orderCount?: number; grossRevenue?: number }
+  ordersInPeriod?: { orderCount?: number; returnedOrderCount?: number; grossRevenue?: number }
+  /** Same KPI as dashboard "Gross sales (TP)" for the month (delivery − return TP). */
+  totalGrossSalesTp?: number | null
 }
 
 const ymNow = () => {
@@ -131,7 +137,7 @@ const ManagerMrepPage = () => {
         <Card>
           <CardHeader
             title='Field performance'
-            subheader='Coverage % uses VisitLog counts vs monthly targets (coverageActualV1). Route missed / unplanned % come from weekly plan items.'
+            subheader='Sales vs target uses net delivered sales (pharmacy invoice amounts on deliver, net of returns)—same as the Targets page. Gross sales (TP) is trade-price (TP) volume from deliveries minus returns in the month; it is not used for target %. Revenue = order-date sum of frozen order company revenue (not delivery-month cash).'
           />
           <CardContent>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }} alignItems={{ sm: 'center' }}>
@@ -175,16 +181,18 @@ const ManagerMrepPage = () => {
                       <TableCell align='right'>In-sequence</TableCell>
                       <TableCell align='right'>Missed (plan)</TableCell>
                       <TableCell align='right'>Unplanned %</TableCell>
-                      <TableCell align='right'>Sales target</TableCell>
+                      <TableCell align='right'>Sales vs target</TableCell>
                       <TableCell align='right'>Attendance</TableCell>
-                      <TableCell align='right'>Orders</TableCell>
+                      <TableCell align='right'>Total orders</TableCell>
+                      <TableCell align='right'>Returned orders</TableCell>
                       <TableCell align='right'>Revenue</TableCell>
+                      <TableCell align='right'>Gross sales (TP)</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {rows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={10}>
+                        <TableCell colSpan={12}>
                           <Typography variant='body2' color='text.secondary'>
                             No rows for this month or your visibility scope.
                           </Typography>
@@ -206,11 +214,24 @@ const ManagerMrepPage = () => {
                           <TableCell align='right'>{pct(r.planExecution?.adherencePercent)}</TableCell>
                           <TableCell align='right'>{r.planExecution?.missed ?? '—'}</TableCell>
                           <TableCell align='right'>{pct(r.planExecution?.unplannedRatio)}</TableCell>
-                          <TableCell align='right'>{pct(r.target?.salesAchievementPercent)}</TableCell>
+                          <TableCell align='right'>
+                            <Typography variant='body2' component='span' display='block'>
+                              {pct(r.target?.salesAchievementPercent)}
+                            </Typography>
+                            <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.25 }}>
+                              {r.target?.achievedSales != null || r.target?.salesTarget != null
+                                ? `${formatPKR(Number(r.target?.achievedSales ?? 0))} / ${formatPKR(Number(r.target?.salesTarget ?? 0))}`
+                                : '—'}
+                            </Typography>
+                          </TableCell>
                           <TableCell align='right'>{pct(r.attendanceScorePercent)}</TableCell>
                           <TableCell align='right'>{r.ordersInPeriod?.orderCount ?? 0}</TableCell>
+                          <TableCell align='right'>{r.ordersInPeriod?.returnedOrderCount ?? 0}</TableCell>
                           <TableCell align='right'>
                             {formatPKR(Number(r.ordersInPeriod?.grossRevenue || 0))}
+                          </TableCell>
+                          <TableCell align='right'>
+                            {formatPKR(Number(r.totalGrossSalesTp ?? 0))}
                           </TableCell>
                         </TableRow>
                       ))

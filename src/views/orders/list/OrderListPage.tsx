@@ -47,6 +47,7 @@ import {
 } from '@/components/standard-list-toolbar'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { pharmaciesService } from '@/services/pharmacies.service'
+import { usersService } from '@/services/users.service'
 
 type Order = {
   _id: string
@@ -102,6 +103,7 @@ const OrderListPage = () => {
   const [cancelling, setCancelling] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [pharmacyLookup, setPharmacyLookup] = useState<{ _id: string; name: string } | null>(null)
+  const [medicalRepLookup, setMedicalRepLookup] = useState<{ _id: string; name: string } | null>(null)
 
   const patchOrderListQuery = useCallback(
     (mutate: (p: URLSearchParams) => void) => {
@@ -124,13 +126,26 @@ const OrderListPage = () => {
     [patchOrderListQuery]
   )
 
+  const setMedicalRepFilter = useCallback(
+    (row: { _id: string; name: string } | null) => {
+      patchOrderListQuery(p => {
+        if (row?._id) p.set('medicalRepId', String(row._id))
+        else p.delete('medicalRepId')
+      })
+      setMedicalRepLookup(row)
+    },
+    [patchOrderListQuery]
+  )
+
   const clearStatusAndPharmacyFromUrl = useCallback(() => {
     setStatusFilter('')
     patchOrderListQuery(p => {
       p.delete('status')
       p.delete('pharmacyId')
+      p.delete('medicalRepId')
     })
     setPharmacyLookup(null)
+    setMedicalRepLookup(null)
   }, [patchOrderListQuery])
 
   const setStatusFilterAndUrl = useCallback(
@@ -170,11 +185,34 @@ const OrderListPage = () => {
     }
   }, [pharmacyIdFromUrl])
 
+  useEffect(() => {
+    const mid = medicalRepIdFromUrl
+    if (!mid || !/^[a-f0-9]{24}$/i.test(mid)) {
+      setMedicalRepLookup(null)
+      return
+    }
+    let cancel = false
+    void (async () => {
+      try {
+        const res = await usersService.getById(mid)
+        const payload = res.data as { data?: { _id?: string; name?: string } }
+        const doc = payload?.data
+        if (!cancel && doc?._id) setMedicalRepLookup({ _id: String(doc._id), name: doc.name ?? 'User' })
+      } catch {
+        if (!cancel) setMedicalRepLookup(null)
+      }
+    })()
+    return () => {
+      cancel = true
+    }
+  }, [medicalRepIdFromUrl])
+
   const filterOpen = Boolean(filterAnchor)
   const activeFilterCount =
     countDateUserFilters(appliedFilters) +
     (statusFilter !== '' ? 1 : 0) +
-    (pharmacyIdFromUrl && /^[a-f0-9]{24}$/i.test(pharmacyIdFromUrl) ? 1 : 0)
+    (pharmacyIdFromUrl && /^[a-f0-9]{24}$/i.test(pharmacyIdFromUrl) ? 1 : 0) +
+    (medicalRepIdFromUrl && /^[a-f0-9]{24}$/i.test(medicalRepIdFromUrl) ? 1 : 0)
 
   const fetchOrders = useCallback(async () => {
     const seq = ++fetchSeq.current
@@ -390,6 +428,35 @@ const OrderListPage = () => {
               <Typography
                 variant='overline'
                 sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: '0.08em', display: 'block', mb: 1 }}
+              >
+                Medical rep
+              </Typography>
+              <LookupAutocomplete
+                fullWidth
+                value={medicalRepLookup}
+                onChange={v =>
+                  setMedicalRepFilter(
+                    v && typeof v === 'object' && '_id' in v ? { _id: String(v._id), name: String(v.name ?? '') } : null
+                  )
+                }
+                fetchOptions={search =>
+                  usersService.assignable({ limit: 25, ...(search ? { search } : {}) }).then(r => r.data.data || [])
+                }
+                label='Filter by assigned rep'
+                placeholder='Search by name or email…'
+                helperText='Same as linking with ?medicalRepId=. Only active tenant users appear in search.'
+                fetchErrorMessage='Failed to load users'
+              />
+              <Typography
+                variant='overline'
+                sx={{
+                  color: 'text.secondary',
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  display: 'block',
+                  mb: 1,
+                  mt: 2
+                }}
               >
                 Pharmacy
               </Typography>

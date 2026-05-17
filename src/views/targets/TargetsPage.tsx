@@ -8,6 +8,18 @@ import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
+import Drawer from '@mui/material/Drawer'
+import Box from '@mui/material/Box'
+import Chip from '@mui/material/Chip'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableContainer from '@mui/material/TableContainer'
+import TableHead from '@mui/material/TableHead'
+import TableRow from '@mui/material/TableRow'
+import Paper from '@mui/material/Paper'
+import Skeleton from '@mui/material/Skeleton'
+import { alpha, useTheme } from '@mui/material/styles'
 import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
 import MenuItem from '@mui/material/MenuItem'
@@ -39,6 +51,20 @@ import {
 } from '@/components/standard-list-toolbar'
 
 type Target = { _id: string; medicalRepId: any; month: string; salesTarget: number; achievedSales: number; packsTarget: number; achievedPacks: number }
+
+type PackBreakdownPayload = {
+  month: string
+  medicalRepId: string
+  totalNetPacks: number
+  rows: Array<{
+    productId: string
+    productName: string
+    composition?: string
+    deliveredQuantity: number
+    returnedQuantity: number
+    netQuantity: number
+  }>
+}
 const columnHelper = createColumnHelper<Target>()
 
 const parseYyyyMm = (s: string): Date | null => {
@@ -53,6 +79,7 @@ const formatYyyyMm = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
 const TargetsPage = () => {
+  const theme = useTheme()
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('targets.create')
   const canEdit = hasPermission('targets.edit')
@@ -71,6 +98,45 @@ const TargetsPage = () => {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  const [packsDrawerOpen, setPacksDrawerOpen] = useState(false)
+  const [packsDrawerRow, setPacksDrawerRow] = useState<Target | null>(null)
+  const [packsBreakdown, setPacksBreakdown] = useState<PackBreakdownPayload | null>(null)
+  const [packsBreakdownLoading, setPacksBreakdownLoading] = useState(false)
+
+  const resolveRepId = useCallback((row: Target) => {
+    return typeof row.medicalRepId === 'object' && row.medicalRepId?._id
+      ? String(row.medicalRepId._id)
+      : String(row.medicalRepId ?? '')
+  }, [])
+
+  const openPacksBreakdown = useCallback(
+    async (row: Target) => {
+      const medicalRepId = resolveRepId(row)
+      if (!medicalRepId) return
+      setPacksDrawerRow(row)
+      setPacksBreakdown(null)
+      setPacksDrawerOpen(true)
+      setPacksBreakdownLoading(true)
+      try {
+        const res = await targetsService.packsBreakdown({ medicalRepId, month: row.month })
+        setPacksBreakdown((res as any)?.data?.data ?? null)
+      } catch (err) {
+        showApiError(err, 'Could not load pack breakdown')
+        setPacksDrawerOpen(false)
+        setPacksDrawerRow(null)
+      } finally {
+        setPacksBreakdownLoading(false)
+      }
+    },
+    [resolveRepId]
+  )
+
+  const closePacksDrawer = useCallback(() => {
+    setPacksDrawerOpen(false)
+    setPacksDrawerRow(null)
+    setPacksBreakdown(null)
+  }, [])
 
   const hasAtLeastOneTarget = form.salesTarget > 0 || form.packsTarget > 0
   const isFormValid = form.medicalRepId !== '' && form.month.trim() !== '' && hasAtLeastOneTarget
@@ -202,12 +268,34 @@ const TargetsPage = () => {
               ? Math.min((row.original.achievedPacks / row.original.packsTarget) * 100, 100)
               : 0
           return (
-            <div>
-              <LinearProgress variant='determinate' value={pct} color='secondary' />
-              <Typography variant='caption'>
-                {row.original.achievedPacks} / {row.original.packsTarget}
-              </Typography>
-            </div>
+            <Stack direction='row' spacing={1} alignItems='center' sx={{ minWidth: 0 }}>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <LinearProgress variant='determinate' value={pct} color='secondary' />
+                <Typography variant='caption' component='div' sx={{ mt: 0.5, display: 'block' }}>
+                  {row.original.achievedPacks} / {row.original.packsTarget}
+                </Typography>
+              </Box>
+              <Tooltip title='Packs by product'>
+                <IconButton
+                  size='small'
+                  color='secondary'
+                  onClick={() => void openPacksBreakdown(row.original)}
+                  aria-label='View packs by product'
+                  sx={theme => ({
+                    border: 1,
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                    flexShrink: 0,
+                    '&:hover': {
+                      borderColor: 'secondary.main',
+                      bgcolor: alpha(theme.palette.secondary.main, 0.08)
+                    }
+                  })}
+                >
+                  <i className='tabler-packages' style={{ fontSize: '1.15rem' }} />
+                </IconButton>
+              </Tooltip>
+            </Stack>
           )
         }
       })
@@ -235,7 +323,7 @@ const TargetsPage = () => {
       )
     }
     return defs
-  }, [canEdit, openEdit, confirmDelete])
+  }, [canEdit, openEdit, confirmDelete, openPacksBreakdown])
 
   const table = useReactTable({ data, columns, getCoreRowModel: getCoreRowModel(), getPaginationRowModel: getPaginationRowModel() })
 
@@ -395,6 +483,171 @@ const TargetsPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Drawer
+        anchor='right'
+        open={packsDrawerOpen}
+        onClose={closePacksDrawer}
+        PaperProps={{
+          sx: {
+            width: { xs: '100%', sm: 520, md: 560 },
+            maxWidth: '100vw',
+            borderLeft: '1px solid',
+            borderColor: 'divider',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            overflow: 'hidden'
+          }
+        }}
+      >
+        <Box
+          sx={{
+            flexShrink: 0,
+            px: 3,
+            py: 2.5,
+            bgcolor: 'background.paper',
+            borderBottom: 1,
+            borderColor: 'divider',
+            boxShadow: 1
+          }}
+        >
+          <Stack direction='row' alignItems='flex-start' justifyContent='space-between' spacing={2}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant='h6' fontWeight={600} sx={{ lineHeight: 1.25 }}>
+                Pack breakdown
+              </Typography>
+              <Typography variant='body2' color='text.secondary' sx={{ mt: 0.75 }}>
+                {packsDrawerRow?.medicalRepId?.name ?? 'Rep'} · {packsDrawerRow?.month ?? ''}
+              </Typography>
+              <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 1, maxWidth: 440 }}>
+                Physical packs from deliveries in this month minus returns in this month (aligned with progress totals).
+              </Typography>
+            </Box>
+            <IconButton size='small' onClick={closePacksDrawer} aria-label='Close'>
+              <i className='tabler-x' />
+            </IconButton>
+          </Stack>
+        </Box>
+
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflow: 'auto',
+            p: 3,
+            pt: 2,
+            WebkitOverflowScrolling: 'touch'
+          }}
+        >
+          {packsBreakdownLoading && (
+            <Stack spacing={1}>
+              {[1, 2, 3, 4, 5].map(i => (
+                <Skeleton key={i} variant='rounded' height={40} sx={{ borderRadius: 1 }} />
+              ))}
+            </Stack>
+          )}
+
+          {!packsBreakdownLoading && packsBreakdown && packsDrawerRow && (
+            <>
+              <Stack direction='row' flexWrap='wrap' gap={1} sx={{ mb: 2 }}>
+                <Chip
+                  label={`Net from breakdown: ${packsBreakdown.totalNetPacks}`}
+                  color='secondary'
+                  variant='outlined'
+                  size='small'
+                  sx={{ fontVariantNumeric: 'tabular-nums' }}
+                />
+                <Chip
+                  label={`On target row: ${packsDrawerRow.achievedPacks}`}
+                  variant='outlined'
+                  size='small'
+                  sx={{ fontVariantNumeric: 'tabular-nums' }}
+                />
+                {packsBreakdown.totalNetPacks !== packsDrawerRow.achievedPacks && (
+                  <Chip label='Differs from stored total — re-save or sync may be needed' color='warning' size='small' variant='outlined' />
+                )}
+              </Stack>
+
+              {packsBreakdown.rows.length === 0 ? (
+                <Paper
+                  variant='outlined'
+                  sx={{
+                    p: 4,
+                    textAlign: 'center',
+                    bgcolor: theme => alpha(theme.palette.action.hover, 0.5),
+                    borderStyle: 'dashed'
+                  }}
+                >
+                  <i className='tabler-package-off' style={{ fontSize: '2.5rem', opacity: 0.35 }} />
+                  <Typography color='text.secondary' sx={{ mt: 2 }}>
+                    No delivery or return lines in this month for this rep.
+                  </Typography>
+                </Paper>
+              ) : (
+                <TableContainer
+                  component={Paper}
+                  variant='outlined'
+                  sx={{
+                    borderRadius: 2,
+                    boxShadow: 'none',
+                    '& .MuiTableCell-head': {
+                      bgcolor: 'background.paper',
+                      fontWeight: 600,
+                      backgroundImage: 'none',
+                      boxShadow: t => `inset 0 -1px 0 ${t.palette.divider}`
+                    }
+                  }}
+                >
+                  <Table size='small' stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Product</TableCell>
+                        <TableCell align='right'>Delivered</TableCell>
+                        <TableCell align='right'>Returned</TableCell>
+                        <TableCell align='right'>Net</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {packsBreakdown.rows.map(r => (
+                        <TableRow key={r.productId} hover sx={{ '& td': { fontVariantNumeric: 'tabular-nums' } }}>
+                          <TableCell>
+                            <Typography fontWeight={500} variant='body2'>
+                              {r.productName}
+                            </Typography>
+                            {r.composition ? (
+                              <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.25 }}>
+                                {r.composition}
+                              </Typography>
+                            ) : null}
+                          </TableCell>
+                          <TableCell align='right'>{r.deliveredQuantity}</TableCell>
+                          <TableCell align='right'>{r.returnedQuantity}</TableCell>
+                          <TableCell align='right'>
+                            <Typography fontWeight={600} color={r.netQuantity >= 0 ? 'text.primary' : 'error.main'}>
+                              {r.netQuantity}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow sx={{ '& td': { fontWeight: 700, bgcolor: alpha(theme.palette.secondary.main, 0.06), fontVariantNumeric: 'tabular-nums' } }}>
+                        <TableCell>Total</TableCell>
+                        <TableCell align='right'>
+                          {packsBreakdown.rows.reduce((s, x) => s + x.deliveredQuantity, 0)}
+                        </TableCell>
+                        <TableCell align='right'>
+                          {packsBreakdown.rows.reduce((s, x) => s + x.returnedQuantity, 0)}
+                        </TableCell>
+                        <TableCell align='right'>{packsBreakdown.totalNetPacks}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </>
+          )}
+        </Box>
+      </Drawer>
     </Card>
   )
 }
