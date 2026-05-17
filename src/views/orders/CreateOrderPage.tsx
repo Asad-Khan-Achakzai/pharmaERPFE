@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
+import { DoctorLookupAutocomplete, type DoctorLookupOption } from '@/components/lookup/DoctorLookupAutocomplete'
 import { useAuth } from '@/contexts/AuthContext'
 import { ordersService } from '@/services/orders.service'
 import { usersService } from '@/services/users.service'
@@ -51,7 +52,7 @@ const CreateOrderPage = () => {
   const { user } = useAuth()
   const [selectedPharmacy, setSelectedPharmacy] = useState<any | null>(null)
   const [selectedDistributor, setSelectedDistributor] = useState<any | null>(null)
-  const [selectedDoctor, setSelectedDoctor] = useState<any | null>(null)
+  const [selectedDoctor, setSelectedDoctor] = useState<DoctorLookupOption | null>(null)
   const [selectedRep, setSelectedRep] = useState<RepOption | null>(null)
   const [productCatalog, setProductCatalog] = useState<any[]>([])
   const [notes, setNotes] = useState('')
@@ -96,7 +97,7 @@ const CreateOrderPage = () => {
           (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
         )
         if (cancelled) return
-        setSelectedDoctor((prev: any | null) => {
+        setSelectedDoctor((prev: DoctorLookupOption | null) => {
           const ids = new Set(list.map((d: any) => String(d._id)))
           const prevId = prev ? String(prev._id) : ''
           if (pharmacyDoctorGateRef.current === 'initial') {
@@ -252,16 +253,10 @@ const CreateOrderPage = () => {
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <LookupAutocomplete
+            <DoctorLookupAutocomplete
               value={selectedDoctor}
               onChange={setSelectedDoctor}
-              fetchOptions={search =>
-                doctorsService
-                  .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
-                  .then(r => r.data.data || [])
-              }
               label='Doctor (optional)'
-              placeholder='Type to search'
               disabled={!selectedPharmacy}
               helperText={
                 selectedPharmacy

@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
+import type { HTMLAttributes } from 'react'
 import CircularProgress from '@mui/material/CircularProgress'
 import type { TextFieldProps } from '@mui/material/TextField'
+import type { AutocompleteRenderOptionState } from '@mui/material/Autocomplete'
 import CustomAutocomplete from '@core/components/mui/Autocomplete'
 import CustomTextField from '@core/components/mui/TextField'
 import { showApiError } from '@/utils/apiErrors'
@@ -24,6 +26,11 @@ export type LookupAutocompleteProps<T extends LookupAutocompleteBase> = {
   getOptionKey?: (option: T) => string
   debounceMs?: number
   textFieldProps?: Partial<TextFieldProps>
+  renderOption?: (
+    props: HTMLAttributes<HTMLLIElement>,
+    option: T,
+    state: AutocompleteRenderOptionState
+  ) => ReactNode
 }
 
 const loadingPopupIcon = (
@@ -52,7 +59,8 @@ export function LookupAutocomplete<T extends LookupAutocompleteBase>({
   getOptionLabel = (o: T) => (o as { name?: string }).name ?? '',
   getOptionKey = (o: T) => String(o?._id ?? ''),
   debounceMs = 350,
-  textFieldProps
+  textFieldProps,
+  renderOption
 }: LookupAutocompleteProps<T>) {
   const [options, setOptions] = useState<T[]>([])
   const [loading, setLoading] = useState(false)
@@ -112,6 +120,7 @@ export function LookupAutocomplete<T extends LookupAutocompleteBase>({
       }}
       filterOptions={opts => opts}
       getOptionLabel={o => (o ? getOptionLabel(o) : '')}
+      renderOption={renderOption}
       isOptionEqualToValue={(a, b) => String(a?._id) === String(b?._id)}
       popupIcon={loading ? loadingPopupIcon : undefined}
       renderInput={params => (

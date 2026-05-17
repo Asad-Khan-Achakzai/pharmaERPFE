@@ -31,12 +31,15 @@ import { planItemsService } from '@/services/planItems.service'
 import WeeklyPlanWeekBoard from '@/views/weeklyPlans/WeeklyPlanWeekBoard'
 import tableStyles from '@core/styles/table.module.css'
 import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
-
-type DoctorOption = { _id: string; name?: string }
+import {
+  type DoctorLookupOption,
+  doctorLookupOptionLabel,
+  renderDoctorLookupOption
+} from '@/components/lookup/doctorLookupDisplay'
 
 type DayPlan = {
   date: string
-  selectedDoctors: DoctorOption[]
+  selectedDoctors: DoctorLookupOption[]
   doctorNotes: string
   plannedTime: string
   otherTasks: { title: string; notes: string }[]
@@ -72,9 +75,9 @@ function enumerateWeekYmd(weekStart: string, weekEnd: string): string[] {
   return days
 }
 
-function dedupeDoctors(docs: DoctorOption[]): DoctorOption[] {
+function dedupeDoctors(docs: DoctorLookupOption[]): DoctorLookupOption[] {
   const seen = new Set<string>()
-  const out: DoctorOption[] = []
+  const out: DoctorLookupOption[] = []
   for (const d of docs) {
     const id = String(d._id)
     if (seen.has(id)) continue
@@ -93,14 +96,14 @@ function DoctorMultiSelectField({
   helperText,
   textFieldProps
 }: {
-  value: DoctorOption[]
-  onChange: (next: DoctorOption[]) => void
+  value: DoctorLookupOption[]
+  onChange: (next: DoctorLookupOption[]) => void
   disabled?: boolean
   helperText?: string
   textFieldProps?: Partial<TextFieldProps>
 }) {
   const [listOpen, setListOpen] = useState(false)
-  const [options, setOptions] = useState<DoctorOption[]>([])
+  const [options, setOptions] = useState<DoctorLookupOption[]>([])
   const [loading, setLoading] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -128,7 +131,7 @@ function DoctorMultiSelectField({
       try {
         const rows = await fetchRef
           .current({ limit: 25, isActive: 'true', ...(debouncedSearch ? { search: debouncedSearch } : {}) })
-          .then(r => r.data.data || [])
+          .then(r => (r.data.data || []) as DoctorLookupOption[])
         if (!cancelled) setOptions(rows)
       } catch {
         if (!cancelled) setOptions([])
@@ -142,15 +145,18 @@ function DoctorMultiSelectField({
   }, [listOpen, debouncedSearch])
 
   const mergedOptions = useMemo(() => {
-    const byId = new Map<string, DoctorOption>()
+    const byId = new Map<string, DoctorLookupOption>()
     for (const o of [...value, ...options]) {
-      if (o?._id) byId.set(String(o._id), { _id: String(o._id), name: o.name })
+      if (!o?._id) continue
+      const id = String(o._id)
+      const prev = byId.get(id)
+      byId.set(id, { ...prev, ...o, _id: id })
     }
     return [...byId.values()]
   }, [value, options])
 
   return (
-    <CustomAutocomplete<DoctorOption, true, false, false>
+    <CustomAutocomplete<DoctorLookupOption, true, false, false>
       multiple
       disabled={disabled}
       onOpen={() => setListOpen(true)}
@@ -159,7 +165,8 @@ function DoctorMultiSelectField({
       value={value}
       loading={loading}
       filterOptions={x => x}
-      getOptionLabel={o => o?.name ?? ''}
+      getOptionLabel={doctorLookupOptionLabel}
+      renderOption={renderDoctorLookupOption}
       isOptionEqualToValue={(a, b) => String(a?._id) === String(b?._id)}
       onChange={(_e, next) => onChange(dedupeDoctors(next))}
       inputValue={inputValue}

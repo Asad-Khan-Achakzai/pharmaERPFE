@@ -33,9 +33,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import CustomTextField from '@core/components/mui/TextField'
 import { planItemsService } from '@/services/planItems.service'
 import { visitsService } from '@/services/visits.service'
-import { doctorsService } from '@/services/doctors.service'
 import { productsService } from '@/services/products.service'
-import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
+import { DoctorLookupAutocomplete, type DoctorLookupOption } from '@/components/lookup/DoctorLookupAutocomplete'
 import {
   getNextPlanItemId,
   parseTodayExecutionResponse,
@@ -83,7 +82,7 @@ const TodayVisitsPage = () => {
   const [outOfOrderReason, setOutOfOrderReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [unplannedDoctor, setUnplannedDoctor] = useState('')
-  const [selectedUnplannedDoctor, setSelectedUnplannedDoctor] = useState<any | null>(null)
+  const [selectedUnplannedDoctor, setSelectedUnplannedDoctor] = useState<DoctorLookupOption | null>(null)
   const [unplannedReason, setUnplannedReason] = useState<string>('EMERGENCY')
   const [unplannedNotes, setUnplannedNotes] = useState('')
   const [unplannedOrder, setUnplannedOrder] = useState(false)
@@ -520,19 +519,13 @@ const TodayVisitsPage = () => {
           </IconButton>
         </DialogTitle>
         <DialogContent className='flex flex-col gap-3 pbs-4'>
-          <LookupAutocomplete
+          <DoctorLookupAutocomplete
             value={selectedUnplannedDoctor}
             onChange={v => {
               setSelectedUnplannedDoctor(v)
               setUnplannedDoctor(v ? String(v._id) : '')
             }}
-            fetchOptions={search =>
-              doctorsService
-                .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
-                .then(r => r.data.data || [])
-            }
             label='Doctor'
-            placeholder='Type to search'
             required
             fetchErrorMessage='Failed to load doctors'
           />

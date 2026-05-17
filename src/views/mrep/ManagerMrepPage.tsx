@@ -15,6 +15,7 @@ import TableCell from '@mui/material/TableCell'
 import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
+import TableFooter from '@mui/material/TableFooter'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Skeleton from '@mui/material/Skeleton'
@@ -56,6 +57,9 @@ const pct = (v: number | null | undefined) => (v == null || Number.isNaN(Number(
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+
+const mean = (values: number[]) =>
+  values.length ? values.reduce((a, b) => a + b, 0) / values.length : null
 
 const ManagerMrepPage = () => {
   const searchParams = useSearchParams()
@@ -120,6 +124,57 @@ const ManagerMrepPage = () => {
   useEffect(() => {
     void load()
   }, [load])
+
+  const totals = useMemo(() => {
+    if (!rows.length) return null
+    const cov: number[] = []
+    const visitComp: number[] = []
+    const adherence: number[] = []
+    const unplanned: number[] = []
+    const attendance: number[] = []
+    let missed = 0
+    let orderCount = 0
+    let returnedOrderCount = 0
+    let grossRevenue = 0
+    let grossSalesTp = 0
+    let achievedSales = 0
+    let salesTarget = 0
+    for (const r of rows) {
+      missed += r.planExecution?.missed ?? 0
+      orderCount += r.ordersInPeriod?.orderCount ?? 0
+      returnedOrderCount += r.ordersInPeriod?.returnedOrderCount ?? 0
+      grossRevenue += Number(r.ordersInPeriod?.grossRevenue || 0)
+      grossSalesTp += Number(r.totalGrossSalesTp ?? 0)
+      achievedSales += Number(r.target?.achievedSales ?? 0)
+      salesTarget += Number(r.target?.salesTarget ?? 0)
+      const c = r.coverage?.coveragePercent
+      if (c != null && !Number.isNaN(Number(c))) cov.push(Number(c))
+      const vc = r.planExecution?.visitCompletionPercent
+      if (vc != null && !Number.isNaN(Number(vc))) visitComp.push(Number(vc))
+      const ad = r.planExecution?.adherencePercent
+      if (ad != null && !Number.isNaN(Number(ad))) adherence.push(Number(ad))
+      const up = r.planExecution?.unplannedRatio
+      if (up != null && !Number.isNaN(Number(up))) unplanned.push(Number(up))
+      const att = r.attendanceScorePercent
+      if (att != null && !Number.isNaN(Number(att))) attendance.push(Number(att))
+    }
+    const salesAchievementPercent = salesTarget > 0 ? (achievedSales / salesTarget) * 100 : null
+    return {
+      coveragePercent: mean(cov),
+      visitCompletionPercent: mean(visitComp),
+      adherencePercent: mean(adherence),
+      missed,
+      unplannedRatio: mean(unplanned),
+      achievedSales,
+      salesTarget,
+      salesAchievementPercent,
+      attendanceScorePercent: mean(attendance),
+      orderCount,
+      returnedOrderCount,
+      grossRevenue,
+      grossSalesTp
+    }
+  }, [rows])
 
   if (!canSee) {
     return (
@@ -237,6 +292,41 @@ const ManagerMrepPage = () => {
                       ))
                     )}
                   </TableBody>
+                  {totals && rows.length > 0 ? (
+                    <TableFooter>
+                      <TableRow
+                        sx={{
+                          '& td': {
+                            fontWeight: 700,
+                            bgcolor: 'action.hover',
+                            borderTop: theme => `2px solid ${theme.palette.divider}`
+                          }
+                        }}
+                      >
+                        <TableCell>Total / average</TableCell>
+                        <TableCell align='right'>{pct(totals.coveragePercent)}</TableCell>
+                        <TableCell align='right'>{pct(totals.visitCompletionPercent)}</TableCell>
+                        <TableCell align='right'>{pct(totals.adherencePercent)}</TableCell>
+                        <TableCell align='right'>{totals.missed}</TableCell>
+                        <TableCell align='right'>{pct(totals.unplannedRatio)}</TableCell>
+                        <TableCell align='right'>
+                          <Typography variant='body2' component='span' display='block'>
+                            {pct(totals.salesAchievementPercent)}
+                          </Typography>
+                          <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.25 }}>
+                            {totals.salesTarget > 0 || totals.achievedSales > 0
+                              ? `${formatPKR(totals.achievedSales)} / ${formatPKR(totals.salesTarget)}`
+                              : '—'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align='right'>{pct(totals.attendanceScorePercent)}</TableCell>
+                        <TableCell align='right'>{totals.orderCount}</TableCell>
+                        <TableCell align='right'>{totals.returnedOrderCount}</TableCell>
+                        <TableCell align='right'>{formatPKR(totals.grossRevenue)}</TableCell>
+                        <TableCell align='right'>{formatPKR(totals.grossSalesTp)}</TableCell>
+                      </TableRow>
+                    </TableFooter>
+                  ) : null}
                 </Table>
               </TableContainer>
             )}
