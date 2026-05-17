@@ -10,8 +10,13 @@ export const usersService = {
   setStatus: (id: string, isActive: boolean) => api.patch(`/users/${id}/status`, { isActive }),
 
   /** MRep team hierarchy (Phase 1). */
-  team: (params?: { managerId?: string; isActive?: boolean; search?: string; includeSelf?: boolean }) =>
-    api.get('/users/team', { params }),
+  team: (params?: {
+    managerId?: string
+    isActive?: boolean
+    search?: string
+    includeSelf?: boolean
+    includeInactive?: boolean
+  }) => api.get('/users/team', { params }),
   reports: (id: string) => api.get(`/users/${id}/reports`),
   setManager: (id: string, managerId: string | null) =>
     api.patch(`/users/${id}/manager`, { managerId: managerId ?? null }),
