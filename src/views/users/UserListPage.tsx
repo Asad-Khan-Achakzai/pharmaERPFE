@@ -463,10 +463,17 @@ const UserListPage = () => {
       return
     }
 
+    const isCompanyAdminRole = selectedRoleCode === 'DEFAULT_ADMIN'
+    const hasCoverageSelection =
+      Boolean(formTerritory?._id) || multiBricks.length > 0 || legacyNonBrickCoverage.length > 0
+
     let territoryId: string | null = null
     let coverageTerritoryIds: string[] = []
 
-    if (territoryAssignmentType === 'multi_brick') {
+    if (isCompanyAdminRole && !hasCoverageSelection) {
+      territoryId = null
+      coverageTerritoryIds = []
+    } else if (territoryAssignmentType === 'multi_brick') {
       if (multiBricks.length === 0) {
         showApiError(new Error('Select at least one brick for custom multi-brick assignment.'), 'Territory')
         return
@@ -501,28 +508,29 @@ const UserListPage = () => {
       })
     }
 
-    if (territoryAssignmentType === 'single_brick') {
-      if (!formTerritory || formTerritory.kind !== 'BRICK') {
-        showApiError(new Error('Select a brick for single-brick assignment.'), 'Territory')
-        return
+    if (!isCompanyAdminRole || hasCoverageSelection) {
+      if (territoryAssignmentType === 'single_brick') {
+        if (!formTerritory || formTerritory.kind !== 'BRICK') {
+          showApiError(new Error('Select a brick for single-brick assignment.'), 'Territory')
+          return
+        }
       }
-    }
-    if (territoryAssignmentType === 'entire_area') {
-      if (!formTerritory || formTerritory.kind !== 'AREA') {
-        showApiError(new Error('Select an area for entire-area assignment.'), 'Territory')
-        return
+      if (territoryAssignmentType === 'entire_area') {
+        if (!formTerritory || formTerritory.kind !== 'AREA') {
+          showApiError(new Error('Select an area for entire-area assignment.'), 'Territory')
+          return
+        }
       }
-    }
-    if (territoryAssignmentType === 'entire_zone') {
-      if (!formTerritory || formTerritory.kind !== 'ZONE') {
-        showApiError(new Error('Select a zone for entire-zone assignment.'), 'Territory')
-        return
+      if (territoryAssignmentType === 'entire_zone') {
+        if (!formTerritory || formTerritory.kind !== 'ZONE') {
+          showApiError(new Error('Select a zone for entire-zone assignment.'), 'Territory')
+          return
+        }
       }
     }
 
     setSaving(true)
     try {
-      const isCompanyAdminRole = selectedRoleCode === 'DEFAULT_ADMIN'
       const effectiveManager = isCompanyAdminRole ? null : formManager
       const payload: Record<string, unknown> = {
         name: form.name,

@@ -148,6 +148,7 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
     label: 'System',
     icon: 'tabler-settings',
     children: [
+      { label: 'Onboarding', href: '/onboarding', icon: 'tabler-rocket', permission: 'onboarding.view' },
       { label: 'Audit Log', href: '/audit-log', icon: 'tabler-history', permission: 'users.view' }
     ]
   }

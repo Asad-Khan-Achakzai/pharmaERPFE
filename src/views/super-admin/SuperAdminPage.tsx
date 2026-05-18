@@ -54,6 +54,10 @@ type Company = {
   mrepMultiTerritory?: boolean
   /** Append DoctorOwnershipEvent rows when doctor territory/rep assignment changes. */
   mrepOwnershipAudit?: boolean
+  onboardingEnabled?: boolean
+  onboardingStrictValidation?: boolean
+  onboardingKillSwitch?: boolean
+  onboardingPilotCohort?: string
   createdAt?: string
 }
 
@@ -75,7 +79,11 @@ const emptyForm = {
   weeklyPlanApprovalRequired: false,
   strictVisitSequence: false,
   mrepMultiTerritory: false,
-  mrepOwnershipAudit: false
+  mrepOwnershipAudit: false,
+  onboardingEnabled: false,
+  onboardingStrictValidation: false,
+  onboardingKillSwitch: false,
+  onboardingPilotCohort: ''
 }
 
 const SuperAdminPage = () => {
@@ -137,7 +145,11 @@ const SuperAdminPage = () => {
       weeklyPlanApprovalRequired: c.weeklyPlanApprovalRequired === true,
       strictVisitSequence: c.strictVisitSequence === true,
       mrepMultiTerritory: c.mrepMultiTerritory === true,
-      mrepOwnershipAudit: c.mrepOwnershipAudit === true
+      mrepOwnershipAudit: c.mrepOwnershipAudit === true,
+      onboardingEnabled: c.onboardingEnabled === true,
+      onboardingStrictValidation: c.onboardingStrictValidation === true,
+      onboardingKillSwitch: c.onboardingKillSwitch === true,
+      onboardingPilotCohort: c.onboardingPilotCohort || ''
     })
     setEditOpen(true)
   }
@@ -153,7 +165,11 @@ const SuperAdminPage = () => {
         weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired,
         strictVisitSequence: form.strictVisitSequence,
         mrepMultiTerritory: form.mrepMultiTerritory,
-        mrepOwnershipAudit: form.mrepOwnershipAudit
+        mrepOwnershipAudit: form.mrepOwnershipAudit,
+        onboardingEnabled: form.onboardingEnabled,
+        onboardingStrictValidation: form.onboardingStrictValidation,
+        onboardingKillSwitch: form.onboardingKillSwitch,
+        onboardingPilotCohort: form.onboardingPilotCohort
       })
       setCreateOpen(false)
       await load()
@@ -175,7 +191,11 @@ const SuperAdminPage = () => {
         weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired,
         strictVisitSequence: form.strictVisitSequence,
         mrepMultiTerritory: form.mrepMultiTerritory,
-        mrepOwnershipAudit: form.mrepOwnershipAudit
+        mrepOwnershipAudit: form.mrepOwnershipAudit,
+        onboardingEnabled: form.onboardingEnabled,
+        onboardingStrictValidation: form.onboardingStrictValidation,
+        onboardingKillSwitch: form.onboardingKillSwitch,
+        onboardingPilotCohort: form.onboardingPilotCohort
       })
       setEditOpen(false)
       await load()
@@ -273,6 +293,12 @@ const SuperAdminPage = () => {
                               ) : null}
                               {row.mrepOwnershipAudit ? (
                                 <Chip size='small' label='Ownership audit' color='secondary' variant='outlined' />
+                              ) : null}
+                              {row.onboardingEnabled ? (
+                                <Chip size='small' label='Onboarding enabled' color='success' variant='outlined' />
+                              ) : null}
+                              {row.onboardingKillSwitch ? (
+                                <Chip size='small' label='Onboarding kill switch' color='error' variant='outlined' />
                               ) : null}
                             </Stack>
                           </TableCell>
@@ -503,6 +529,47 @@ const SuperAdminPage = () => {
             }
             sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
           />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.onboardingEnabled}
+                onChange={e => setForm(f => ({ ...f, onboardingEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label='Enable onboarding module'
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.onboardingStrictValidation}
+                onChange={e => setForm(f => ({ ...f, onboardingStrictValidation: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label='Strict onboarding validation'
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.onboardingKillSwitch}
+                onChange={e => setForm(f => ({ ...f, onboardingKillSwitch: e.target.checked }))}
+                color='error'
+              />
+            }
+            label='Onboarding kill switch'
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <TextField
+            label='Onboarding pilot cohort'
+            fullWidth
+            value={form.onboardingPilotCohort}
+            onChange={e => setForm(f => ({ ...f, onboardingPilotCohort: e.target.value }))}
+            margin='normal'
+            helperText='Example: cohort-a, wave-2, enterprise-beta'
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)} disabled={saving}>
@@ -694,6 +761,46 @@ const SuperAdminPage = () => {
               </div>
             }
             sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.onboardingEnabled}
+                onChange={e => setForm(f => ({ ...f, onboardingEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label='Enable onboarding module'
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.onboardingStrictValidation}
+                onChange={e => setForm(f => ({ ...f, onboardingStrictValidation: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label='Strict onboarding validation'
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.onboardingKillSwitch}
+                onChange={e => setForm(f => ({ ...f, onboardingKillSwitch: e.target.checked }))}
+                color='error'
+              />
+            }
+            label='Onboarding kill switch'
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <TextField
+            label='Onboarding pilot cohort'
+            fullWidth
+            value={form.onboardingPilotCohort}
+            onChange={e => setForm(f => ({ ...f, onboardingPilotCohort: e.target.value }))}
+            margin='normal'
           />
         </DialogContent>
         <DialogActions>
