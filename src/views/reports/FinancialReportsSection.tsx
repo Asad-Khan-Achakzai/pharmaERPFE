@@ -10,6 +10,10 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
+import FormControl from '@mui/material/FormControl'
+import FormLabel from '@mui/material/FormLabel'
+import RadioGroup from '@mui/material/RadioGroup'
+import Radio from '@mui/material/Radio'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
@@ -26,11 +30,13 @@ import TablePagination from '@mui/material/TablePagination'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Skeleton from '@mui/material/Skeleton'
-import { showApiError } from '@/utils/apiErrors'
+import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { reportsService } from '@/services/reports.service'
 import { pharmaciesService } from '@/services/pharmacies.service'
 import { distributorsService } from '@/services/distributors.service'
+import { collectionsService } from '@/services/collections.service'
+import { settlementsService } from '@/services/settlements.service'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import FinancialPositionSection from '@/views/reports/FinancialPositionSection'
 import TableSkeleton from '@/components/skeletons/TableSkeleton'
@@ -81,6 +87,27 @@ const FinancialReportsSection = () => {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailBody, setDetailBody] = useState<any>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [collectionOpen, setCollectionOpen] = useState(false)
+  const [collectionPharmacy, setCollectionPharmacy] = useState<any>(null)
+  const [selectedCollectionDistributor, setSelectedCollectionDistributor] = useState<any | null>(null)
+  const [collectionForm, setCollectionForm] = useState({
+    collectorType: 'DISTRIBUTOR' as 'COMPANY' | 'DISTRIBUTOR',
+    distributorId: '',
+    amount: 0,
+    referenceNumber: '',
+    notes: ''
+  })
+  const [savingCollection, setSavingCollection] = useState(false)
+  const [settlementOpen, setSettlementOpen] = useState(false)
+  const [settlementDistributor, setSettlementDistributor] = useState<any>(null)
+  const [settlementForm, setSettlementForm] = useState({
+    direction: 'DISTRIBUTOR_TO_COMPANY' as 'DISTRIBUTOR_TO_COMPANY' | 'COMPANY_TO_DISTRIBUTOR',
+    amount: 0,
+    paymentMethod: 'CASH',
+    referenceNumber: '',
+    notes: ''
+  })
+  const [savingSettlement, setSavingSettlement] = useState(false)
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedPharmacySearch(pharmacySearch.trim()), 400)
@@ -180,6 +207,111 @@ const FinancialReportsSection = () => {
       showApiError(err, 'Failed to load distributor clearing detail')
     } finally {
       setLoadingDetail(false)
+    }
+  }
+
+  const openCollectionDialog = (row: any) => {
+    setCollectionPharmacy(row)
+    setSelectedCollectionDistributor(null)
+    setCollectionForm({
+      collectorType: 'DISTRIBUTOR',
+      distributorId: '',
+      amount: Number(row.receivableFromPharmacy) || 0,
+      referenceNumber: '',
+      notes: ''
+    })
+    setCollectionOpen(true)
+  }
+
+  const closeCollectionDialog = () => {
+    if (savingCollection) return
+    setCollectionOpen(false)
+  }
+
+  const needsCollectionDistributor = collectionForm.collectorType === 'DISTRIBUTOR'
+  const isCollectionFormValid =
+    Boolean(collectionPharmacy?.pharmacyId) &&
+    collectionForm.amount > 0 &&
+    (!needsCollectionDistributor || collectionForm.distributorId !== '')
+
+  const handleCollectionSubmit = async () => {
+    if (!collectionPharmacy?.pharmacyId || collectionForm.amount <= 0) {
+      showApiError(null, 'Fill required fields')
+      return
+    }
+    if (needsCollectionDistributor && !collectionForm.distributorId) {
+      showApiError(null, 'Select distributor')
+      return
+    }
+
+    setSavingCollection(true)
+    try {
+      await collectionsService.create({
+        pharmacyId: collectionPharmacy.pharmacyId,
+        collectorType: collectionForm.collectorType,
+        ...(collectionForm.collectorType === 'DISTRIBUTOR' ? { distributorId: collectionForm.distributorId } : {}),
+        amount: collectionForm.amount,
+        paymentMethod: 'CASH',
+        referenceNumber: collectionForm.referenceNumber || undefined,
+        notes: collectionForm.notes || undefined
+      })
+      showSuccess('Collection recorded')
+      setCollectionOpen(false)
+      await Promise.all([loadPharmacyBalances(), loadDistributors(), periodData ? loadPeriod() : Promise.resolve()])
+    } catch (err) {
+      showApiError(err, 'Failed to record collection')
+    } finally {
+      setSavingCollection(false)
+    }
+  }
+
+  const openSettlementDialog = (row: any) => {
+    const remittanceDue = Number(row.remittanceDueFromDistributor) || 0
+    const commissionPayable = Number(row.commissionPayableByCompanyToDistributor) || 0
+    const direction =
+      remittanceDue > 0 || commissionPayable <= 0 ? 'DISTRIBUTOR_TO_COMPANY' : 'COMPANY_TO_DISTRIBUTOR'
+
+    setSettlementDistributor(row)
+    setSettlementForm({
+      direction,
+      amount: direction === 'DISTRIBUTOR_TO_COMPANY' ? remittanceDue : commissionPayable,
+      paymentMethod: 'CASH',
+      referenceNumber: '',
+      notes: ''
+    })
+    setSettlementOpen(true)
+  }
+
+  const closeSettlementDialog = () => {
+    if (savingSettlement) return
+    setSettlementOpen(false)
+  }
+
+  const isSettlementFormValid = Boolean(settlementDistributor?.distributorId) && settlementForm.amount > 0
+
+  const handleSettlementSubmit = async () => {
+    if (!settlementDistributor?.distributorId || settlementForm.amount <= 0) {
+      showApiError(null, 'Fill required fields')
+      return
+    }
+
+    setSavingSettlement(true)
+    try {
+      await settlementsService.create({
+        distributorId: settlementDistributor.distributorId,
+        direction: settlementForm.direction,
+        amount: settlementForm.amount,
+        paymentMethod: settlementForm.paymentMethod,
+        referenceNumber: settlementForm.referenceNumber || undefined,
+        notes: settlementForm.notes || undefined
+      })
+      showSuccess('Settlement recorded')
+      setSettlementOpen(false)
+      await Promise.all([loadDistributors(), periodData ? loadPeriod() : Promise.resolve()])
+    } catch (err) {
+      showApiError(err, 'Failed to record settlement')
+    } finally {
+      setSavingSettlement(false)
     }
   }
 
@@ -293,7 +425,7 @@ const FinancialReportsSection = () => {
                             <TableCell>Pharmacy</TableCell>
                             <TableCell align='right'>Owed to company</TableCell>
                             <TableCell align='right'>Credit / advance</TableCell>
-                            <TableCell width={120} />
+                            <TableCell width={220} />
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -315,13 +447,24 @@ const FinancialReportsSection = () => {
                                 <TableCell align='right'>{formatPKR(row.receivableFromPharmacy)}</TableCell>
                                 <TableCell align='right'>{formatPKR(row.advanceOrCreditFromPharmacy)}</TableCell>
                                 <TableCell>
-                                  <Button
-                                    size='small'
-                                    component={Link}
-                                    href={`/reports/financial/pharmacies/${row.pharmacyId}/ledger`}
-                                  >
-                                    View account
-                                  </Button>
+                                  <div className='flex flex-col gap-2 sm:flex-row'>
+                                    <Button
+                                      size='small'
+                                      component={Link}
+                                      href={`/reports/financial/pharmacies/${row.pharmacyId}/ledger`}
+                                      sx={{ inlineSize: { xs: '100%', sm: 'auto' }, whiteSpace: 'nowrap' }}
+                                    >
+                                      View account
+                                    </Button>
+                                    <Button
+                                      size='small'
+                                      variant='outlined'
+                                      onClick={() => openCollectionDialog(row)}
+                                      sx={{ inlineSize: { xs: '100%', sm: 'auto' }, whiteSpace: 'nowrap' }}
+                                    >
+                                      Add collection
+                                    </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))
@@ -379,7 +522,7 @@ const FinancialReportsSection = () => {
                             <TableCell align='right'>Remittance due</TableCell>
                             <TableCell align='right'>Comm. payable</TableCell>
                             <TableCell align='right'>Ledger net</TableCell>
-                            <TableCell width={80} />
+                            <TableCell width={180} />
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -404,9 +547,23 @@ const FinancialReportsSection = () => {
                                 </TableCell>
                                 <TableCell align='right'>{formatPKR(Math.max(0, row.netDistributorOwesCompany))}</TableCell>
                                 <TableCell>
-                                  <Button size='small' onClick={() => openDistributorDetail(row.distributorId)}>
-                                    Ledger
-                                  </Button>
+                                  <div className='flex flex-col gap-2 sm:flex-row'>
+                                    <Button
+                                      size='small'
+                                      onClick={() => openDistributorDetail(row.distributorId)}
+                                      sx={{ inlineSize: { xs: '100%', sm: 'auto' }, whiteSpace: 'nowrap' }}
+                                    >
+                                      Ledger
+                                    </Button>
+                                    <Button
+                                      size='small'
+                                      variant='outlined'
+                                      onClick={() => openSettlementDialog(row)}
+                                      sx={{ inlineSize: { xs: '100%', sm: 'auto' }, whiteSpace: 'nowrap' }}
+                                    >
+                                      Add settlement
+                                    </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))
@@ -575,6 +732,205 @@ const FinancialReportsSection = () => {
           </CardContent>
         </Card>
       </Grid>
+
+      <Dialog open={collectionOpen} onClose={closeCollectionDialog} maxWidth='sm' fullWidth>
+        <DialogTitle>Record collection</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={4} className='pt-1'>
+            <Grid size={{ xs: 12 }}>
+              <Typography variant='subtitle2'>{collectionPharmacy?.name}</Typography>
+              {collectionPharmacy?.city && (
+                <Typography variant='caption' color='text.secondary'>
+                  {collectionPharmacy.city}
+                </Typography>
+              )}
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <FormControl>
+                <FormLabel>Collection type</FormLabel>
+                <RadioGroup
+                  row
+                  value={collectionForm.collectorType}
+                  onChange={e => {
+                    const nextCollector = e.target.value as 'COMPANY' | 'DISTRIBUTOR'
+                    setSelectedCollectionDistributor(nextCollector === 'COMPANY' ? null : selectedCollectionDistributor)
+                    setCollectionForm(p => ({
+                      ...p,
+                      collectorType: nextCollector,
+                      distributorId: nextCollector === 'COMPANY' ? '' : p.distributorId
+                    }))
+                  }}
+                >
+                  <FormControlLabel value='COMPANY' control={<Radio />} label='Company' />
+                  <FormControlLabel value='DISTRIBUTOR' control={<Radio />} label='Distributor' />
+                </RadioGroup>
+                <Typography variant='caption' color='text.secondary'>
+                  Company means the company collected it. Distributor means the distributor collected it for the company.
+                </Typography>
+              </FormControl>
+            </Grid>
+            {needsCollectionDistributor && (
+              <Grid size={{ xs: 12 }}>
+                <LookupAutocomplete
+                  value={selectedCollectionDistributor}
+                  onChange={v => {
+                    setSelectedCollectionDistributor(v)
+                    setCollectionForm(p => ({ ...p, distributorId: v ? String(v._id) : '' }))
+                  }}
+                  fetchOptions={search =>
+                    distributorsService
+                      .lookup({ limit: 25, isActive: 'true', ...(search ? { search } : {}) })
+                      .then(r => r.data.data || [])
+                  }
+                  label='Distributor who collected'
+                  placeholder='Type to search'
+                  helperText='Collection will be applied to this distributor for the selected pharmacy'
+                  required
+                  fetchErrorMessage='Failed to load distributors'
+                />
+              </Grid>
+            )}
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                required
+                fullWidth
+                label='Amount (PKR)'
+                type='number'
+                value={collectionForm.amount}
+                onChange={e => setCollectionForm(p => ({ ...p, amount: +e.target.value }))}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Reference number'
+                value={collectionForm.referenceNumber}
+                onChange={e => setCollectionForm(p => ({ ...p, referenceNumber: e.target.value }))}
+              />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <CustomTextField
+                fullWidth
+                label='Notes'
+                multiline
+                rows={2}
+                value={collectionForm.notes}
+                onChange={e => setCollectionForm(p => ({ ...p, notes: e.target.value }))}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeCollectionDialog} disabled={savingCollection}>
+            Cancel
+          </Button>
+          <Button
+            variant='contained'
+            onClick={handleCollectionSubmit}
+            disabled={savingCollection || !isCollectionFormValid}
+            startIcon={savingCollection ? <CircularProgress size={20} color='inherit' /> : undefined}
+          >
+            {savingCollection ? 'Saving...' : 'Record collection'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={settlementOpen} onClose={closeSettlementDialog} maxWidth='sm' fullWidth>
+        <DialogTitle>Record settlement</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={4} className='pt-1'>
+            <Grid size={{ xs: 12 }}>
+              <Typography variant='subtitle2'>{settlementDistributor?.name}</Typography>
+              {settlementDistributor?.city && (
+                <Typography variant='caption' color='text.secondary'>
+                  {settlementDistributor.city}
+                </Typography>
+              )}
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <FormControl>
+                <FormLabel>Direction</FormLabel>
+                <RadioGroup
+                  value={settlementForm.direction}
+                  onChange={e =>
+                    setSettlementForm(p => ({
+                      ...p,
+                      direction: e.target.value as 'DISTRIBUTOR_TO_COMPANY' | 'COMPANY_TO_DISTRIBUTOR'
+                    }))
+                  }
+                >
+                  <FormControlLabel
+                    value='DISTRIBUTOR_TO_COMPANY'
+                    control={<Radio />}
+                    label='Distributor pays company'
+                  />
+                  <FormControlLabel
+                    value='COMPANY_TO_DISTRIBUTOR'
+                    control={<Radio />}
+                    label='Company pays distributor'
+                  />
+                </RadioGroup>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                required
+                fullWidth
+                label='Amount (PKR)'
+                type='number'
+                value={settlementForm.amount}
+                onChange={e => setSettlementForm(p => ({ ...p, amount: +e.target.value }))}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                required
+                select
+                fullWidth
+                label='Payment method'
+                value={settlementForm.paymentMethod}
+                onChange={e => setSettlementForm(p => ({ ...p, paymentMethod: e.target.value }))}
+              >
+                <MenuItem value='CASH'>Cash</MenuItem>
+                <MenuItem value='CHEQUE'>Cheque</MenuItem>
+                <MenuItem value='BANK_TRANSFER'>Bank transfer</MenuItem>
+                <MenuItem value='UPI'>UPI</MenuItem>
+              </CustomTextField>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Reference number'
+                value={settlementForm.referenceNumber}
+                onChange={e => setSettlementForm(p => ({ ...p, referenceNumber: e.target.value }))}
+              />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <CustomTextField
+                fullWidth
+                label='Notes'
+                multiline
+                rows={2}
+                value={settlementForm.notes}
+                onChange={e => setSettlementForm(p => ({ ...p, notes: e.target.value }))}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeSettlementDialog} disabled={savingSettlement}>
+            Cancel
+          </Button>
+          <Button
+            variant='contained'
+            onClick={handleSettlementSubmit}
+            disabled={savingSettlement || !isSettlementFormValid}
+            startIcon={savingSettlement ? <CircularProgress size={20} color='inherit' /> : undefined}
+          >
+            {savingSettlement ? 'Saving...' : 'Record settlement'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth='sm' fullWidth>
         <DialogTitle>Distributor clearing detail</DialogTitle>

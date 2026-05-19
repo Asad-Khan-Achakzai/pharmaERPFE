@@ -1,12 +1,23 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Typography from '@mui/material/Typography'
 import { useAuth } from '@/contexts/AuthContext'
 import DashboardWelcomeColumn from '@/views/dashboard/DashboardWelcomeColumn'
 import { useDashboardV3Data } from '../core/dashboardDataOrchestrator'
+import { reportsService } from '@/services/reports.service'
 
 const formatPKR = (v: number) => `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+type MrepSalesRow = {
+  repId: string
+  totalGrossSalesTp?: number | null
+}
+
+const ymNow = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
 
 /**
  * Welcome + (for company admins only) financial month highlight from GET /dashboard/home.
@@ -15,6 +26,8 @@ const formatPKR = (v: number) => `₨ ${(v || 0).toLocaleString('en-PK', { minim
 export function WelcomeHeroWidget() {
   const d = useDashboardV3Data()
   const { user } = useAuth()
+  const [mrepSalesRows, setMrepSalesRows] = useState<MrepSalesRow[]>([])
+  const [mrepSalesLoading, setMrepSalesLoading] = useState(false)
   const greeting = useMemo(() => {
     const hour = new Date().getHours()
     if (hour < 12) return 'Good morning'
@@ -48,6 +61,40 @@ export function WelcomeHeroWidget() {
     return 'Net sales are steady while cashflow pressure remains on outstanding balances.'
   }, [d])
 
+  const canLoadFieldSales =
+    !d.canSeeCompanyFinancials &&
+    (d.hasPermission('weeklyPlans.view') ||
+      d.hasPermission('weeklyPlans.markVisit') ||
+      d.hasPermission('team.viewAllReports'))
+
+  useEffect(() => {
+    if (!canLoadFieldSales) {
+      setMrepSalesRows([])
+      setMrepSalesLoading(false)
+      return
+    }
+
+    let cancel = false
+    setMrepSalesLoading(true)
+    void reportsService
+      .mrepMonthlyOverview({ params: { month: ymNow() } })
+      .then(res => {
+        if (cancel) return
+        const data = (res.data as { data?: { reps?: MrepSalesRow[] } })?.data
+        setMrepSalesRows(data?.reps || [])
+      })
+      .catch(() => {
+        if (!cancel) setMrepSalesRows([])
+      })
+      .finally(() => {
+        if (!cancel) setMrepSalesLoading(false)
+      })
+
+    return () => {
+      cancel = true
+    }
+  }, [canLoadFieldSales])
+
   const highlight = useMemo(() => {
     if (!d.canSeeCompanyFinancials || !d.canLoadDashboardKpis) return undefined
     if (d.kpiError || !d.kpi) return undefined
@@ -65,14 +112,74 @@ export function WelcomeHeroWidget() {
     )
   }, [d])
 
+  const fieldSalesHighlight = useMemo(() => {
+    if (!canLoadFieldSales) return undefined
+    if (mrepSalesLoading && !mrepSalesRows.length) {
+      return (
+        <Typography variant='body2' color='text.secondary'>
+          Loading this month’s sales…
+        </Typography>
+      )
+    }
+
+    const ownRow = mrepSalesRows.find(row => String(row.repId) === String(user?._id))
+    const ownSales = Number(ownRow?.totalGrossSalesTp ?? 0)
+    const hasTeamScope = d.hasPermission('team.viewAllReports')
+    const teamSales = mrepSalesRows
+      .filter(row => String(row.repId) !== String(user?._id))
+      .reduce((sum, row) => sum + Number(row.totalGrossSalesTp ?? 0), 0)
+
+    if (hasTeamScope) {
+      return (
+        <div className='flex flex-wrap gap-6'>
+          <div>
+            <Typography variant='caption' color='text.secondary' display='block'>
+              My sale · this month
+            </Typography>
+            <Typography variant='h5' color='primary.main'>
+              {formatPKR(ownSales)}
+            </Typography>
+          </div>
+          <div>
+            <Typography variant='caption' color='text.secondary' display='block'>
+              Team sale · this month
+            </Typography>
+            <Typography variant='h5' color='primary.main'>
+              {formatPKR(teamSales)}
+            </Typography>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <>
+        <Typography variant='caption' color='text.secondary' display='block'>
+          My sale · this month
+        </Typography>
+        <Typography variant='h4' color='primary.main' className='mbe-1'>
+          {formatPKR(ownSales)}
+        </Typography>
+      </>
+    )
+  }, [canLoadFieldSales, d, mrepSalesLoading, mrepSalesRows, user?._id])
+
   const sub = useMemo(() => {
+    if (canLoadFieldSales && mrepSalesLoading && !mrepSalesRows.length) {
+      return 'Loading this month’s field sales…'
+    }
     if (d.canSeeCompanyFinancials && d.canLoadDashboardKpis && (d.kpiLoading || d.bundleLoading) && !d.kpi) {
       return 'Loading this month’s sales…'
     }
     return summary
-  }, [d, summary])
+  }, [canLoadFieldSales, d, mrepSalesLoading, mrepSalesRows.length, summary])
 
   return (
-    <DashboardWelcomeColumn greeting={greeting} name={user?.name || 'Team'} summary={sub} highlight={highlight} />
+    <DashboardWelcomeColumn
+      greeting={greeting}
+      name={user?.name || 'Team'}
+      summary={sub}
+      highlight={fieldSalesHighlight ?? highlight}
+    />
   )
 }
