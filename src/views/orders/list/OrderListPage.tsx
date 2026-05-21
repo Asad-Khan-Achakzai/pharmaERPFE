@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -25,8 +25,6 @@ import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
   getSortedRowModel,
   useReactTable
 } from '@tanstack/react-table'
@@ -93,6 +91,7 @@ const OrderListPage = () => {
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('orders.create')
   const canEdit = hasPermission('orders.edit')
+  const canFilterByRep = hasPermission('team.viewAllReports') || hasPermission('admin.access')
   const [data, setData] = useState<Order[]>([])
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
   const [loading, setLoading] = useState(true)
@@ -104,6 +103,8 @@ const OrderListPage = () => {
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [pharmacyLookup, setPharmacyLookup] = useState<{ _id: string; name: string } | null>(null)
   const [medicalRepLookup, setMedicalRepLookup] = useState<{ _id: string; name: string } | null>(null)
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
+  const [totalEntries, setTotalEntries] = useState(0)
 
   const patchOrderListQuery = useCallback(
     (mutate: (p: URLSearchParams) => void) => {
@@ -212,17 +213,24 @@ const OrderListPage = () => {
     countDateUserFilters(appliedFilters) +
     (statusFilter !== '' ? 1 : 0) +
     (pharmacyIdFromUrl && /^[a-f0-9]{24}$/i.test(pharmacyIdFromUrl) ? 1 : 0) +
-    (medicalRepIdFromUrl && /^[a-f0-9]{24}$/i.test(medicalRepIdFromUrl) ? 1 : 0)
+    (canFilterByRep && medicalRepIdFromUrl && /^[a-f0-9]{24}$/i.test(medicalRepIdFromUrl) ? 1 : 0)
+
+  useLayoutEffect(() => {
+    setPagination(p => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }))
+  }, [appliedFilters, debouncedSearch, statusFilter, medicalRepIdFromUrl, pharmacyIdFromUrl])
 
   const fetchOrders = useCallback(async () => {
     const seq = ++fetchSeq.current
     setLoading(true)
     try {
-      const params: Record<string, string> = { limit: '100' }
+      const params: Record<string, string> = {
+        page: String(pagination.pageIndex + 1),
+        limit: String(pagination.pageSize)
+      }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
       if (statusFilter === 'ALL') params.status = 'ALL'
       else if (statusFilter !== '') params.status = statusFilter
-      if (medicalRepIdFromUrl && /^[a-f0-9]{24}$/i.test(medicalRepIdFromUrl)) {
+      if (medicalRepIdFromUrl && /^[a-f0-9]{24}$/i.test(medicalRepIdFromUrl) && canFilterByRep) {
         params.medicalRepId = medicalRepIdFromUrl
       }
       if (pharmacyIdFromUrl && /^[a-f0-9]{24}$/i.test(pharmacyIdFromUrl)) {
@@ -231,12 +239,23 @@ const OrderListPage = () => {
       const { data: res } = await ordersService.list(params)
       if (seq !== fetchSeq.current) return
       setData(Array.isArray(res?.data) ? res.data : [])
+      const pag = res?.pagination
+      setTotalEntries(typeof pag?.total === 'number' ? pag.total : 0)
     } catch (err) {
       if (seq === fetchSeq.current) showApiError(err, 'Failed to load orders')
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch, statusFilter, medicalRepIdFromUrl, pharmacyIdFromUrl])
+  }, [
+    appliedFilters,
+    debouncedSearch,
+    statusFilter,
+    medicalRepIdFromUrl,
+    pharmacyIdFromUrl,
+    pagination.pageIndex,
+    pagination.pageSize,
+    canFilterByRep
+  ])
 
   useEffect(() => {
     fetchOrders()
@@ -357,10 +376,12 @@ const OrderListPage = () => {
   const table = useReactTable({
     data,
     columns,
+    manualPagination: true,
+    pageCount: Math.max(1, Math.ceil(totalEntries / pagination.pageSize)),
+    state: { pagination },
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel()
+    getSortedRowModel: getSortedRowModel()
   })
 
   return (
@@ -425,28 +446,36 @@ const OrderListPage = () => {
           onClearAllExtras={clearStatusAndPharmacyFromUrl}
           beforeDateSection={
             <>
-              <Typography
-                variant='overline'
-                sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: '0.08em', display: 'block', mb: 1 }}
-              >
-                Medical rep
-              </Typography>
-              <LookupAutocomplete
-                fullWidth
-                value={medicalRepLookup}
-                onChange={v =>
-                  setMedicalRepFilter(
-                    v && typeof v === 'object' && '_id' in v ? { _id: String(v._id), name: String(v.name ?? '') } : null
-                  )
-                }
-                fetchOptions={search =>
-                  usersService.assignable({ limit: 25, ...(search ? { search } : {}) }).then(r => r.data.data || [])
-                }
-                label='Filter by assigned rep'
-                placeholder='Search by name or email…'
-                helperText='Same as linking with ?medicalRepId=. Only active tenant users appear in search.'
-                fetchErrorMessage='Failed to load users'
-              />
+              {canFilterByRep ? (
+                <>
+                  <Typography
+                    variant='overline'
+                    sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: '0.08em', display: 'block', mb: 1 }}
+                  >
+                    Medical rep
+                  </Typography>
+                  <LookupAutocomplete
+                    fullWidth
+                    value={medicalRepLookup}
+                    onChange={v =>
+                      setMedicalRepFilter(
+                        v && typeof v === 'object' && '_id' in v
+                          ? { _id: String(v._id), name: String(v.name ?? '') }
+                          : null
+                      )
+                    }
+                    fetchOptions={search =>
+                      usersService
+                        .assignable({ limit: 25, scope: 'team', ...(search ? { search } : {}) })
+                        .then(r => r.data.data || [])
+                    }
+                    label='Filter by assigned rep'
+                    placeholder='Search by name or email…'
+                    helperText='Managers see reps in their team only. Admins can search any active user.'
+                    fetchErrorMessage='Failed to load users'
+                  />
+                </>
+              ) : null}
               <Typography
                 variant='overline'
                 sx={{
@@ -455,7 +484,7 @@ const OrderListPage = () => {
                   letterSpacing: '0.08em',
                   display: 'block',
                   mb: 1,
-                  mt: 2
+                  mt: canFilterByRep ? 2 : 0
                 }}
               >
                 Pharmacy
