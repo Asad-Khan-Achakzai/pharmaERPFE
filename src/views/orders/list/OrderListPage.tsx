@@ -377,6 +377,7 @@ const OrderListPage = () => {
     data,
     columns,
     manualPagination: true,
+    rowCount: totalEntries,
     pageCount: Math.max(1, Math.ceil(totalEntries / pagination.pageSize)),
     state: { pagination },
     onPaginationChange: setPagination,
@@ -556,7 +557,7 @@ const OrderListPage = () => {
           </tbody>
         </table>
       </div>
-      <TablePaginationComponent table={table as any} />
+      <TablePaginationComponent table={table as any} serverPagination={{ total: totalEntries }} />
 
       <Dialog open={Boolean(cancelTarget)} onClose={() => !cancelling && setCancelTarget(null)} maxWidth='xs' fullWidth>
         <DialogTitle>Cancel order?</DialogTitle>
