@@ -16,6 +16,7 @@ import Radio from '@mui/material/Radio'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
+import { MoneyAccountSelect } from '@/components/finance/MoneyAccountSelect'
 import { collectionsService } from '@/services/collections.service'
 import { pharmaciesService } from '@/services/pharmacies.service'
 import { distributorsService } from '@/services/distributors.service'
@@ -31,6 +32,7 @@ const RecordPaymentPage = () => {
     collectorType: 'COMPANY' as 'COMPANY' | 'DISTRIBUTOR',
     amount: 0,
     paymentMethod: 'CASH',
+    moneyAccountId: '',
     referenceNumber: '',
     notes: ''
   })
@@ -62,6 +64,7 @@ const RecordPaymentPage = () => {
     form.pharmacyId !== '' &&
     form.amount > 0 &&
     form.paymentMethod !== '' &&
+    form.moneyAccountId !== '' &&
     (!needsDistributor || form.distributorId !== '')
 
   const handleSubmit = async () => {
@@ -77,6 +80,7 @@ const RecordPaymentPage = () => {
         ...(form.collectorType === 'DISTRIBUTOR' ? { distributorId: form.distributorId } : {}),
         amount: form.amount,
         paymentMethod: form.paymentMethod,
+        moneyAccountId: form.moneyAccountId,
         referenceNumber: form.referenceNumber || undefined,
         notes: form.notes || undefined
       })
@@ -162,6 +166,15 @@ const RecordPaymentPage = () => {
               type='number'
               value={form.amount}
               onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <MoneyAccountSelect
+              required
+              label='Deposit to (Cash/Bank account)'
+              helperText='Which account received this money'
+              value={form.moneyAccountId}
+              onChange={id => setForm(p => ({ ...p, moneyAccountId: id }))}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>

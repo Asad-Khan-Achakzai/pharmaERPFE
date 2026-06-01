@@ -91,12 +91,13 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
     label: 'Finance',
     icon: 'tabler-currency-dollar',
     children: [
+      { label: 'Money Accounts', href: '/finance/money-accounts', icon: 'tabler-wallet', permission: 'payments.view' },
       {
-        label: 'Collections',
+        label: 'Receive Payment',
         icon: 'tabler-cash',
         children: [
-          { label: 'All Collections', href: '/payments/list', permission: 'payments.view' },
-          { label: 'Record Collection', href: '/payments/add', permission: 'payments.create' }
+          { label: 'All Payments Received', href: '/payments/list', permission: 'payments.view' },
+          { label: 'Record Payment', href: '/payments/add', permission: 'payments.create' }
         ]
       },
       {
@@ -108,7 +109,34 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
         ]
       },
       { label: 'Expenses', href: '/expenses/list', icon: 'tabler-receipt', permission: 'expenses.view' },
-      { label: 'Ledger', href: '/ledger', icon: 'tabler-report-money', permission: 'ledger.view' }
+      { label: 'Voucher Entry', href: '/finance/transfers', icon: 'tabler-arrows-exchange', permission: 'payments.create' },
+      { label: 'General Ledger', href: '/finance/reports/general-ledger', icon: 'tabler-book', permission: 'reports.accounting' },
+      { label: 'Client Ledger', href: '/finance/client-ledger', icon: 'tabler-users-group', permission: 'ledger.view' },
+      { label: 'Supplier Ledger', href: '/finance/supplier-ledger', icon: 'tabler-truck', permission: 'ledger.view' },
+      { label: 'Expense Ledger', href: '/finance/expense-ledger', icon: 'tabler-receipt-2', permission: 'expenses.view' },
+      { label: 'Employee Ledger', href: '/finance/employee-ledger', icon: 'tabler-id', permission: 'ledger.view' },
+      {
+        label: 'Advanced Accounting',
+        icon: 'tabler-calculator',
+        children: [
+          { label: 'Financial Structure', href: '/finance/accounts', icon: 'tabler-list-tree', permission: 'reports.view' },
+          { label: 'Customer Balances', href: '/ledger', icon: 'tabler-report-money', permission: 'ledger.view' },
+          { label: 'Advanced Financial Structure', href: '/finance/accounts/advanced', permission: 'accounts.view' },
+          { label: 'Financial Activity', href: '/finance/vouchers', permission: 'vouchers.view' },
+          { label: 'Manual Entry', href: '/finance/vouchers/new', permission: 'vouchers.create' },
+          {
+            label: 'Reports',
+            children: [
+              { label: 'Financial Summary Check', href: '/finance/reports/trial-balance', permission: 'reports.accounting' },
+              { label: 'Profit Report', href: '/finance/reports/profit-loss', permission: 'reports.accounting' },
+              { label: 'Business Position', href: '/finance/reports/balance-sheet', permission: 'reports.accounting' },
+              { label: 'Daily Activity', href: '/finance/reports/day-book', permission: 'reports.accounting' },
+              { label: 'Cash Activity', href: '/finance/reports/cash-book', permission: 'reports.accounting' },
+              { label: 'Bank Activity', href: '/finance/reports/bank-book', permission: 'reports.accounting' }
+            ]
+          }
+        ]
+      }
     ]
   },
   {

@@ -38,6 +38,7 @@ import { distributorsService } from '@/services/distributors.service'
 import { collectionsService } from '@/services/collections.service'
 import { settlementsService } from '@/services/settlements.service'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
+import { MoneyAccountSelect } from '@/components/finance/MoneyAccountSelect'
 import FinancialPositionSection from '@/views/reports/FinancialPositionSection'
 import TableSkeleton from '@/components/skeletons/TableSkeleton'
 
@@ -94,6 +95,8 @@ const FinancialReportsSection = () => {
     collectorType: 'DISTRIBUTOR' as 'COMPANY' | 'DISTRIBUTOR',
     distributorId: '',
     amount: 0,
+    paymentMethod: 'CASH',
+    moneyAccountId: '',
     referenceNumber: '',
     notes: ''
   })
@@ -217,6 +220,8 @@ const FinancialReportsSection = () => {
       collectorType: 'DISTRIBUTOR',
       distributorId: '',
       amount: Number(row.receivableFromPharmacy) || 0,
+      paymentMethod: 'CASH',
+      moneyAccountId: '',
       referenceNumber: '',
       notes: ''
     })
@@ -232,6 +237,7 @@ const FinancialReportsSection = () => {
   const isCollectionFormValid =
     Boolean(collectionPharmacy?.pharmacyId) &&
     collectionForm.amount > 0 &&
+    Boolean(collectionForm.moneyAccountId) &&
     (!needsCollectionDistributor || collectionForm.distributorId !== '')
 
   const handleCollectionSubmit = async () => {
@@ -251,7 +257,8 @@ const FinancialReportsSection = () => {
         collectorType: collectionForm.collectorType,
         ...(collectionForm.collectorType === 'DISTRIBUTOR' ? { distributorId: collectionForm.distributorId } : {}),
         amount: collectionForm.amount,
-        paymentMethod: 'CASH',
+        paymentMethod: collectionForm.paymentMethod,
+        moneyAccountId: collectionForm.moneyAccountId,
         referenceNumber: collectionForm.referenceNumber || undefined,
         notes: collectionForm.notes || undefined
       })
@@ -499,7 +506,8 @@ const FinancialReportsSection = () => {
                     </Typography>
                     {distBal?.helpShort && (
                       <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
-                        {distBal.helpShort}
+                        {distBal.helpShort} Clearing net is signed (matches Client Ledger). Return adjustments change
+                        clearing net but not remittance / commission unless open collection lines remain.
                       </Typography>
                     )}
                     {dTotals && (
@@ -521,7 +529,7 @@ const FinancialReportsSection = () => {
                             <TableCell>Distributor</TableCell>
                             <TableCell align='right'>Remittance due</TableCell>
                             <TableCell align='right'>Comm. payable</TableCell>
-                            <TableCell align='right'>Ledger net</TableCell>
+                            <TableCell align='right'>Clearing net</TableCell>
                             <TableCell width={180} />
                           </TableRow>
                         </TableHead>
@@ -545,7 +553,14 @@ const FinancialReportsSection = () => {
                                 <TableCell align='right'>
                                   {formatPKR(row.commissionPayableByCompanyToDistributor ?? 0)}
                                 </TableCell>
-                                <TableCell align='right'>{formatPKR(Math.max(0, row.netDistributorOwesCompany))}</TableCell>
+                                <TableCell align='right'>
+                                  {formatPKR(row.netDistributorOwesCompany ?? 0)}
+                                  {row.netDistributorOwesCompany !== 0 ? (
+                                    <Typography variant='caption' display='block' color='text.secondary'>
+                                      {row.netDistributorOwesCompany > 0 ? 'Distributor owes' : 'Company owes'}
+                                    </Typography>
+                                  ) : null}
+                                </TableCell>
                                 <TableCell>
                                   <div className='flex flex-col gap-2 sm:flex-row'>
                                     <Button
@@ -801,6 +816,29 @@ const FinancialReportsSection = () => {
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
+              <MoneyAccountSelect
+                required
+                label='Deposit to (Cash/Bank account)'
+                value={collectionForm.moneyAccountId}
+                onChange={id => setCollectionForm(p => ({ ...p, moneyAccountId: id }))}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                required
+                fullWidth
+                select
+                label='Payment method'
+                value={collectionForm.paymentMethod}
+                onChange={e => setCollectionForm(p => ({ ...p, paymentMethod: e.target.value }))}
+              >
+                <MenuItem value='CASH'>Cash</MenuItem>
+                <MenuItem value='CHEQUE'>Cheque</MenuItem>
+                <MenuItem value='BANK_TRANSFER'>Bank transfer</MenuItem>
+                <MenuItem value='UPI'>UPI</MenuItem>
+              </CustomTextField>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <CustomTextField
                 fullWidth
                 label='Reference number'
@@ -959,7 +997,9 @@ const FinancialReportsSection = () => {
                 </Paper>
               )}
               <Typography variant='body2'>
-                Ledger net (DR−CR, all types): {formatPKR(detailBody.netDistributorOwesCompany)}
+                Clearing net (DR−CR, all types): {formatPKR(detailBody.netDistributorOwesCompany)}
+                {detailBody.netDistributorOwesCompany < 0 ? ' — company owes distributor' : ''}
+                {detailBody.netDistributorOwesCompany > 0 ? ' — distributor owes company' : ''}
               </Typography>
               {detailBody.clearingHelp && (
                 <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>

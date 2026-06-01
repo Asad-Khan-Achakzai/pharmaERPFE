@@ -101,8 +101,26 @@ const horizontalMenuData = (): HorizontalMenuItemWithPermission[] => [
           { label: 'Record Settlement', href: '/settlements/add', permission: 'payments.create' }
         ]
       },
+      { label: 'Money Accounts', href: '/finance/money-accounts', icon: 'tabler-wallet', permission: 'payments.view' },
       { label: 'Expenses', href: '/expenses/list', icon: 'tabler-receipt', permission: 'expenses.view' },
-      { label: 'Ledger', href: '/ledger', icon: 'tabler-report-money', permission: 'ledger.view' }
+      { label: 'Voucher Entry', href: '/finance/transfers', icon: 'tabler-arrows-exchange', permission: 'payments.create' },
+      { label: 'General Ledger', href: '/finance/reports/general-ledger', icon: 'tabler-book', permission: 'reports.accounting' },
+      { label: 'Client Ledger', href: '/finance/client-ledger', icon: 'tabler-users-group', permission: 'ledger.view' },
+      { label: 'Supplier Ledger', href: '/finance/supplier-ledger', icon: 'tabler-truck', permission: 'ledger.view' },
+      { label: 'Expense Ledger', href: '/finance/expense-ledger', icon: 'tabler-receipt-2', permission: 'expenses.view' },
+      { label: 'Employee Ledger', href: '/finance/employee-ledger', icon: 'tabler-id', permission: 'ledger.view' },
+      {
+        label: 'Advanced Accounting',
+        icon: 'tabler-calculator',
+        children: [
+          { label: 'Financial Structure', href: '/finance/accounts', permission: 'reports.view' },
+          { label: 'Customer Balances', href: '/ledger', permission: 'ledger.view' },
+          { label: 'Advanced Financial Structure', href: '/finance/accounts/advanced', permission: 'accounts.view' },
+          { label: 'Financial Activity', href: '/finance/vouchers', permission: 'vouchers.view' },
+          { label: 'Manual Entry', href: '/finance/vouchers/new', permission: 'vouchers.create' },
+          { label: 'Financial Summary', href: '/finance/reports/trial-balance', permission: 'reports.accounting' }
+        ]
+      }
     ]
   },
   {

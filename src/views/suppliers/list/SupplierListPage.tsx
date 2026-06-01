@@ -30,6 +30,7 @@ import {
 import type { ColumnDef } from '@tanstack/react-table'
 
 import CustomTextField from '@core/components/mui/TextField'
+import { MoneyAccountSelect } from '@/components/finance/MoneyAccountSelect'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { supplierService } from '@/services/supplier.service'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
@@ -94,6 +95,7 @@ const SupplierListPage = () => {
   const [ledgerAmount, setLedgerAmount] = useState('')
   const [ledgerNotes, setLedgerNotes] = useState('')
   const [payMethod, setPayMethod] = useState<'CASH' | 'BANK' | 'CHEQUE' | 'OTHER'>('BANK')
+  const [payMoneyAccountId, setPayMoneyAccountId] = useState('')
   const [ledgerRef, setLedgerRef] = useState('')
   const [ledgerSaving, setLedgerSaving] = useState(false)
 
@@ -229,6 +231,10 @@ const SupplierListPage = () => {
       showApiError(null, 'Enter a valid positive amount')
       return
     }
+    if (mode === 'payment' && !payMoneyAccountId) {
+      showApiError(null, 'Select the Cash/Bank account paid from')
+      return
+    }
     setLedgerSaving(true)
     try {
       if (mode === 'payment') {
@@ -236,6 +242,7 @@ const SupplierListPage = () => {
           amount,
           notes: ledgerNotes || undefined,
           paymentMethod: payMethod,
+          moneyAccountId: payMoneyAccountId,
           referenceNumber: ledgerRef || undefined
         })
         const payload = (res.data as any)?.data ?? res.data
@@ -263,6 +270,7 @@ const SupplierListPage = () => {
     setLedgerNotes('')
     setLedgerRef('')
     setPayMethod('BANK')
+    setPayMoneyAccountId('')
     if (mode === 'payment') setPayOpen(true)
     else setPurchaseOpen(true)
   }, [])
@@ -524,6 +532,12 @@ const SupplierListPage = () => {
             <MenuItem value='CHEQUE'>Cheque</MenuItem>
             <MenuItem value='OTHER'>Other</MenuItem>
           </CustomTextField>
+          <MoneyAccountSelect
+            required
+            label='Paid from (Cash/Bank account)'
+            value={payMoneyAccountId}
+            onChange={setPayMoneyAccountId}
+          />
           <CustomTextField
             fullWidth
             label='Reference (cheque no / transaction id)'

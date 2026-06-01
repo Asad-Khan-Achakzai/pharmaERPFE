@@ -17,7 +17,13 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'attendance.viewTeam': 'View team attendance reports and today board (with attendance.view)',
   'attendance.approve': 'Approve attendance requests (covers direct and escalated inbox actions)',
   'attendance.viewEscalations': "View today's attendance exception summaries (late / open checkout)",
-  'attendance.override': 'Mark absent or set today status without full administrator role'
+  'attendance.override': 'Mark absent or set today status without full administrator role',
+  'reports.accounting': 'Advanced accounting reports (accountants only)',
+  'accounts.view': 'View financial structure / chart of accounts',
+  'accounts.manage': 'Manage accounts and opening balances',
+  'vouchers.view': 'View financial transactions (vouchers)',
+  'vouchers.create': 'Create manual transactions and transfers (advanced)',
+  'vouchers.reverse': 'Reverse posted transactions'
 }
 
 export const PERMISSION_GROUPS: Record<string, string[]> = {
@@ -31,6 +37,8 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   orders: ['orders.view', 'orders.create', 'orders.edit', 'orders.deliver', 'orders.return'],
   payments: ['payments.view', 'payments.create'],
   ledger: ['ledger.view'],
+  accounts: ['accounts.view', 'accounts.manage'],
+  vouchers: ['vouchers.view', 'vouchers.create', 'vouchers.post', 'vouchers.reverse'],
   targets: ['targets.view', 'targets.create', 'targets.edit'],
   weeklyPlans: [
     'weeklyPlans.view',
@@ -55,7 +63,7 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
     'attendance.matrix.manage',
     'attendance.governance.view'
   ],
-  reports: ['reports.view'],
+  reports: ['reports.view', 'reports.accounting'],
   suppliers: ['suppliers.view', 'suppliers.manage'],
   procurement: [
     'procurement.view',

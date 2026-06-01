@@ -26,6 +26,7 @@ import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
 import MenuItem from '@mui/material/MenuItem'
 import CustomTextField from '@core/components/mui/TextField'
+import { MoneyAccountSelect } from '@/components/finance/MoneyAccountSelect'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { supplierService } from '@/services/supplier.service'
 import { procurementService } from '@/services/procurement.service'
@@ -115,6 +116,7 @@ const SupplierDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: st
   const [payOpen, setPayOpen] = useState(false)
   const [payAmount, setPayAmount] = useState('')
   const [payMethod, setPayMethod] = useState<'CASH' | 'BANK' | 'CHEQUE' | 'OTHER'>('BANK')
+  const [payMoneyAccountId, setPayMoneyAccountId] = useState('')
   const [payNotes, setPayNotes] = useState('')
   const [payInvoices, setPayInvoices] = useState<SupplierInvoiceRow[]>([])
   const [payAlloc, setPayAlloc] = useState<Record<string, string>>({})
@@ -265,6 +267,10 @@ const SupplierDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: st
       showApiError(null, 'Enter a valid payment amount')
       return
     }
+    if (!payMoneyAccountId) {
+      showApiError(null, 'Select the Cash/Bank account paid from')
+      return
+    }
     const allocs: { supplierInvoiceId: string; amount: number }[] = []
     payInvoices.forEach(inv => {
       const v = parseFloat(payAlloc[inv._id]?.replace(/,/g, '') || '0')
@@ -281,11 +287,13 @@ const SupplierDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: st
       await supplierService.recordPayment(supplierId, {
         amount: amt,
         paymentMethod: payMethod,
+        moneyAccountId: payMoneyAccountId,
         notes: payNotes.trim() || undefined,
         paymentAllocations: allocs.length ? allocs : undefined
       })
       showSuccess('Payment recorded')
       setPayOpen(false)
+      setPayMoneyAccountId('')
       await loadAll()
     } catch (err) {
       showApiError(err, 'Could not record payment')
@@ -693,6 +701,13 @@ const SupplierDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: st
                 <MenuItem value='CHEQUE'>Cheque</MenuItem>
                 <MenuItem value='OTHER'>Other</MenuItem>
               </CustomTextField>
+              <MoneyAccountSelect
+                required
+                label='Paid from (Cash/Bank account)'
+                helperText='Which account this payment was made from'
+                value={payMoneyAccountId}
+                onChange={setPayMoneyAccountId}
+              />
               <CustomTextField fullWidth label='Notes (optional)' multiline minRows={2} value={payNotes} onChange={e => setPayNotes(e.target.value)} />
 
               {payInvoices.length > 0 && (

@@ -1,23 +1,25 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
+import Link from 'next/link'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
+import Stack from '@mui/material/Stack'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import Grid from '@mui/material/Grid'
-import Stack from '@mui/material/Stack'
 import CircularProgress from '@mui/material/CircularProgress'
 import { showApiError } from '@/utils/apiErrors'
 import { createColumnHelper, flexRender, getCoreRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
 import type { ColumnDef } from '@tanstack/react-table'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { ledgerService } from '@/services/ledger.service'
+import { ACCOUNTING_UX } from '@/constants/accountingUx'
 import tableStyles from '@core/styles/table.module.css'
 import {
   TableListSearchField,
@@ -122,7 +124,20 @@ const LedgerPage = () => {
 
   return (
     <Card>
-      <CardHeader title='Ledger' />
+      <CardHeader
+        title={ACCOUNTING_UX.customerBalances}
+        subheader='Outstanding amounts from pharmacies and customers'
+        action={
+          <Stack direction='row' spacing={1} flexWrap='wrap' useFlexGap>
+            <Button size='small' variant='outlined' component={Link} href='/finance/reports/general-ledger'>
+              {ACCOUNTING_UX.accountHistory}
+            </Button>
+            <Button size='small' variant='outlined' component={Link} href='/finance/vouchers'>
+              Transactions
+            </Button>
+          </Stack>
+        }
+      />
       <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
         <Stack direction='row' spacing={1.5} alignItems='center' flexWrap='wrap' useFlexGap sx={{ flex: 1, minWidth: 0 }}>
           <TableListSearchField

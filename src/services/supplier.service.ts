@@ -39,6 +39,7 @@ export const supplierService = {
       date?: string
       notes?: string
       paymentMethod: 'CASH' | 'BANK' | 'CHEQUE' | 'OTHER'
+      moneyAccountId: string
       referenceNumber?: string
       attachmentUrl?: string
       verificationStatus?: 'VERIFIED' | 'UNVERIFIED'
