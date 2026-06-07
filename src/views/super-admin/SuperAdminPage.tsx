@@ -54,6 +54,8 @@ type Company = {
   mrepMultiTerritory?: boolean
   /** Append DoctorOwnershipEvent rows when doctor territory/rep assignment changes. */
   mrepOwnershipAudit?: boolean
+  /** When true, checked-in mobile reps send GPS heartbeats; managers see live tracking on web/mobile. */
+  liveTrackingEnabled?: boolean
   onboardingEnabled?: boolean
   onboardingStrictValidation?: boolean
   onboardingKillSwitch?: boolean
@@ -80,6 +82,7 @@ const emptyForm = {
   strictVisitSequence: false,
   mrepMultiTerritory: false,
   mrepOwnershipAudit: false,
+  liveTrackingEnabled: false,
   onboardingEnabled: false,
   onboardingStrictValidation: false,
   onboardingKillSwitch: false,
@@ -146,6 +149,7 @@ const SuperAdminPage = () => {
       strictVisitSequence: c.strictVisitSequence === true,
       mrepMultiTerritory: c.mrepMultiTerritory === true,
       mrepOwnershipAudit: c.mrepOwnershipAudit === true,
+      liveTrackingEnabled: c.liveTrackingEnabled === true,
       onboardingEnabled: c.onboardingEnabled === true,
       onboardingStrictValidation: c.onboardingStrictValidation === true,
       onboardingKillSwitch: c.onboardingKillSwitch === true,
@@ -166,6 +170,7 @@ const SuperAdminPage = () => {
         strictVisitSequence: form.strictVisitSequence,
         mrepMultiTerritory: form.mrepMultiTerritory,
         mrepOwnershipAudit: form.mrepOwnershipAudit,
+        liveTrackingEnabled: form.liveTrackingEnabled,
         onboardingEnabled: form.onboardingEnabled,
         onboardingStrictValidation: form.onboardingStrictValidation,
         onboardingKillSwitch: form.onboardingKillSwitch,
@@ -192,6 +197,7 @@ const SuperAdminPage = () => {
         strictVisitSequence: form.strictVisitSequence,
         mrepMultiTerritory: form.mrepMultiTerritory,
         mrepOwnershipAudit: form.mrepOwnershipAudit,
+        liveTrackingEnabled: form.liveTrackingEnabled,
         onboardingEnabled: form.onboardingEnabled,
         onboardingStrictValidation: form.onboardingStrictValidation,
         onboardingKillSwitch: form.onboardingKillSwitch,
@@ -293,6 +299,9 @@ const SuperAdminPage = () => {
                               ) : null}
                               {row.mrepOwnershipAudit ? (
                                 <Chip size='small' label='Ownership audit' color='secondary' variant='outlined' />
+                              ) : null}
+                              {row.liveTrackingEnabled ? (
+                                <Chip size='small' label='Live tracking' color='primary' variant='outlined' />
                               ) : null}
                               {row.onboardingEnabled ? (
                                 <Chip size='small' label='Onboarding enabled' color='success' variant='outlined' />
@@ -532,6 +541,27 @@ const SuperAdminPage = () => {
           <FormControlLabel
             control={
               <Switch
+                checked={form.liveTrackingEnabled}
+                onChange={e => setForm(f => ({ ...f, liveTrackingEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Live tracking
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  Checked-in field reps send periodic GPS pings on mobile; managers view locations on web and mobile
+                  (People &amp; Operations → Team → Live tracking).
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
                 checked={form.onboardingEnabled}
                 onChange={e => setForm(f => ({ ...f, onboardingEnabled: e.target.checked }))}
                 color='primary'
@@ -757,6 +787,27 @@ const SuperAdminPage = () => {
                 </Typography>
                 <Typography variant='caption' color='text.secondary' display='block'>
                   Records territory / pinned-rep changes on doctors.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.liveTrackingEnabled}
+                onChange={e => setForm(f => ({ ...f, liveTrackingEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Live tracking
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  Checked-in field reps send periodic GPS pings on mobile; managers view locations on web and mobile
+                  (People &amp; Operations → Team → Live tracking).
                 </Typography>
               </div>
             }

@@ -787,9 +787,13 @@ const LegacyDashboardView = () => {
     <Grid container spacing={4}>
       <Grid
         size={{ xs: 12, md: 4 }}
-        sx={{ alignSelf: { md: 'flex-start' }, order: { xs: quickFirst ? 2 : 0, md: 0 } }}
+        sx={{
+          alignSelf: { md: 'flex-start' },
+          order: { xs: quickFirst ? 2 : 0, md: 0 },
+          minWidth: 0
+        }}
       >
-        <Stack spacing={2.5} sx={{ width: '100%', minHeight: 0 }}>
+        <Stack spacing={2.5} sx={{ width: '100%', minWidth: 0, minHeight: 0 }}>
           <DashboardWelcomeColumn
             greeting={greeting}
             name={user?.name || 'Team'}

@@ -95,5 +95,8 @@ export const attendanceService = {
   rejectAttendanceRequest: (id: string, body?: { comment?: string }) =>
     api.post(`/attendance/requests/${id}/reject`, body ?? {}),
   escalateAttendanceRequest: (id: string, body?: { comment?: string }) =>
-    api.post(`/attendance/requests/${id}/escalate`, body ?? {})
+    api.post(`/attendance/requests/${id}/escalate`, body ?? {}),
+
+  /** Manager live map — latest rep GPS pings (last 30 min). Requires company liveTrackingEnabled. */
+  live: () => api.get('/attendance/live')
 }

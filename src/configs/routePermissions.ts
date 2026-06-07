@@ -45,6 +45,7 @@ export const routePermissions: Array<{ path: string; permission: string }> = [
   { path: '/dashboard/mrep', permission: 'weeklyPlans.view' },
   { path: '/dashboard/manager/team', permission: 'team.view' },
   { path: '/dashboard/manager', permission: 'weeklyPlans.view' },
+  { path: '/team/live', permission: 'team.sub.live' },
   { path: '/team/tree', permission: 'team.view' },
   { path: '/territories/analytics', permission: 'territories.view' },
   { path: '/territories', permission: 'territories.view' },

@@ -18,6 +18,15 @@ type PolicySummary = {
   checkInClosedForShift?: boolean
 }
 
+/** Keeps long API copy inside narrow dashboard columns (e.g. md=4 sidebar). */
+const bodyTextWrapSx = {
+  width: '100%',
+  maxWidth: '100%',
+  minWidth: 0,
+  overflowWrap: 'break-word',
+  wordBreak: 'break-word'
+} as const
+
 const MyAttendanceCard = ({
   meTodayLoading,
   meToday,
@@ -44,7 +53,10 @@ const MyAttendanceCard = ({
       sx={{
         boxShadow: 'var(--shadow-xs)',
         minHeight: 0,
-        overflow: 'visible',
+        minWidth: 0,
+        width: '100%',
+        maxWidth: '100%',
+        overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column'
       }}
@@ -58,13 +70,16 @@ const MyAttendanceCard = ({
         sx={{
           flex: '1 1 auto',
           minHeight: 0,
-          overflow: 'visible',
+          minWidth: 0,
+          width: '100%',
+          maxWidth: '100%',
+          overflow: 'hidden',
           px: { xs: 2.5, sm: 3 },
           pt: 0.5,
           pb: { xs: 10, sm: 3 },
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'flex-start',
+          alignItems: 'stretch',
           gap: 2,
           '&:last-of-type': { pb: { xs: 10, sm: 3 } }
         }}
@@ -81,7 +96,12 @@ const MyAttendanceCard = ({
           </Box>
         ) : (
           <>
-            <Typography component='div' variant='body2' className='flex items-center gap-2 flex-wrap'>
+            <Typography
+              component='div'
+              variant='body2'
+              className='flex items-center gap-2 flex-wrap'
+              sx={bodyTextWrapSx}
+            >
               <span>Status:</span>
               <Chip
                 size='small'
@@ -115,15 +135,20 @@ const MyAttendanceCard = ({
               />
             </Typography>
             {ps?.shiftName ? (
-              <Box>
+              <Box sx={bodyTextWrapSx}>
                 <Typography variant='caption' color='text.secondary' display='block'>
                   Today’s expected window
                 </Typography>
-                <Typography variant='body2'>
+                <Typography variant='body2' sx={bodyTextWrapSx}>
                   <strong>{ps.shiftName}</strong> · {ps.expectedStartLocal ?? '—'} – {ps.expectedEndLocal ?? '—'}
                   {typeof ps.graceMinutes === 'number' ? ` · ${ps.graceMinutes} min grace` : null}
                 </Typography>
-                <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.5 }}>
+                <Typography
+                  variant='caption'
+                  color='text.secondary'
+                  display='block'
+                  sx={{ mt: 0.5, ...bodyTextWrapSx }}
+                >
                   {cutoff > 0
                     ? `Check-in allowed up to ${cutoff} minutes after the scheduled end.`
                     : 'Check-in closes when the scheduled day ends (no extra buffer).'}
@@ -131,23 +156,28 @@ const MyAttendanceCard = ({
               </Box>
             ) : null}
             {meToday?.uiStatus === 'LATE_CHECKIN_PENDING' && (
-              <Typography variant='body2' color='text.secondary'>
+              <Typography variant='body2' color='text.secondary' sx={bodyTextWrapSx}>
                 Your check-in time was saved and sent to your manager. You can check out after they approve.
               </Typography>
             )}
             {meToday?.uiStatus === 'LATE_CHECKIN_REJECTED' && (
-              <Typography variant='body2' color='text.secondary'>
+              <Typography variant='body2' color='text.secondary' sx={bodyTextWrapSx}>
                 Your manager rejected this late check-in. You can tap Check In again if needed.
               </Typography>
             )}
             {meToday?.uiStatus === 'SHIFT_CHECKIN_CLOSED' && (
-              <Box>
-                <Typography variant='body2' color='text.secondary'>
+              <Box sx={bodyTextWrapSx}>
+                <Typography variant='body2' color='text.secondary' sx={bodyTextWrapSx}>
                   {meToday.shiftCheckInClosedMessage ||
                     'Shift has ended. Check-in is no longer allowed for today. Use an attendance correction request or contact your manager.'}
                 </Typography>
                 {ps?.shiftName ? (
-                  <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 1 }}>
+                  <Typography
+                    variant='caption'
+                    color='text.secondary'
+                    display='block'
+                    sx={{ mt: 1, ...bodyTextWrapSx }}
+                  >
                     Scheduled: {ps.expectedStartLocal} – {ps.expectedEndLocal}
                     {cutoff > 0 ? ` (check-in window extended ${cutoff} min past end)` : ''}
                   </Typography>
@@ -155,17 +185,17 @@ const MyAttendanceCard = ({
               </Box>
             )}
             {meToday?.checkInTime && (
-              <Typography variant='body2' color='text.secondary'>
+              <Typography variant='body2' color='text.secondary' sx={bodyTextWrapSx}>
                 Check-in: {formatPstHm(meToday.checkInTime as string) ?? '—'}
               </Typography>
             )}
             {meToday?.checkOutTime && (
-              <Typography variant='body2' color='text.secondary'>
+              <Typography variant='body2' color='text.secondary' sx={bodyTextWrapSx}>
                 Check-out: {formatPstHm(meToday.checkOutTime as string) ?? '—'}
               </Typography>
             )}
             {meToday?.pstDate && (
-              <Typography variant='caption' color='text.disabled' sx={{ display: 'block' }}>
+              <Typography variant='caption' color='text.disabled' sx={{ display: 'block', ...bodyTextWrapSx }}>
                 Workday date: {meToday.pstDate}
               </Typography>
             )}

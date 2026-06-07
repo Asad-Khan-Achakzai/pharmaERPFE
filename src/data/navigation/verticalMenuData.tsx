@@ -149,6 +149,7 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
         children: [
           { label: 'User List', href: '/users/list', permission: 'users.view' },
           { label: 'My Team', href: '/team', permission: 'team.view' },
+          { label: 'Live tracking', href: '/team/live', permission: 'team.view' },
           { label: 'Territories', href: '/territories', permission: 'territories.view' },
           { label: 'Roles & Permissions', href: '/users/roles', permission: 'users.view' }
         ]

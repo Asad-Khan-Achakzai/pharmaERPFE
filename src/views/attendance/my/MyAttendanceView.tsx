@@ -589,7 +589,17 @@ export default function MyAttendanceView() {
                     </Typography>
                   ) : null}
                   {meToday?.uiStatus === 'SHIFT_CHECKIN_CLOSED' ? (
-                    <Typography variant='body2' color='text.secondary'>
+                    <Typography
+                      variant='body2'
+                      color='text.secondary'
+                      sx={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        minWidth: 0,
+                        overflowWrap: 'break-word',
+                        wordBreak: 'break-word'
+                      }}
+                    >
                       {meToday.shiftCheckInClosedMessage ||
                         'This shift has ended. Use a correction request if you still need changes.'}
                     </Typography>

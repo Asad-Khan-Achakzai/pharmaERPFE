@@ -56,6 +56,14 @@ function userCanAccessRequiredPermission(
       hasPermission('attendance.approve.escalated')
     )
   }
+  if (requiredPermission === 'team.sub.live') {
+    return (
+      hasPermission('admin.access') ||
+      hasPermission('team.view') ||
+      hasPermission('team.viewAllReports') ||
+      hasPermission('attendance.viewTeam')
+    )
+  }
   return hasPermission(requiredPermission)
 }
 
