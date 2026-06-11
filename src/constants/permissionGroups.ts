@@ -4,6 +4,7 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'admin.access': 'Full administrator access (all areas — see backend)',
   'roles.manage': 'Create and edit roles',
   'doctors.assign': 'Reassign territory / rep / target / tier on a doctor',
+  'doctorLocations.review': 'Approve or reject rep-submitted doctor GPS locations',
   'team.view': 'See "My Team" widget and direct reports',
   'team.manage': 'Set / change managerId, territoryId, employeeCode on users',
   'team.viewAllReports': 'See plans, visits, and sales for entire reporting subtree',
@@ -11,6 +12,7 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'territories.manage': 'Create / edit / delete Zones / Areas / Bricks',
   'weeklyPlans.review': 'Open submitted weekly plans of direct reports',
   'weeklyPlans.approve': 'Approve or reject submitted weekly plans',
+  'expenses.approve': 'Approve or reject field expenses submitted by the team',
   'procurement.return': 'Record purchase returns against posted receipts',
   'procurement.grnReverse': 'Reverse a posted goods receipt (emergency / admin)',
   'procurement.cancelPo': 'Cancel supplier orders that have no receipts',
@@ -34,6 +36,7 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   inventory: ['inventory.view', 'inventory.transfer'],
   pharmacies: ['pharmacies.view', 'pharmacies.create', 'pharmacies.edit', 'pharmacies.delete'],
   doctors: ['doctors.view', 'doctors.create', 'doctors.edit', 'doctors.delete', 'doctors.assign'],
+  doctorLocations: ['doctorLocations.review'],
   orders: ['orders.view', 'orders.create', 'orders.edit', 'orders.deliver', 'orders.return'],
   payments: ['payments.view', 'payments.create'],
   ledger: ['ledger.view'],
@@ -48,7 +51,7 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
     'weeklyPlans.review',
     'weeklyPlans.approve'
   ],
-  expenses: ['expenses.view', 'expenses.create', 'expenses.edit', 'expenses.delete'],
+  expenses: ['expenses.view', 'expenses.create', 'expenses.edit', 'expenses.delete', 'expenses.approve'],
   payroll: ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.pay'],
   attendance: [
     'attendance.view',

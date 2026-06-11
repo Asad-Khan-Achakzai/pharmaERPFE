@@ -56,6 +56,9 @@ type Company = {
   mrepOwnershipAudit?: boolean
   /** When true, checked-in mobile reps send GPS heartbeats; managers see live tracking on web/mobile. */
   liveTrackingEnabled?: boolean
+  geoFencingEnabled?: boolean
+  geoFenceRadiusMeters?: number
+  geoFenceMode?: 'OFF' | 'SOFT' | 'STRICT'
   onboardingEnabled?: boolean
   onboardingStrictValidation?: boolean
   onboardingKillSwitch?: boolean
@@ -66,7 +69,35 @@ type Company = {
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-const emptyForm = {
+type GeoFenceMode = 'OFF' | 'SOFT' | 'STRICT'
+
+type CompanyFormState = {
+  name: string
+  address: string
+  city: string
+  state: string
+  country: string
+  phone: string
+  ntnNo: string
+  email: string
+  currency: string
+  timeZone: string
+  isActive: boolean
+  weeklyPlanApprovalRequired: boolean
+  strictVisitSequence: boolean
+  mrepMultiTerritory: boolean
+  mrepOwnershipAudit: boolean
+  liveTrackingEnabled: boolean
+  geoFencingEnabled: boolean
+  geoFenceRadiusMeters: number
+  geoFenceMode: GeoFenceMode
+  onboardingEnabled: boolean
+  onboardingStrictValidation: boolean
+  onboardingKillSwitch: boolean
+  onboardingPilotCohort: string
+}
+
+const emptyForm: CompanyFormState = {
   name: '',
   address: '',
   city: '',
@@ -83,6 +114,9 @@ const emptyForm = {
   mrepMultiTerritory: false,
   mrepOwnershipAudit: false,
   liveTrackingEnabled: false,
+  geoFencingEnabled: false,
+  geoFenceRadiusMeters: 150,
+  geoFenceMode: 'OFF',
   onboardingEnabled: false,
   onboardingStrictValidation: false,
   onboardingKillSwitch: false,
@@ -98,7 +132,7 @@ const SuperAdminPage = () => {
   const [editOpen, setEditOpen] = useState(false)
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm] = useState<CompanyFormState>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [summaryCompany, setSummaryCompany] = useState<Company | null>(null)
   const [summaryData, setSummaryData] = useState<any>(null)
@@ -150,6 +184,9 @@ const SuperAdminPage = () => {
       mrepMultiTerritory: c.mrepMultiTerritory === true,
       mrepOwnershipAudit: c.mrepOwnershipAudit === true,
       liveTrackingEnabled: c.liveTrackingEnabled === true,
+      geoFencingEnabled: c.geoFencingEnabled === true,
+      geoFenceRadiusMeters: c.geoFenceRadiusMeters ?? 150,
+      geoFenceMode: c.geoFenceMode === 'SOFT' || c.geoFenceMode === 'STRICT' ? c.geoFenceMode : 'OFF',
       onboardingEnabled: c.onboardingEnabled === true,
       onboardingStrictValidation: c.onboardingStrictValidation === true,
       onboardingKillSwitch: c.onboardingKillSwitch === true,
@@ -171,6 +208,9 @@ const SuperAdminPage = () => {
         mrepMultiTerritory: form.mrepMultiTerritory,
         mrepOwnershipAudit: form.mrepOwnershipAudit,
         liveTrackingEnabled: form.liveTrackingEnabled,
+        geoFencingEnabled: form.geoFencingEnabled,
+        geoFenceRadiusMeters: form.geoFenceRadiusMeters,
+        geoFenceMode: form.geoFenceMode,
         onboardingEnabled: form.onboardingEnabled,
         onboardingStrictValidation: form.onboardingStrictValidation,
         onboardingKillSwitch: form.onboardingKillSwitch,
@@ -198,6 +238,9 @@ const SuperAdminPage = () => {
         mrepMultiTerritory: form.mrepMultiTerritory,
         mrepOwnershipAudit: form.mrepOwnershipAudit,
         liveTrackingEnabled: form.liveTrackingEnabled,
+        geoFencingEnabled: form.geoFencingEnabled,
+        geoFenceRadiusMeters: form.geoFenceRadiusMeters,
+        geoFenceMode: form.geoFenceMode,
         onboardingEnabled: form.onboardingEnabled,
         onboardingStrictValidation: form.onboardingStrictValidation,
         onboardingKillSwitch: form.onboardingKillSwitch,
@@ -302,6 +345,14 @@ const SuperAdminPage = () => {
                               ) : null}
                               {row.liveTrackingEnabled ? (
                                 <Chip size='small' label='Live tracking' color='primary' variant='outlined' />
+                              ) : null}
+                              {row.geoFencingEnabled ? (
+                                <Chip
+                                  size='small'
+                                  label={`Geo-fence ${row.geoFenceMode || 'OFF'}`}
+                                  color='info'
+                                  variant='outlined'
+                                />
                               ) : null}
                               {row.onboardingEnabled ? (
                                 <Chip size='small' label='Onboarding enabled' color='success' variant='outlined' />
@@ -562,6 +613,53 @@ const SuperAdminPage = () => {
           <FormControlLabel
             control={
               <Switch
+                checked={form.geoFencingEnabled}
+                onChange={e => setForm(f => ({ ...f, geoFencingEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Visit geo-fencing
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When enabled, verified doctors use GPS radius checks on visit completion (SOFT logs warnings, STRICT
+                  blocks).
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <TextField
+            select
+            label='Geo-fence mode'
+            fullWidth
+            value={form.geoFenceMode}
+            onChange={e =>
+              setForm(f => ({ ...f, geoFenceMode: e.target.value as GeoFenceMode }))
+            }
+            margin='normal'
+            disabled={!form.geoFencingEnabled}
+            helperText='Only applies to doctors with verified locations.'
+          >
+            <MenuItem value='OFF'>Off</MenuItem>
+            <MenuItem value='SOFT'>Soft — allow visit, log outside radius</MenuItem>
+            <MenuItem value='STRICT'>Strict — block visit outside radius</MenuItem>
+          </TextField>
+          <TextField
+            label='Geo-fence radius (meters)'
+            type='number'
+            fullWidth
+            value={form.geoFenceRadiusMeters}
+            onChange={e => setForm(f => ({ ...f, geoFenceRadiusMeters: Number(e.target.value) || 150 }))}
+            margin='normal'
+            disabled={!form.geoFencingEnabled}
+            inputProps={{ min: 25, max: 5000 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
                 checked={form.onboardingEnabled}
                 onChange={e => setForm(f => ({ ...f, onboardingEnabled: e.target.checked }))}
                 color='primary'
@@ -812,6 +910,53 @@ const SuperAdminPage = () => {
               </div>
             }
             sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.geoFencingEnabled}
+                onChange={e => setForm(f => ({ ...f, geoFencingEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Visit geo-fencing
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When enabled, verified doctors use GPS radius checks on visit completion (SOFT logs warnings, STRICT
+                  blocks).
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <TextField
+            select
+            label='Geo-fence mode'
+            fullWidth
+            value={form.geoFenceMode}
+            onChange={e =>
+              setForm(f => ({ ...f, geoFenceMode: e.target.value as GeoFenceMode }))
+            }
+            margin='normal'
+            disabled={!form.geoFencingEnabled}
+            helperText='Only applies to doctors with verified locations.'
+          >
+            <MenuItem value='OFF'>Off</MenuItem>
+            <MenuItem value='SOFT'>Soft — allow visit, log outside radius</MenuItem>
+            <MenuItem value='STRICT'>Strict — block visit outside radius</MenuItem>
+          </TextField>
+          <TextField
+            label='Geo-fence radius (meters)'
+            type='number'
+            fullWidth
+            value={form.geoFenceRadiusMeters}
+            onChange={e => setForm(f => ({ ...f, geoFenceRadiusMeters: Number(e.target.value) || 150 }))}
+            margin='normal'
+            disabled={!form.geoFencingEnabled}
+            inputProps={{ min: 25, max: 5000 }}
           />
           <FormControlLabel
             control={

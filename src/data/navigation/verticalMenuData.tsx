@@ -63,6 +63,7 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
         icon: 'tabler-stethoscope',
         children: [
           { label: 'Doctors', href: '/doctors/list', permission: 'doctors.view' },
+          { label: 'Location review', href: '/doctors/location-review', permission: 'doctorLocations.review' },
           { label: 'Activities', href: '/doctor-activities/list', permission: 'doctors.view' }
         ]
       },

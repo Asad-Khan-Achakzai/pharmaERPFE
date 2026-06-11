@@ -110,12 +110,22 @@ type Doctor = {
   pmdcRegistration?: string
   designation?: string
   patientCount?: number | null
+  locationStatus?: string
+  latitude?: number | null
+  longitude?: number | null
 }
 
 const columnHelper = createColumnHelper<Doctor>()
 
 const detailVal = (v?: string | number | null) =>
   v !== undefined && v !== null && String(v).trim() !== '' ? String(v) : '—'
+
+const mapsUrl = (lat: number, lng: number) => `https://www.google.com/maps?q=${lat},${lng}`
+
+const formatCoords = (lat?: number | null, lng?: number | null) => {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null
+  return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+}
 
 const DoctorListPage = () => {
   const searchParams = useSearchParams()
@@ -604,6 +614,39 @@ const DoctorListPage = () => {
                   Address
                 </Typography>
                 <Typography>{detailVal(viewItem.address)}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Typography variant='body2' color='text.secondary'>
+                  Location verification
+                </Typography>
+                <Chip
+                  size='small'
+                  label={viewItem.locationStatus || 'UNVERIFIED'}
+                  variant='tonal'
+                  className='mts-1'
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Typography variant='body2' color='text.secondary'>
+                  GPS coordinates
+                </Typography>
+                {formatCoords(viewItem.latitude, viewItem.longitude) ? (
+                  <Stack direction='row' alignItems='center' spacing={0.5} className='mts-1'>
+                    <Typography>{formatCoords(viewItem.latitude, viewItem.longitude)}</Typography>
+                    <IconButton
+                      component='a'
+                      href={mapsUrl(viewItem.latitude!, viewItem.longitude!)}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                      size='small'
+                      aria-label='Open doctor location on map'
+                    >
+                      <i className='tabler-external-link' />
+                    </IconButton>
+                  </Stack>
+                ) : (
+                  <Typography className='mts-1'>—</Typography>
+                )}
               </Grid>
               <Grid size={{ xs: 12 }}>
                 <Typography variant='body2' color='text.secondary'>
