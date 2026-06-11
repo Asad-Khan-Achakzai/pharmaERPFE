@@ -14,7 +14,8 @@ import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import CircularProgress from '@mui/material/CircularProgress'
 import { useRouter } from 'next/navigation'
-import { showApiError } from '@/utils/apiErrors'
+import { showApiError, showSuccess } from '@/utils/apiErrors'
+import CustomTextField from '@core/components/mui/TextField'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   createColumnHelper,
@@ -57,10 +58,20 @@ const columnHelper = createColumnHelper<CollectionRow>()
 const collectorLabel = (t: string) =>
   t === 'COMPANY' ? 'Company' : t === 'DISTRIBUTOR' ? 'Distributor' : t
 
+const toInputDate = (d: string | Date | undefined) => {
+  if (!d) return ''
+  try {
+    return new Date(d).toISOString().slice(0, 10)
+  } catch {
+    return ''
+  }
+}
+
 const PaymentListPage = () => {
   const router = useRouter()
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('payments.create')
+  const canManage = canCreate
   const [data, setData] = useState<CollectionRow[]>([])
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
   const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
@@ -68,6 +79,14 @@ const PaymentListPage = () => {
   const fetchSeq = useRef(0)
   const [loading, setLoading] = useState(true)
   const [viewItem, setViewItem] = useState<CollectionRow | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ date: '', notes: '', referenceNumber: '' })
+  const [editSaving, setEditSaving] = useState(false)
+  const [reverseOpen, setReverseOpen] = useState(false)
+  const [reverseId, setReverseId] = useState<string | null>(null)
+  const [reverseReason, setReverseReason] = useState('')
+  const [reverseSaving, setReverseSaving] = useState(false)
 
   const filterOpen = Boolean(filterAnchor)
   const activeFilterCount = countDateUserFilters(appliedFilters)
@@ -91,6 +110,62 @@ const PaymentListPage = () => {
   useEffect(() => {
     void fetchData()
   }, [fetchData])
+
+  const openEdit = (row: CollectionRow) => {
+    setEditingId(row._id)
+    setEditForm({
+      date: toInputDate(row.date),
+      notes: row.notes || '',
+      referenceNumber: row.referenceNumber || ''
+    })
+    setEditOpen(true)
+  }
+
+  const saveEdit = async () => {
+    if (!editingId) return
+    setEditSaving(true)
+    try {
+      await collectionsService.update(editingId, {
+        date: editForm.date || undefined,
+        notes: editForm.notes || undefined,
+        referenceNumber: editForm.referenceNumber || undefined
+      })
+      showSuccess('Collection updated')
+      setEditOpen(false)
+      setEditingId(null)
+      setViewItem(null)
+      await fetchData()
+    } catch (err) {
+      showApiError(err, 'Could not update collection')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  const openReverse = (row: CollectionRow) => {
+    setReverseId(row._id)
+    setReverseReason('')
+    setReverseOpen(true)
+  }
+
+  const confirmReverse = async () => {
+    if (!reverseId) return
+    setReverseSaving(true)
+    try {
+      await collectionsService.reverse(reverseId, {
+        reversalReason: reverseReason.trim() || undefined
+      })
+      showSuccess('Collection reversed. Pharmacy balance and ledger entries were restored.')
+      setReverseOpen(false)
+      setReverseId(null)
+      setViewItem(null)
+      await fetchData()
+    } catch (err) {
+      showApiError(err, 'Could not reverse collection')
+    } finally {
+      setReverseSaving(false)
+    }
+  }
 
   const columns = useMemo<ColumnDef<CollectionRow, any>[]>(
     () => [
@@ -121,13 +196,30 @@ const PaymentListPage = () => {
         id: 'actions',
         header: 'Actions',
         cell: ({ row }) => (
-          <IconButton size='small' onClick={() => setViewItem(row.original)}>
-            <i className='tabler-eye text-textSecondary' />
-          </IconButton>
+          <>
+            <IconButton size='small' title='View' onClick={() => setViewItem(row.original)}>
+              <i className='tabler-eye text-textSecondary' />
+            </IconButton>
+            {canManage && (
+              <>
+                <IconButton size='small' title='Edit' onClick={() => openEdit(row.original)}>
+                  <i className='tabler-edit text-textSecondary' />
+                </IconButton>
+                <IconButton
+                  size='small'
+                  title='Reverse collection'
+                  color='warning'
+                  onClick={() => openReverse(row.original)}
+                >
+                  <i className='tabler-arrow-back-up' />
+                </IconButton>
+              </>
+            )}
+          </>
         )
       })
     ],
-    []
+    [canManage]
   )
 
   const table = useReactTable({
@@ -274,8 +366,98 @@ const PaymentListPage = () => {
             </Grid>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions className='flex-wrap gap-2'>
           <Button onClick={() => setViewItem(null)}>Close</Button>
+          {viewItem && canManage && (
+            <>
+              <Button
+                variant='tonal'
+                color='secondary'
+                onClick={() => {
+                  openEdit(viewItem)
+                  setViewItem(null)
+                }}
+              >
+                Edit
+              </Button>
+              <Button
+                variant='tonal'
+                color='warning'
+                onClick={() => {
+                  openReverse(viewItem)
+                  setViewItem(null)
+                }}
+              >
+                Reverse
+              </Button>
+            </>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={editOpen} onClose={() => !editSaving && setEditOpen(false)} maxWidth='sm' fullWidth>
+        <DialogTitle>Edit collection</DialogTitle>
+        <DialogContent className='flex flex-col gap-4 pbs-4'>
+          <Typography variant='body2' color='text.secondary'>
+            You can update date, reference, and notes. To change amount, pharmacy, or collector, reverse this entry and
+            record a new collection.
+          </Typography>
+          <CustomTextField
+            fullWidth
+            type='date'
+            label='Collection date'
+            slotProps={{ inputLabel: { shrink: true } }}
+            value={editForm.date}
+            onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
+          />
+          <CustomTextField
+            fullWidth
+            label='Reference'
+            value={editForm.referenceNumber}
+            onChange={e => setEditForm(f => ({ ...f, referenceNumber: e.target.value }))}
+          />
+          <CustomTextField
+            fullWidth
+            label='Notes'
+            multiline
+            minRows={2}
+            value={editForm.notes}
+            onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditOpen(false)} disabled={editSaving}>
+            Cancel
+          </Button>
+          <Button variant='contained' onClick={() => void saveEdit()} disabled={editSaving}>
+            {editSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={reverseOpen} onClose={() => !reverseSaving && setReverseOpen(false)} maxWidth='sm' fullWidth>
+        <DialogTitle>Reverse collection?</DialogTitle>
+        <DialogContent className='flex flex-col gap-4 pbs-4'>
+          <Typography variant='body2' color='text.secondary'>
+            This undoes the pharmacy receipt: FIFO allocation is restored, ledger and GL entries are reversed, and the
+            collection is removed from active lists. It cannot be reversed if a settlement already used this collection.
+          </Typography>
+          <CustomTextField
+            fullWidth
+            label='Reason (optional)'
+            multiline
+            minRows={2}
+            value={reverseReason}
+            onChange={e => setReverseReason(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReverseOpen(false)} disabled={reverseSaving}>
+            Cancel
+          </Button>
+          <Button variant='contained' color='warning' onClick={() => void confirmReverse()} disabled={reverseSaving}>
+            {reverseSaving ? 'Reversing...' : 'Reverse collection'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Card>

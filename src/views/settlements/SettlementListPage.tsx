@@ -14,7 +14,8 @@ import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
 import CircularProgress from '@mui/material/CircularProgress'
 import { useRouter } from 'next/navigation'
-import { showApiError } from '@/utils/apiErrors'
+import { showApiError, showSuccess } from '@/utils/apiErrors'
+import CustomTextField from '@core/components/mui/TextField'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   createColumnHelper,
@@ -59,10 +60,20 @@ const columnHelper = createColumnHelper<SettlementRow>()
 const directionLabel = (d: string) =>
   d === 'DISTRIBUTOR_TO_COMPANY' ? 'Distributor → company' : d === 'COMPANY_TO_DISTRIBUTOR' ? 'Company → distributor' : d
 
+const toInputDate = (d: string | Date | undefined) => {
+  if (!d) return ''
+  try {
+    return new Date(d).toISOString().slice(0, 10)
+  } catch {
+    return ''
+  }
+}
+
 const SettlementListPage = () => {
   const router = useRouter()
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('payments.create')
+  const canManage = canCreate
   const [data, setData] = useState<SettlementRow[]>([])
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
   const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
@@ -70,6 +81,14 @@ const SettlementListPage = () => {
   const fetchSeq = useRef(0)
   const [loading, setLoading] = useState(true)
   const [viewItem, setViewItem] = useState<SettlementRow | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ date: '', notes: '', referenceNumber: '' })
+  const [editSaving, setEditSaving] = useState(false)
+  const [reverseOpen, setReverseOpen] = useState(false)
+  const [reverseId, setReverseId] = useState<string | null>(null)
+  const [reverseReason, setReverseReason] = useState('')
+  const [reverseSaving, setReverseSaving] = useState(false)
 
   const filterOpen = Boolean(filterAnchor)
   const activeFilterCount = countDateUserFilters(appliedFilters)
@@ -93,6 +112,62 @@ const SettlementListPage = () => {
   useEffect(() => {
     void fetchData()
   }, [fetchData])
+
+  const openEdit = (row: SettlementRow) => {
+    setEditingId(row._id)
+    setEditForm({
+      date: toInputDate(row.date),
+      notes: row.notes || '',
+      referenceNumber: row.referenceNumber || ''
+    })
+    setEditOpen(true)
+  }
+
+  const saveEdit = async () => {
+    if (!editingId) return
+    setEditSaving(true)
+    try {
+      await settlementsService.update(editingId, {
+        date: editForm.date || undefined,
+        notes: editForm.notes || undefined,
+        referenceNumber: editForm.referenceNumber || undefined
+      })
+      showSuccess('Settlement updated')
+      setEditOpen(false)
+      setEditingId(null)
+      setViewItem(null)
+      await fetchData()
+    } catch (err) {
+      showApiError(err, 'Could not update settlement')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  const openReverse = (row: SettlementRow) => {
+    setReverseId(row._id)
+    setReverseReason('')
+    setReverseOpen(true)
+  }
+
+  const confirmReverse = async () => {
+    if (!reverseId) return
+    setReverseSaving(true)
+    try {
+      await settlementsService.reverse(reverseId, {
+        reversalReason: reverseReason.trim() || undefined
+      })
+      showSuccess('Settlement reversed. Open remittance/commission balances were restored.')
+      setReverseOpen(false)
+      setReverseId(null)
+      setViewItem(null)
+      await fetchData()
+    } catch (err) {
+      showApiError(err, 'Could not reverse settlement')
+    } finally {
+      setReverseSaving(false)
+    }
+  }
 
   const columns = useMemo<ColumnDef<SettlementRow, any>[]>(
     () => [
@@ -123,13 +198,30 @@ const SettlementListPage = () => {
         id: 'actions',
         header: 'Actions',
         cell: ({ row }) => (
-          <IconButton size='small' onClick={() => setViewItem(row.original)}>
-            <i className='tabler-eye text-textSecondary' />
-          </IconButton>
+          <>
+            <IconButton size='small' title='View' onClick={() => setViewItem(row.original)}>
+              <i className='tabler-eye text-textSecondary' />
+            </IconButton>
+            {canManage && (
+              <>
+                <IconButton size='small' title='Edit' onClick={() => openEdit(row.original)}>
+                  <i className='tabler-edit text-textSecondary' />
+                </IconButton>
+                <IconButton
+                  size='small'
+                  title='Reverse settlement'
+                  color='warning'
+                  onClick={() => openReverse(row.original)}
+                >
+                  <i className='tabler-arrow-back-up' />
+                </IconButton>
+              </>
+            )}
+          </>
         )
       })
     ],
-    []
+    [canManage]
   )
 
   const table = useReactTable({
@@ -276,8 +368,99 @@ const SettlementListPage = () => {
             </Grid>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions className='flex-wrap gap-2'>
           <Button onClick={() => setViewItem(null)}>Close</Button>
+          {viewItem && canManage && (
+            <>
+              <Button
+                variant='tonal'
+                color='secondary'
+                onClick={() => {
+                  openEdit(viewItem)
+                  setViewItem(null)
+                }}
+              >
+                Edit
+              </Button>
+              <Button
+                variant='tonal'
+                color='warning'
+                onClick={() => {
+                  openReverse(viewItem)
+                  setViewItem(null)
+                }}
+              >
+                Reverse
+              </Button>
+            </>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={editOpen} onClose={() => !editSaving && setEditOpen(false)} maxWidth='sm' fullWidth>
+        <DialogTitle>Edit settlement</DialogTitle>
+        <DialogContent className='flex flex-col gap-4 pbs-4'>
+          <Typography variant='body2' color='text.secondary'>
+            You can update date, reference, and notes. To change amount, distributor, or direction, reverse this entry
+            and record a new settlement.
+          </Typography>
+          <CustomTextField
+            fullWidth
+            type='date'
+            label='Settlement date'
+            slotProps={{ inputLabel: { shrink: true } }}
+            value={editForm.date}
+            onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
+          />
+          <CustomTextField
+            fullWidth
+            label='Reference'
+            value={editForm.referenceNumber}
+            onChange={e => setEditForm(f => ({ ...f, referenceNumber: e.target.value }))}
+          />
+          <CustomTextField
+            fullWidth
+            label='Notes'
+            multiline
+            minRows={2}
+            value={editForm.notes}
+            onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditOpen(false)} disabled={editSaving}>
+            Cancel
+          </Button>
+          <Button variant='contained' onClick={() => void saveEdit()} disabled={editSaving}>
+            {editSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={reverseOpen} onClose={() => !reverseSaving && setReverseOpen(false)} maxWidth='sm' fullWidth>
+        <DialogTitle>Reverse settlement?</DialogTitle>
+        <DialogContent className='flex flex-col gap-4 pbs-4'>
+          <Typography variant='body2' color='text.secondary'>
+            This undoes the distributor clearing payment: FIFO allocation links are removed, the settlement ledger entry
+            is reversed, and the settlement disappears from active lists. Open remittance or commission balances will
+            increase again.
+          </Typography>
+          <CustomTextField
+            fullWidth
+            label='Reason (optional)'
+            multiline
+            minRows={2}
+            value={reverseReason}
+            onChange={e => setReverseReason(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReverseOpen(false)} disabled={reverseSaving}>
+            Cancel
+          </Button>
+          <Button variant='contained' color='warning' onClick={() => void confirmReverse()} disabled={reverseSaving}>
+            {reverseSaving ? 'Reversing...' : 'Reverse settlement'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Card>
