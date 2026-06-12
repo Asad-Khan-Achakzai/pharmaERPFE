@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
@@ -11,11 +11,17 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Box from '@mui/material/Box'
 import classnames from 'classnames'
+import { isAxiosError } from 'axios'
 import CustomAvatar from '@core/components/mui/Avatar'
 import type { ThemeColor } from '@core/types'
 import { alpha, useTheme } from '@mui/material/styles'
 import { FIN_TOOLTIPS } from '@/constants/financialLabels'
 import { FinInfoTip } from '@/components/financial/FinInfoTip'
+import { DateRangePickerField } from '@/components/standard-list-toolbar/DateRangePickerField'
+import { reportsService } from '@/services/reports.service'
+import { mapDashboardFinancial } from '@/utils/financialMapper'
+import { currentMonthRange } from '@/utils/currentMonthRange'
+import type { KpiDateRange } from '@/types/dashboardKpi'
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -108,7 +114,8 @@ function MetricPanel({ title, titleColor, items }: PanelProps) {
 }
 
 /**
- * Company-wide dashboard KPIs (`admin.access` only). Data from GET /reports/dashboard (same month as greeting when range is passed).
+ * Company-wide dashboard KPIs (`admin.access` only). Data from GET /reports/dashboard.
+ * Defaults to the current month; users can pick a custom range via the header date picker.
  */
 const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
   dashboardDataLoading,
@@ -121,40 +128,107 @@ const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
   data: any
   mobileCompact?: boolean
 }) {
-  const period = data?.period as { from: string; to: string } | undefined
-  const hasPeriod = Boolean(period?.from && period?.to)
+  const initialRangeRef = useRef<KpiDateRange>(currentMonthRange())
+  const [range, setRange] = useState<KpiDateRange>(() => initialRangeRef.current)
+  const [rangeData, setRangeData] = useState<ReturnType<typeof mapDashboardFinancial> | null>(null)
+  const [rangeLoading, setRangeLoading] = useState(false)
+  const [rangeError, setRangeError] = useState(false)
+
+  const usingInitialRange =
+    range.from === initialRangeRef.current.from && range.to === initialRangeRef.current.to
+  const hasCompleteRange = Boolean(range.from && range.to)
+
+  const effectiveData = usingInitialRange ? (data ?? rangeData) : rangeData
+  const effectiveLoading =
+    usingInitialRange && data
+      ? dashboardDataLoading
+      : usingInitialRange
+        ? dashboardDataLoading || rangeLoading
+        : rangeLoading
+  const effectiveError = usingInitialRange ? loadError && !data : rangeError
+
+  const handleRangeChange = useCallback(({ from, to }: { from: string; to: string }) => {
+    if (!from && !to) {
+      setRange(currentMonthRange())
+      return
+    }
+    let nextFrom = from
+    let nextTo = to
+    if (nextFrom && nextTo && nextFrom > nextTo) {
+      ;[nextFrom, nextTo] = [nextTo, nextFrom]
+    }
+    setRange({ from: nextFrom, to: nextTo })
+  }, [])
+
+  useEffect(() => {
+    if (!hasCompleteRange) return
+
+    if (usingInitialRange && data) {
+      setRangeData(null)
+      setRangeLoading(false)
+      setRangeError(false)
+      return
+    }
+
+    const ac = new AbortController()
+    setRangeLoading(true)
+    setRangeError(false)
+
+    reportsService
+      .dashboard({ params: { from: range.from, to: range.to }, signal: ac.signal })
+      .then(res => {
+        if (ac.signal.aborted) return
+        const body = res.data as { data?: unknown } & Record<string, unknown>
+        const raw = body && 'data' in body && body.data != null ? body.data : body
+        setRangeData(mapDashboardFinancial(raw))
+        setRangeError(false)
+      })
+      .catch(err => {
+        if (ac.signal.aborted || (isAxiosError(err) && err.code === 'ERR_CANCELED')) return
+        setRangeData(null)
+        setRangeError(true)
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setRangeLoading(false)
+      })
+
+    return () => ac.abort()
+  }, [range.from, range.to, hasCompleteRange, usingInitialRange, data])
+
+  const period = effectiveData?.period as { from: string; to: string } | undefined
+  const hasPeriod = Boolean(period?.from && period?.to) || hasCompleteRange
 
   const salesStats: StatItem[] = useMemo(() => {
-    if (!data) return []
+    if (!effectiveData) return []
     return [
       {
         label: 'Gross sales (TP)',
-        stats: formatPKR(data.totalGrossSalesTp ?? 0),
+        stats: formatPKR(effectiveData.totalGrossSalesTp ?? 0),
         icon: 'tabler-currency-dollar',
         color: 'primary',
         tooltip: FIN_TOOLTIPS.dashboardTotals
       },
       {
         label: 'Net sales · Company',
-        stats: formatPKR(data.totalNetSalesCompany ?? 0),
+        stats: formatPKR(effectiveData.totalNetSalesCompany ?? 0),
         icon: 'tabler-building-store',
         color: 'primary',
         tooltip: FIN_TOOLTIPS.customerVsCompany
       },
       {
         label: 'Net sales · Customer',
-        stats: formatPKR(data.totalSales ?? 0),
+        stats: formatPKR(effectiveData.totalSales ?? 0),
         icon: 'tabler-receipt',
         color: 'info',
         tooltip: FIN_TOOLTIPS.customerVsCompany
       }
     ]
-  }, [data])
+  }, [effectiveData])
 
   const profitStats: StatItem[] = useMemo(() => {
-    if (!data) return []
-    const sm = Number(data.grossProfit ?? 0)
-    const np = Number(data.netProfit ?? 0)
+    if (!effectiveData) return []
+    const sm = Number(effectiveData.grossProfit ?? 0)
+    const np = Number(effectiveData.netProfit ?? 0)
     return [
       {
         label: hasPeriod ? 'Sales margin (period)' : 'Sales margin (customer basis)',
@@ -171,32 +245,33 @@ const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
         tooltip: FIN_TOOLTIPS.netProfitLifetime
       }
     ]
-  }, [data, hasPeriod])
+  }, [effectiveData, hasPeriod])
 
   const cashStats: StatItem[] = useMemo(() => {
-    if (!data) return []
+    if (!effectiveData) return []
     return [
       {
         label: 'Collected',
-        stats: formatPKR(data.totalPaid ?? 0),
+        stats: formatPKR(effectiveData.totalPaid ?? 0),
         icon: 'tabler-cash',
         color: 'info'
       },
       {
         label: 'Outstanding (pharmacies)',
-        stats: formatPKR(data.totalOutstanding ?? 0),
+        stats: formatPKR(effectiveData.totalOutstanding ?? 0),
         icon: 'tabler-alert-circle',
         color: 'warning'
       }
     ]
-  }, [data])
+  }, [effectiveData])
 
   const subheader = useMemo(() => {
+    if (hasCompleteRange) return `Company · ${range.from} → ${range.to}`
     if (hasPeriod) return `Company · ${period!.from} → ${period!.to}`
     return 'Company-wide lifetime totals'
-  }, [hasPeriod, period])
+  }, [hasCompleteRange, hasPeriod, period, range.from, range.to])
 
-  if (dashboardDataLoading) {
+  if (effectiveLoading && !effectiveData) {
     return (
       <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
         <CardHeader title='Statistics' subheader='Loading…' />
@@ -213,17 +288,34 @@ const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
     )
   }
 
-  if (loadError || !data || data.dashboardScope === 'self') {
+  if (effectiveError || !effectiveData || effectiveData.dashboardScope === 'self') {
     return (
-      <Card sx={{ boxShadow: 'var(--shadow-xs)' }}>
+      <Card sx={{ boxShadow: 'var(--shadow-xs)' }} className='h-full flex flex-col'>
+        <CardHeader
+          title='Statistics'
+          subheader={subheader}
+          action={
+            <Box sx={{ minWidth: { xs: 200, sm: 240 }, maxWidth: 280 }}>
+              <DateRangePickerField
+                id='dashboard-kpi-date-range'
+                label='Period'
+                from={range.from}
+                to={range.to}
+                onChange={handleRangeChange}
+                sx={{ '& .MuiInputBase-root': { bgcolor: 'background.paper' } }}
+              />
+            </Box>
+          }
+          sx={{ px: { xs: 2, sm: 2.5 }, pt: { xs: 2, sm: 2.25 }, pb: 0 }}
+        />
         <CardContent>
           <Typography color='error' variant='body2'>
-            {data?.dashboardScope === 'self'
+            {effectiveData?.dashboardScope === 'self'
               ? 'Company statistics are not available in this view.'
               : 'Summary metrics could not be loaded.'}
           </Typography>
         </CardContent>
-    </Card>
+      </Card>
     )
   }
 
@@ -244,9 +336,16 @@ const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
           </Typography>
         }
         action={
-          <Typography variant='caption' color='text.disabled' sx={{ whiteSpace: 'nowrap' }}>
-            Live
-          </Typography>
+          <Box sx={{ minWidth: { xs: 200, sm: 240 }, maxWidth: 280 }}>
+            <DateRangePickerField
+              id='dashboard-kpi-date-range'
+              label='Period'
+              from={range.from}
+              to={range.to}
+              onChange={handleRangeChange}
+              sx={{ '& .MuiInputBase-root': { bgcolor: 'background.paper' } }}
+            />
+          </Box>
         }
         sx={{ px: { xs: 2, sm: 2.5 }, pt: { xs: 2, sm: 2.25 }, pb: 0, '& .MuiCardHeader-subheader': { mt: 0 } }}
       />
@@ -254,9 +353,28 @@ const DashboardSnapshotKpis = memo(function DashboardSnapshotKpis({
         sx={{
           p: { xs: 2, sm: 2.5 },
           pt: 1,
+          position: 'relative',
           '&:last-of-type': { pb: { xs: 2, sm: 2.5 } }
         }}
       >
+        {effectiveLoading ? (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 1,
+              bgcolor: theme => alpha(theme.palette.background.paper, 0.72),
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 1
+            }}
+          >
+            <Typography variant='caption' color='text.secondary'>
+              Updating…
+            </Typography>
+          </Box>
+        ) : null}
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 4 }}>
             <MetricPanel title='Sales' titleColor='primary' items={salesStats} />

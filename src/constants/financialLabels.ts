@@ -37,7 +37,7 @@ export const FIN_TOOLTIPS = {
   customerVsCompany:
     'Net Sales (Customer) is what the pharmacy pays on the invoice (Gross Sales TP minus pharmacy discount). Net Sales (Company) is what accrues to the company after distributor commission. Commission is calculated on Gross Sales (TP), not on Net Sales (Customer).',
   bonusCostVsRevenue:
-    'Bonus units may carry zero Gross Sales (TP) in a delivery batch but still consume stock. Estimated Cost (Standard) uses paid + bonus units; Inventory Cost (Avg) applies to every unit shipped.',
+    'Bonus units are included in Gross Sales (TP) at the product TP rate (physical packs). Pharmacy invoice and discounts still apply to paid quantity only; inventory cost uses paid + bonus.',
   standardVsAvg:
     'Standard Cost (Catalog) is the product master rate used for planning. Inventory Cost (Avg) is weighted average landed cost in distributor stock, including receipt/transfer allocations.',
   estimatedGrossProfitCompany:
@@ -47,7 +47,7 @@ export const FIN_TOOLTIPS = {
   grossProfitCompanyLine:
     'Net Sales (Company) for the line or SKU minus Inventory Cost (Avg) — COGS, where the report uses company-share revenue.',
   dashboardTotals:
-    'Gross Sales (TP) and Net Sales (Company) sum delivery records (returns reduce company share when return lines store companyShare). Net Sales (Customer) — cumulative matches posted transactions.',
+    'Gross Sales (TP) sums TP × physical packs delivered (paid + bonus). Net Sales (Company) sums delivery company share (returns reduce when return lines store companyShare). Net Sales (Customer) — cumulative matches posted transactions.',
   netProfitLifetime:
     'Sum of transaction margins minus distributor commission, paid payroll, and non-salary expenses (all-time, not period-scoped).',
   castingUnit: 'Catalog standard cost per unit from product master.',

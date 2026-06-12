@@ -135,7 +135,6 @@ const ManagerMrepPage = () => {
     let missed = 0
     let orderCount = 0
     let returnedOrderCount = 0
-    let grossRevenue = 0
     let grossSalesTp = 0
     let achievedSales = 0
     let salesTarget = 0
@@ -143,7 +142,6 @@ const ManagerMrepPage = () => {
       missed += r.planExecution?.missed ?? 0
       orderCount += r.ordersInPeriod?.orderCount ?? 0
       returnedOrderCount += r.ordersInPeriod?.returnedOrderCount ?? 0
-      grossRevenue += Number(r.ordersInPeriod?.grossRevenue || 0)
       grossSalesTp += Number(r.totalGrossSalesTp ?? 0)
       achievedSales += Number(r.target?.achievedSales ?? 0)
       salesTarget += Number(r.target?.salesTarget ?? 0)
@@ -171,7 +169,6 @@ const ManagerMrepPage = () => {
       attendanceScorePercent: mean(attendance),
       orderCount,
       returnedOrderCount,
-      grossRevenue,
       grossSalesTp
     }
   }, [rows])
@@ -192,7 +189,7 @@ const ManagerMrepPage = () => {
         <Card>
           <CardHeader
             title='Field performance'
-            subheader='Sales vs target uses net delivered sales (pharmacy invoice amounts on deliver, net of returns)—same as the Targets page. Gross sales (TP) is trade-price (TP) volume from deliveries minus returns in the month; it is not used for target %. Revenue = order-date sum of frozen order company revenue (not delivery-month cash).'
+            subheader='Sales vs target uses net delivered sales (pharmacy invoice amounts on deliver, net of returns)—same as the Targets page. Gross sales (TP) is trade-price (TP) volume from deliveries minus returns in the month; it is not used for target %.'
           />
           <CardContent>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }} alignItems={{ sm: 'center' }}>
@@ -240,14 +237,13 @@ const ManagerMrepPage = () => {
                       <TableCell align='right'>Attendance</TableCell>
                       <TableCell align='right'>Total orders</TableCell>
                       <TableCell align='right'>Returned orders</TableCell>
-                      <TableCell align='right'>Revenue</TableCell>
                       <TableCell align='right'>Gross sales (TP)</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {rows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={12}>
+                        <TableCell colSpan={11}>
                           <Typography variant='body2' color='text.secondary'>
                             No rows for this month or your visibility scope.
                           </Typography>
@@ -282,9 +278,6 @@ const ManagerMrepPage = () => {
                           <TableCell align='right'>{pct(r.attendanceScorePercent)}</TableCell>
                           <TableCell align='right'>{r.ordersInPeriod?.orderCount ?? 0}</TableCell>
                           <TableCell align='right'>{r.ordersInPeriod?.returnedOrderCount ?? 0}</TableCell>
-                          <TableCell align='right'>
-                            {formatPKR(Number(r.ordersInPeriod?.grossRevenue || 0))}
-                          </TableCell>
                           <TableCell align='right'>
                             {formatPKR(Number(r.totalGrossSalesTp ?? 0))}
                           </TableCell>
@@ -322,7 +315,6 @@ const ManagerMrepPage = () => {
                         <TableCell align='right'>{pct(totals.attendanceScorePercent)}</TableCell>
                         <TableCell align='right'>{totals.orderCount}</TableCell>
                         <TableCell align='right'>{totals.returnedOrderCount}</TableCell>
-                        <TableCell align='right'>{formatPKR(totals.grossRevenue)}</TableCell>
                         <TableCell align='right'>{formatPKR(totals.grossSalesTp)}</TableCell>
                       </TableRow>
                     </TableFooter>

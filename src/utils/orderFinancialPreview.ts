@@ -91,7 +91,9 @@ export function buildPreviewFromFormItems(
     totalBonusQuantity += bq
     totalPaidQuantity += row.quantity
     totalCastingCost += roundPKR((p.casting ?? 0) * (row.quantity + bq))
-    lines.push(computeLinePreview(p.tp, row.quantity, row.clinicDiscount ?? 0, distributor))
+    const paidPreview = computeLinePreview(p.tp, row.quantity, row.clinicDiscount ?? 0, distributor)
+    const grossAmount = roundPKR(p.tp * (row.quantity + bq))
+    lines.push({ ...paidPreview, grossAmount })
   }
   const totalPhysicalQuantity = totalPaidQuantity + totalBonusQuantity
   return aggregateOrderFinancialPreview(lines, {

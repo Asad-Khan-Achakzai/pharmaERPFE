@@ -27,6 +27,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
+import GlobalStyles from '@mui/material/GlobalStyles'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import { createColumnHelper, flexRender, getCoreRowModel, getPaginationRowModel, useReactTable } from '@tanstack/react-table'
@@ -36,6 +37,8 @@ import AppReactDatepicker from '@/libs/styles/AppReactDatepicker'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { targetsService } from '@/services/targets.service'
 import { usersService } from '@/services/users.service'
+import { productsService } from '@/services/products.service'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { filterMedicalReps } from '@/utils/userLookups'
 import tableStyles from '@core/styles/table.module.css'
 import {
@@ -50,11 +53,41 @@ import {
   type DateUserFilterState
 } from '@/components/standard-list-toolbar'
 
-type Target = { _id: string; medicalRepId: any; month: string; salesTarget: number; achievedSales: number; packsTarget: number; achievedPacks: number }
+type ProductPacksTarget = {
+  productId: string | { _id: string; name?: string; composition?: string }
+  packsTarget: number
+}
+
+type Target = {
+  _id: string
+  medicalRepId: any
+  month: string
+  salesTarget: number
+  achievedSales: number
+  packsTarget: number
+  achievedPacks: number
+  productPacksTargets?: ProductPacksTarget[]
+}
+
+type ProductPacksTargetFormRow = {
+  productId: string
+  productName: string
+  composition?: string
+  packsTarget: number
+}
+
+type TargetFormState = {
+  medicalRepId: string
+  month: string
+  salesTarget: number
+  packsTarget: number
+  productPacksTargets: ProductPacksTargetFormRow[]
+}
 
 type PackBreakdownPayload = {
   month: string
   medicalRepId: string
+  wholePacksTarget?: number
   totalNetPacks: number
   rows: Array<{
     productId: string
@@ -63,6 +96,8 @@ type PackBreakdownPayload = {
     deliveredQuantity: number
     returnedQuantity: number
     netQuantity: number
+    packsTarget?: number
+    progressPercent?: number | null
   }>
 }
 const columnHelper = createColumnHelper<Target>()
@@ -78,6 +113,34 @@ const parseYyyyMm = (s: string): Date | null => {
 const formatYyyyMm = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
+const emptyTargetForm = (): TargetFormState => ({
+  medicalRepId: '',
+  month: formatYyyyMm(new Date()),
+  salesTarget: 0,
+  packsTarget: 0,
+  productPacksTargets: []
+})
+
+const mapProductPacksTargetsFromRow = (row: Target): ProductPacksTargetFormRow[] =>
+  (row.productPacksTargets || []).map(pt => {
+    const p = pt.productId
+    const isObj = p && typeof p === 'object'
+    return {
+      productId: isObj ? String(p._id) : String(p ?? ''),
+      productName: isObj ? String(p.name || '') : '',
+      composition: isObj && p.composition ? String(p.composition) : '',
+      packsTarget: Number(pt.packsTarget) || 0
+    }
+  })
+
+const sumProductTargets = (row: Pick<Target, 'productPacksTargets'>) =>
+  (row.productPacksTargets || []).reduce((sum, pt) => sum + (Number(pt.packsTarget) || 0), 0)
+
+const serializeProductPacksTargets = (rows: ProductPacksTargetFormRow[]) =>
+  rows
+    .filter(r => r.productId && r.packsTarget > 0)
+    .map(r => ({ productId: r.productId, packsTarget: Math.floor(r.packsTarget) }))
+
 const TargetsPage = () => {
   const theme = useTheme()
   const { hasPermission } = useAuth()
@@ -92,7 +155,7 @@ const TargetsPage = () => {
   const [open, setOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState({ medicalRepId: '', month: '', salesTarget: 0, packsTarget: 0 })
+  const [form, setForm] = useState<TargetFormState>(emptyTargetForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -103,6 +166,7 @@ const TargetsPage = () => {
   const [packsDrawerRow, setPacksDrawerRow] = useState<Target | null>(null)
   const [packsBreakdown, setPacksBreakdown] = useState<PackBreakdownPayload | null>(null)
   const [packsBreakdownLoading, setPacksBreakdownLoading] = useState(false)
+  const [packsPrintActive, setPacksPrintActive] = useState(false)
 
   const resolveRepId = useCallback((row: Target) => {
     return typeof row.medicalRepId === 'object' && row.medicalRepId?._id
@@ -136,10 +200,54 @@ const TargetsPage = () => {
     setPacksDrawerOpen(false)
     setPacksDrawerRow(null)
     setPacksBreakdown(null)
+    setPacksPrintActive(false)
   }, [])
 
-  const hasAtLeastOneTarget = form.salesTarget > 0 || form.packsTarget > 0
+  const printPacksBreakdown = useCallback(() => {
+    if (!packsBreakdown || !packsDrawerRow) return
+    setPacksPrintActive(true)
+  }, [packsBreakdown, packsDrawerRow])
+
+  useEffect(() => {
+    if (!packsPrintActive) return
+    const onAfterPrint = () => setPacksPrintActive(false)
+    window.addEventListener('afterprint', onAfterPrint)
+    requestAnimationFrame(() => window.print())
+    return () => window.removeEventListener('afterprint', onAfterPrint)
+  }, [packsPrintActive])
+
+  const productPacksTargetSum = useMemo(
+    () => form.productPacksTargets.reduce((sum, row) => sum + (row.packsTarget > 0 ? row.packsTarget : 0), 0),
+    [form.productPacksTargets]
+  )
+  const hasAtLeastOneTarget = form.salesTarget > 0 || form.packsTarget > 0 || productPacksTargetSum > 0
   const isFormValid = form.medicalRepId !== '' && form.month.trim() !== '' && hasAtLeastOneTarget
+
+  const usedProductIds = useMemo(
+    () => new Set(form.productPacksTargets.map(r => r.productId).filter(Boolean)),
+    [form.productPacksTargets]
+  )
+
+  const addProductTargetRow = () => {
+    setForm(p => ({
+      ...p,
+      productPacksTargets: [...p.productPacksTargets, { productId: '', productName: '', packsTarget: 0 }]
+    }))
+  }
+
+  const updateProductTargetRow = (index: number, patch: Partial<ProductPacksTargetFormRow>) => {
+    setForm(p => ({
+      ...p,
+      productPacksTargets: p.productPacksTargets.map((row, i) => (i === index ? { ...row, ...patch } : row))
+    }))
+  }
+
+  const removeProductTargetRow = (index: number) => {
+    setForm(p => ({
+      ...p,
+      productPacksTargets: p.productPacksTargets.filter((_, i) => i !== index)
+    }))
+  }
 
   const filterOpen = Boolean(filterAnchor)
   const activeFilterCount = countDateUserFilters(appliedFilters)
@@ -168,12 +276,7 @@ const TargetsPage = () => {
   const openCreate = () => {
     setDialogMode('create')
     setEditingId(null)
-    setForm({
-      medicalRepId: '',
-      month: formatYyyyMm(new Date()),
-      salesTarget: 0,
-      packsTarget: 0
-    })
+    setForm(emptyTargetForm())
     setOpen(true)
   }
 
@@ -188,19 +291,31 @@ const TargetsPage = () => {
       medicalRepId: repId,
       month: row.month,
       salesTarget: row.salesTarget,
-      packsTarget: row.packsTarget
+      packsTarget: row.packsTarget,
+      productPacksTargets: mapProductPacksTargetsFromRow(row)
     })
     setOpen(true)
   }, [])
 
   const handleSave = async () => {
     setSaving(true)
+    const payload = {
+      medicalRepId: form.medicalRepId,
+      month: form.month,
+      salesTarget: form.salesTarget,
+      packsTarget: form.packsTarget,
+      productPacksTargets: serializeProductPacksTargets(form.productPacksTargets)
+    }
     try {
       if (dialogMode === 'edit' && editingId) {
-        await targetsService.update(editingId, { salesTarget: form.salesTarget, packsTarget: form.packsTarget })
+        await targetsService.update(editingId, {
+          salesTarget: payload.salesTarget,
+          packsTarget: payload.packsTarget,
+          productPacksTargets: payload.productPacksTargets
+        })
         showSuccess('Target updated')
       } else {
-        await targetsService.create(form)
+        await targetsService.create(payload)
         showSuccess('Target created')
       }
       setOpen(false)
@@ -263,17 +378,37 @@ const TargetsPage = () => {
         id: 'packsProgress',
         header: 'Packs Progress',
         cell: ({ row }) => {
-          const pct =
-            row.original.packsTarget > 0
-              ? Math.min((row.original.achievedPacks / row.original.packsTarget) * 100, 100)
-              : 0
+          const wholeTarget = row.original.packsTarget > 0
+          const productTargetSum = sumProductTargets(row.original)
+          const hasProductTargets = productTargetSum > 0
+          const wholePct = wholeTarget
+            ? Math.min((row.original.achievedPacks / row.original.packsTarget) * 100, 100)
+            : 0
           return (
             <Stack direction='row' spacing={1} alignItems='center' sx={{ minWidth: 0 }}>
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <LinearProgress variant='determinate' value={pct} color='secondary' />
-                <Typography variant='caption' component='div' sx={{ mt: 0.5, display: 'block' }}>
-                  {row.original.achievedPacks} / {row.original.packsTarget}
-                </Typography>
+                {wholeTarget ? (
+                  <>
+                    <LinearProgress variant='determinate' value={wholePct} color='secondary' />
+                    <Typography variant='caption' component='div' sx={{ mt: 0.5, display: 'block' }}>
+                      Whole: {row.original.achievedPacks} / {row.original.packsTarget}
+                    </Typography>
+                  </>
+                ) : hasProductTargets ? (
+                  <Typography variant='caption' color='text.secondary' component='div'>
+                    By product · {row.original.productPacksTargets?.length ?? 0} products · {productTargetSum} packs
+                    targeted
+                  </Typography>
+                ) : (
+                  <Typography variant='caption' color='text.disabled' component='div'>
+                    No packs target
+                  </Typography>
+                )}
+                {wholeTarget && hasProductTargets ? (
+                  <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.25 }}>
+                    + {row.original.productPacksTargets?.length ?? 0} product-specific targets
+                  </Typography>
+                ) : null}
               </Box>
               <Tooltip title='Packs by product'>
                 <IconButton
@@ -330,7 +465,39 @@ const TargetsPage = () => {
   const openFilterPopover = (e: MouseEvent<HTMLElement>) => setFilterAnchor(e.currentTarget)
   const closeFilterPopover = () => setFilterAnchor(null)
 
+  const packsPrintTotals = packsBreakdown
+    ? {
+        delivered: packsBreakdown.rows.reduce((s, x) => s + x.deliveredQuantity, 0),
+        returned: packsBreakdown.rows.reduce((s, x) => s + x.returnedQuantity, 0)
+      }
+    : null
+
   return (
+    <>
+      {packsPrintActive && packsBreakdown && packsDrawerRow ? (
+        <GlobalStyles
+          styles={{
+            '@media screen': {
+              '#targets-packs-print-root': { display: 'none !important' }
+            },
+            '@media print': {
+              body: { visibility: 'hidden' },
+              '#targets-packs-print-root, #targets-packs-print-root *': { visibility: 'visible' },
+              '#targets-packs-print-root': {
+                display: 'block !important',
+                visibility: 'visible',
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                width: '100%',
+                padding: '24px',
+                color: '#111',
+                background: '#fff'
+              }
+            }
+          }}
+        />
+      ) : null}
     <Card>
       <CardHeader
         title='Targets'
@@ -375,7 +542,7 @@ const TargetsPage = () => {
         </table>
       </div>
       <TablePaginationComponent table={table as any} />
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth='sm' fullWidth>
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth='md' fullWidth>
         <DialogTitle>{dialogMode === 'edit' ? 'Edit Target' : 'Add Target'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
@@ -419,10 +586,10 @@ const TargetsPage = () => {
             </Grid>
             <Grid size={{ xs: 12 }}>
               <Typography variant='caption' color='text.secondary' className='block mbe-2'>
-                Set at least one: sales target (PKR), packs target, or both.
+                Set at least one: sales target (PKR), whole packs target, product pack target(s), or any combination.
               </Typography>
             </Grid>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <CustomTextField
                 fullWidth
                 label='Sales target (PKR)'
@@ -433,13 +600,13 @@ const TargetsPage = () => {
                   const v = e.target.value
                   setForm(p => ({ ...p, salesTarget: v === '' ? 0 : +v }))
                 }}
-                helperText='Optional if packs target is set'
+                helperText='Optional if a packs target is set'
               />
             </Grid>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <CustomTextField
                 fullWidth
-                label='Packs target'
+                label='Whole packs target'
                 type='number'
                 inputProps={{ min: 0, step: 1 }}
                 value={form.packsTarget || ''}
@@ -447,8 +614,111 @@ const TargetsPage = () => {
                   const v = e.target.value
                   setForm(p => ({ ...p, packsTarget: v === '' ? 0 : +v }))
                 }}
-                helperText='Optional if sales target is set'
+                helperText='Optional total across all products'
               />
+            </Grid>
+
+            <Grid size={{ xs: 12 }}>
+              <Stack direction='row' alignItems='center' justifyContent='space-between' sx={{ mb: 1.5 }}>
+                <Box>
+                  <Typography variant='subtitle2' fontWeight={600}>
+                    Product pack targets
+                  </Typography>
+                  <Typography variant='caption' color='text.secondary'>
+                    Optional per-product goals, e.g. Airoflox 5 packs, Panadol 20 packs.
+                  </Typography>
+                </Box>
+                <Button size='small' variant='outlined' startIcon={<i className='tabler-plus' />} onClick={addProductTargetRow}>
+                  Add product
+                </Button>
+              </Stack>
+
+              {form.productPacksTargets.length === 0 ? (
+                <Paper
+                  variant='outlined'
+                  sx={{
+                    p: 2.5,
+                    borderStyle: 'dashed',
+                    bgcolor: theme => alpha(theme.palette.action.hover, 0.35)
+                  }}
+                >
+                  <Typography variant='body2' color='text.secondary'>
+                    No product-specific pack targets yet. Use whole packs target above, or add products here.
+                  </Typography>
+                </Paper>
+              ) : (
+                <Stack spacing={2}>
+                  {form.productPacksTargets.map((row, index) => {
+                    const selectedProduct =
+                      row.productId && row.productName
+                        ? { _id: row.productId, name: row.productName, composition: row.composition }
+                        : null
+                    return (
+                      <Grid container spacing={2} key={`product-target-${index}`} alignItems='flex-start'>
+                        <Grid size={{ xs: 12, sm: 7 }}>
+                          <LookupAutocomplete<{ _id: string; name: string; composition?: string }>
+                            value={selectedProduct}
+                            onChange={v => {
+                              if (!v) {
+                                updateProductTargetRow(index, { productId: '', productName: '', composition: '' })
+                                return
+                              }
+                              if (usedProductIds.has(String(v._id)) && String(v._id) !== row.productId) return
+                              updateProductTargetRow(index, {
+                                productId: String(v._id),
+                                productName: v.name || '',
+                                composition: v.composition || ''
+                              })
+                            }}
+                            fetchOptions={search =>
+                              productsService
+                                .lookup({ limit: 25, ...(search ? { search } : {}) })
+                                .then(r => r.data.data || [])
+                            }
+                            label='Product'
+                            placeholder='Type to search'
+                            required
+                            fetchErrorMessage='Failed to load products'
+                            getOptionLabel={o => (o.composition ? `${o.name} · ${o.composition}` : o.name)}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 8, sm: 3 }}>
+                          <CustomTextField
+                            fullWidth
+                            label='Packs target'
+                            type='number'
+                            inputProps={{ min: 1, step: 1 }}
+                            value={row.packsTarget || ''}
+                            onChange={e => {
+                              const v = e.target.value
+                              updateProductTargetRow(index, { packsTarget: v === '' ? 0 : +v })
+                            }}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 4, sm: 2 }} sx={{ display: 'flex', alignItems: 'center', pt: { sm: 1 } }}>
+                          <Tooltip title='Remove product target'>
+                            <IconButton
+                              size='small'
+                              color='error'
+                              onClick={() => removeProductTargetRow(index)}
+                              aria-label='Remove product target'
+                            >
+                              <i className='tabler-trash' />
+                            </IconButton>
+                          </Tooltip>
+                        </Grid>
+                      </Grid>
+                    )
+                  })}
+                </Stack>
+              )}
+
+              {productPacksTargetSum > 0 ? (
+                <Typography variant='caption' color='text.secondary' sx={{ display: 'block', mt: 1.5 }}>
+                  Product targets total: {productPacksTargetSum} packs
+                  {form.packsTarget > 0 ? ' (in addition to whole packs target)' : ''}
+                </Typography>
+              ) : null}
             </Grid>
           </Grid>
         </DialogContent>
@@ -524,9 +794,23 @@ const TargetsPage = () => {
                 Physical packs from deliveries in this month minus returns in this month (aligned with progress totals).
               </Typography>
             </Box>
-            <IconButton size='small' onClick={closePacksDrawer} aria-label='Close'>
-              <i className='tabler-x' />
-            </IconButton>
+            <Stack direction='row' spacing={0.5} sx={{ flexShrink: 0 }}>
+              <Tooltip title='Print full list'>
+                <span>
+                  <IconButton
+                    size='small'
+                    onClick={printPacksBreakdown}
+                    disabled={packsBreakdownLoading || !packsBreakdown || !packsDrawerRow}
+                    aria-label='Print pack breakdown'
+                  >
+                    <i className='tabler-printer' />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <IconButton size='small' onClick={closePacksDrawer} aria-label='Close'>
+                <i className='tabler-x' />
+              </IconButton>
+            </Stack>
           </Stack>
         </Box>
 
@@ -551,6 +835,15 @@ const TargetsPage = () => {
           {!packsBreakdownLoading && packsBreakdown && packsDrawerRow && (
             <>
               <Stack direction='row' flexWrap='wrap' gap={1} sx={{ mb: 2 }}>
+                {packsBreakdown.wholePacksTarget ? (
+                  <Chip
+                    label={`Whole target: ${packsBreakdown.wholePacksTarget}`}
+                    color='secondary'
+                    variant='outlined'
+                    size='small'
+                    sx={{ fontVariantNumeric: 'tabular-nums' }}
+                  />
+                ) : null}
                 <Chip
                   label={`Net from breakdown: ${packsBreakdown.totalNetPacks}`}
                   color='secondary'
@@ -603,13 +896,23 @@ const TargetsPage = () => {
                     <TableHead>
                       <TableRow>
                         <TableCell>Product</TableCell>
+                        <TableCell align='right'>Target</TableCell>
                         <TableCell align='right'>Delivered</TableCell>
                         <TableCell align='right'>Returned</TableCell>
                         <TableCell align='right'>Net</TableCell>
+                        <TableCell sx={{ minWidth: 120 }}>Progress</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {packsBreakdown.rows.map(r => (
+                      {packsBreakdown.rows.map(r => {
+                        const targetQty = Number(r.packsTarget) || 0
+                        const progress =
+                          r.progressPercent != null
+                            ? r.progressPercent
+                            : targetQty > 0
+                              ? Math.min(100, (r.netQuantity / targetQty) * 100)
+                              : 0
+                        return (
                         <TableRow key={r.productId} hover sx={{ '& td': { fontVariantNumeric: 'tabular-nums' } }}>
                           <TableCell>
                             <Typography fontWeight={500} variant='body2'>
@@ -621,6 +924,7 @@ const TargetsPage = () => {
                               </Typography>
                             ) : null}
                           </TableCell>
+                          <TableCell align='right'>{targetQty > 0 ? targetQty : '—'}</TableCell>
                           <TableCell align='right'>{r.deliveredQuantity}</TableCell>
                           <TableCell align='right'>{r.returnedQuantity}</TableCell>
                           <TableCell align='right'>
@@ -628,10 +932,27 @@ const TargetsPage = () => {
                               {r.netQuantity}
                             </Typography>
                           </TableCell>
+                          <TableCell>
+                            {targetQty > 0 ? (
+                              <Box sx={{ minWidth: 96 }}>
+                                <LinearProgress variant='determinate' value={progress} color='secondary' sx={{ mb: 0.5 }} />
+                                <Typography variant='caption' color='text.secondary'>
+                                  {r.netQuantity} / {targetQty}
+                                </Typography>
+                              </Box>
+                            ) : (
+                              <Typography variant='caption' color='text.disabled'>
+                                No target
+                              </Typography>
+                            )}
+                          </TableCell>
                         </TableRow>
-                      ))}
+                      )})}
                       <TableRow sx={{ '& td': { fontWeight: 700, bgcolor: alpha(theme.palette.secondary.main, 0.06), fontVariantNumeric: 'tabular-nums' } }}>
                         <TableCell>Total</TableCell>
+                        <TableCell align='right'>
+                          {packsBreakdown.rows.reduce((s, x) => s + (Number(x.packsTarget) || 0), 0) || '—'}
+                        </TableCell>
                         <TableCell align='right'>
                           {packsBreakdown.rows.reduce((s, x) => s + x.deliveredQuantity, 0)}
                         </TableCell>
@@ -639,6 +960,7 @@ const TargetsPage = () => {
                           {packsBreakdown.rows.reduce((s, x) => s + x.returnedQuantity, 0)}
                         </TableCell>
                         <TableCell align='right'>{packsBreakdown.totalNetPacks}</TableCell>
+                        <TableCell />
                       </TableRow>
                     </TableBody>
                   </Table>
@@ -647,8 +969,145 @@ const TargetsPage = () => {
             </>
           )}
         </Box>
+
+        {!packsBreakdownLoading && packsBreakdown && packsDrawerRow ? (
+          <Box
+            sx={{
+              flexShrink: 0,
+              px: 3,
+              py: 2,
+              borderTop: 1,
+              borderColor: 'divider',
+              bgcolor: 'background.paper'
+            }}
+          >
+            <Button
+              variant='outlined'
+              size='small'
+              startIcon={<i className='tabler-printer' />}
+              onClick={printPacksBreakdown}
+            >
+              Print full list
+            </Button>
+          </Box>
+        ) : null}
       </Drawer>
+
+      {packsPrintActive && packsBreakdown && packsDrawerRow ? (
+        <Box id='targets-packs-print-root' component='article'>
+          <Typography variant='h5' fontWeight={700} sx={{ mb: 0.5 }}>
+            Pack breakdown
+          </Typography>
+          <Typography variant='body2' sx={{ mb: 0.25 }}>
+            {packsDrawerRow.medicalRepId?.name ?? 'Rep'} · {packsDrawerRow.month}
+          </Typography>
+          <Typography variant='caption' display='block' sx={{ mb: 2, color: 'text.secondary' }}>
+            Physical packs from deliveries in this month minus returns in this month.
+          </Typography>
+          <Typography variant='body2' sx={{ mb: 2 }}>
+            {packsBreakdown.wholePacksTarget ? (
+              <>
+                Whole target: <strong>{packsBreakdown.wholePacksTarget}</strong>
+                {' · '}
+              </>
+            ) : null}
+            Net from breakdown: <strong>{packsBreakdown.totalNetPacks}</strong>
+            {' · '}
+            On target row: <strong>{packsDrawerRow.achievedPacks}</strong>
+            {packsBreakdown.totalNetPacks !== packsDrawerRow.achievedPacks ? (
+              <> · <strong>Note:</strong> differs from stored total</>
+            ) : null}
+          </Typography>
+
+          {packsBreakdown.rows.length === 0 ? (
+            <Typography variant='body2'>No delivery or return lines in this month for this rep.</Typography>
+          ) : (
+            <Box
+              component='table'
+              sx={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '0.875rem',
+                '& th, & td': {
+                  border: '1px solid #ccc',
+                  padding: '8px 10px',
+                  textAlign: 'left'
+                },
+                '& th': { fontWeight: 600, background: '#f5f5f5' },
+                '& td.num': { textAlign: 'right', fontVariantNumeric: 'tabular-nums' },
+                '& tfoot td': { fontWeight: 700, background: '#fafafa' }
+              }}
+            >
+              <Box component='thead'>
+                <Box component='tr'>
+                  <Box component='th'>Product</Box>
+                  <Box component='th' sx={{ textAlign: 'right' }}>
+                    Target
+                  </Box>
+                  <Box component='th' sx={{ textAlign: 'right' }}>
+                    Delivered
+                  </Box>
+                  <Box component='th' sx={{ textAlign: 'right' }}>
+                    Returned
+                  </Box>
+                  <Box component='th' sx={{ textAlign: 'right' }}>
+                    Net
+                  </Box>
+                </Box>
+              </Box>
+              <Box component='tbody'>
+                {packsBreakdown.rows.map(r => (
+                  <Box component='tr' key={r.productId}>
+                    <Box component='td'>
+                      {r.productName}
+                      {r.composition ? (
+                        <Box component='span' sx={{ display: 'block', fontSize: '0.75rem', color: '#666' }}>
+                          {r.composition}
+                        </Box>
+                      ) : null}
+                    </Box>
+                    <Box component='td' className='num'>
+                      {(Number(r.packsTarget) || 0) > 0 ? r.packsTarget : '—'}
+                    </Box>
+                    <Box component='td' className='num'>
+                      {r.deliveredQuantity}
+                    </Box>
+                    <Box component='td' className='num'>
+                      {r.returnedQuantity}
+                    </Box>
+                    <Box component='td' className='num'>
+                      {r.netQuantity}
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+              <Box component='tfoot'>
+                <Box component='tr'>
+                  <Box component='td'>Total</Box>
+                  <Box component='td' className='num'>
+                    {packsBreakdown.rows.reduce((s, x) => s + (Number(x.packsTarget) || 0), 0) || '—'}
+                  </Box>
+                  <Box component='td' className='num'>
+                    {packsPrintTotals?.delivered ?? 0}
+                  </Box>
+                  <Box component='td' className='num'>
+                    {packsPrintTotals?.returned ?? 0}
+                  </Box>
+                  <Box component='td' className='num'>
+                    {packsBreakdown.totalNetPacks}
+                  </Box>
+                </Box>
+              </Box>
+            </Box>
+          )}
+
+          <Typography variant='caption' display='block' sx={{ mt: 3, color: '#666' }}>
+            Printed {new Date().toLocaleString()}
+          </Typography>
+        </Box>
+      ) : null}
     </Card>
+    </>
   )
 }
 export default TargetsPage

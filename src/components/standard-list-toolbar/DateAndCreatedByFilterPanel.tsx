@@ -1,6 +1,6 @@
 'use client'
 
-import { forwardRef, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import Stack from '@mui/material/Stack'
@@ -8,53 +8,13 @@ import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
 import Grid from '@mui/material/Grid'
 import InputAdornment from '@mui/material/InputAdornment'
-import { useTheme } from '@mui/material/styles'
-import useMediaQuery from '@mui/material/useMediaQuery'
-import type { TextFieldProps } from '@mui/material/TextField'
 import CustomTextField from '@core/components/mui/TextField'
 import CustomAutocomplete from '@core/components/mui/Autocomplete'
-import AppReactDatepicker from '@/libs/styles/AppReactDatepicker'
+import { DateRangePickerField } from '@/components/standard-list-toolbar/DateRangePickerField'
 import { usersService } from '@/services/users.service'
-import {
-  emptyDateUserFilters,
-  formatRangeDisplay,
-  formatYyyyMmDd,
-  parseYyyyMmDd,
-  type DateUserFilterState
-} from './dateRangeUtils'
+import { emptyDateUserFilters, type DateUserFilterState } from './dateRangeUtils'
 
 export type AssignableUser = { _id: string; name: string; email?: string; role?: string }
-
-type RangeInputProps = TextFieldProps & {
-  label: string
-  end: Date | number | null
-  start: Date | number | null
-}
-
-const DateRangeReadonlyInput = forwardRef<HTMLInputElement, RangeInputProps>(
-  function DateRangeReadonlyInput({ label, start, end, slotProps, ...rest }, ref) {
-    const startD = start != null ? new Date(start) : null
-    const endD = end != null ? new Date(end) : null
-    const value =
-      !startD || Number.isNaN(startD.getTime())
-        ? ''
-        : !endD || Number.isNaN(endD.getTime())
-          ? `${formatRangeDisplay(startD)} – …`
-          : `${formatRangeDisplay(startD)} – ${formatRangeDisplay(endD)}`
-    return (
-      <CustomTextField
-        fullWidth
-        size='small'
-        inputRef={ref}
-        {...rest}
-        label={label}
-        value={value}
-        placeholder='Click to choose range'
-        slotProps={{ ...slotProps, htmlInput: { readOnly: true, ...slotProps?.htmlInput } }}
-      />
-    )
-  }
-)
 
 type PanelProps = {
   title: string
@@ -90,17 +50,9 @@ export function DateAndCreatedByFilterPanel({
   onClearAllExtras,
   beforeDateSection
 }: PanelProps) {
-  const theme = useTheme()
-  const isCompactCalendarViewport = useMediaQuery(theme.breakpoints.down('sm'))
-  const resolvedMonthsShown = monthsShown ?? (isCompactCalendarViewport ? 1 : 2)
   const [draft, setDraft] = useState<DateUserFilterState>(appliedFilters)
   const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
-  const [calendarOpen, setCalendarOpen] = useState(false)
-
-  useEffect(() => {
-    if (!open) setCalendarOpen(false)
-  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -165,38 +117,13 @@ export function DateAndCreatedByFilterPanel({
       </Typography>
       <Grid container spacing={0} sx={{ mb: 2 }}>
         <Grid size={{ xs: 12 }}>
-          <AppReactDatepicker
-            selectsRange
-            monthsShown={resolvedMonthsShown}
-            endDate={parseYyyyMmDd(draft.to) ?? null}
-            startDate={parseYyyyMmDd(draft.from) ?? null}
-            selected={parseYyyyMmDd(draft.from) ?? null}
-            open={calendarOpen}
-            onInputClick={() => setCalendarOpen(true)}
-            onClickOutside={() => setCalendarOpen(false)}
-            onCalendarClose={() => setCalendarOpen(false)}
-            shouldCloseOnSelect={false}
+          <DateRangePickerField
             id={datePickerId}
-            onChange={dates => {
-              if (!dates) {
-                setDraft(d => ({ ...d, from: '', to: '' }))
-                return
-              }
-              const [s, e] = dates
-              setDraft(d => ({
-                ...d,
-                from: s ? formatYyyyMmDd(s) : '',
-                to: e ? formatYyyyMmDd(e) : ''
-              }))
-              if (s && e) setCalendarOpen(false)
-            }}
-            customInput={
-              <DateRangeReadonlyInput
-                label='Multiple Months'
-                end={parseYyyyMmDd(draft.to)}
-                start={parseYyyyMmDd(draft.from)}
-              />
-            }
+            label='Multiple Months'
+            from={draft.from}
+            to={draft.to}
+            monthsShown={monthsShown}
+            onChange={({ from, to }) => setDraft(d => ({ ...d, from, to }))}
           />
         </Grid>
       </Grid>

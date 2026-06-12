@@ -50,11 +50,22 @@ import {
 
 type Line = { name: string; amount: number }
 type CommissionSnap = { type?: string; value?: number; salesTotal?: number; amount?: number }
+type ProductIncentiveLine = {
+  productId?: string
+  productName?: string
+  deliveredQty?: number
+  includeBonusQty?: boolean
+  matchedSlab?: { fromPacks?: number; toPacks?: number | null; ratePerPack?: number } | null
+  amount?: number
+  calculationType?: string
+}
 
 export type PayrollEntry = {
   _id: string
   employeeId: { _id?: string; name?: string } | string
   month: string
+  periodFrom?: string
+  periodTo?: string
   baseSalary: number
   bonus: number
   deductions: number
@@ -65,6 +76,8 @@ export type PayrollEntry = {
   allowanceLines?: Line[]
   deductionLines?: Line[]
   commission?: CommissionSnap
+  productIncentiveTotal?: number
+  productIncentiveLines?: ProductIncentiveLine[]
   dailyAllowance?: number
   dailyAllowanceTotal?: number
   attendanceDeduction?: number
@@ -694,6 +707,29 @@ const PayrollPage = () => {
                     {fmt((preview.commission as CommissionSnap).amount)}
                   </Typography>
                 ) : null}
+                {(preview.periodFrom || preview.periodTo) && (
+                  <Typography variant='caption' display='block' className='mts-2'>
+                    Incentive period:{' '}
+                    {preview.periodFrom ? new Date(String(preview.periodFrom)).toLocaleDateString() : '—'} →{' '}
+                    {preview.periodTo ? new Date(String(preview.periodTo)).toLocaleDateString() : '—'}
+                  </Typography>
+                )}
+                {(preview.productIncentiveTotal as number | undefined) != null &&
+                Number(preview.productIncentiveTotal) > 0 ? (
+                  <>
+                    <Typography variant='caption' display='block' className='mts-2'>
+                      Product incentives (total): ₨ {fmt(preview.productIncentiveTotal as number)}
+                    </Typography>
+                    {((preview.productIncentiveLines as ProductIncentiveLine[]) || []).map((line, i) => (
+                      <Typography key={`pi-${i}`} variant='caption' display='block' sx={{ pl: 1 }}>
+                        · {line.productName}: {line.deliveredQty} packs → ₨ {fmt(line.amount)}
+                        {line.matchedSlab
+                          ? ` (slab ${line.matchedSlab.fromPacks}–${line.matchedSlab.toPacks ?? '∞'} @ ₨ ${line.matchedSlab.ratePerPack}/pack)`
+                          : ''}
+                      </Typography>
+                    ))}
+                  </>
+                ) : null}
                 {(preview.presentDays != null || preview.dailyAllowanceTotal != null) && (
                   <>
                     <Typography variant='caption' display='block' className='mts-2'>
@@ -821,6 +857,21 @@ const PayrollPage = () => {
                     Commission ({breakdownItem.commission.value}% of sales ₨ {fmt(breakdownItem.commission.salesTotal)})
                   </Typography>
                   <Typography>₨ {fmt(breakdownItem.commission.amount)}</Typography>
+                </Grid>
+              )}
+              {(breakdownItem.productIncentiveLines ?? []).length > 0 && (
+                <Grid size={{ xs: 12 }}>
+                  <Typography variant='body2' color='text.secondary' sx={{ mb: 0.5 }}>
+                    Product incentives (total ₨ {fmt(breakdownItem.productIncentiveTotal)})
+                  </Typography>
+                  {(breakdownItem.productIncentiveLines ?? []).map((line, i) => (
+                    <Typography key={`bpi-${i}`} variant='body2' sx={{ pl: 1 }}>
+                      · {line.productName}: {line.deliveredQty} packs → ₨ {fmt(line.amount)}
+                      {line.matchedSlab
+                        ? ` (slab ${line.matchedSlab.fromPacks}–${line.matchedSlab.toPacks ?? '∞'} @ ₨ ${line.matchedSlab.ratePerPack}/pack)`
+                        : ''}
+                    </Typography>
+                  ))}
                 </Grid>
               )}
               {(breakdownItem.deductionLines ?? []).map((line, i) => (

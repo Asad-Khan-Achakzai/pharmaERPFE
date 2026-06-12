@@ -292,8 +292,8 @@ const CreateOrderPage = () => {
               </Typography>
               <Typography variant='body2' color='text.secondary' className='mts-1'>
                 Bonus scheme (Buy X Get Y):{' '}
-                {schemeBuy > 0 && schemeGet > 0 ? `${schemeBuy} + ${schemeGet}` : 'None'} — bonus units are free (no
-                TP); inventory cost uses paid + bonus.
+                {schemeBuy > 0 && schemeGet > 0 ? `${schemeBuy} + ${schemeGet}` : 'None'} — bonus packs count toward
+                Gross Sales (TP); pharmacy invoice uses paid qty only. Inventory cost uses paid + bonus.
               </Typography>
             </Grid>
           )}
