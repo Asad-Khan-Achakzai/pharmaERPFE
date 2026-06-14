@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
+import { useTheme } from '@mui/material/styles'
+import useMediaQuery from '@mui/material/useMediaQuery'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -37,6 +39,25 @@ const formatPKRPlain = (v: number) =>
   (v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const plColor = (v: number) => (v > 0 ? 'success.main' : v < 0 ? 'error.main' : 'text.primary')
+
+/** Compact x-axis label from YYYY-MM (e.g. Aug '25) — avoids full names overlapping on 12-month fiscal charts. */
+const chartMonthShortLabel = (ym: string) => {
+  const parts = ym.split('-').map(Number)
+  const y = parts[0]
+  const m = parts[1]
+  if (!y || !m) return ym
+  const d = new Date(y, m - 1, 1)
+  const short = d.toLocaleString('en-US', { month: 'short' })
+  return `${short} '${String(y).slice(-2)}`
+}
+
+const chartMonthFullLabel = (ym: string) => {
+  const parts = ym.split('-').map(Number)
+  const y = parts[0]
+  const m = parts[1]
+  if (!y || !m) return ym
+  return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+}
 
 const NUM_COLS: { key: keyof MonthlySummaryRow; label: string; short?: string }[] = [
   { key: 'netSales', label: 'Net Sales' },
@@ -91,6 +112,8 @@ const exportCsv = (data: MonthlySummaryResponse) => {
 }
 
 const MonthlySummarySection = () => {
+  const theme = useTheme()
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'), { noSsr: true })
   const fyOptions = useMemo(() => fiscalYearOptions(8), [])
   const [fiscalYearStart, setFiscalYearStart] = useState(() => currentFiscalYearStart())
   const cacheKey = String(fiscalYearStart)
@@ -118,23 +141,64 @@ const MonthlySummarySection = () => {
     load()
   }, [load])
 
-  const chartCategories = data?.rows.map(r => r.monthLabel) ?? []
+  const chartMeta = useMemo(() => {
+    if (!data?.rows?.length) return { categories: [] as string[], fullByYm: new Map<string, string>() }
+    const fullByYm = new Map<string, string>()
+    const categories = data.rows.map(r => {
+      fullByYm.set(r.month, chartMonthFullLabel(r.month))
+      return chartMonthShortLabel(r.month)
+    })
+    return { categories, fullByYm }
+  }, [data])
 
   const chartBase: ApexOptions = useMemo(
     () => ({
       chart: { toolbar: { show: false }, zoom: { enabled: false } },
       stroke: { curve: 'smooth', width: 2 },
       dataLabels: { enabled: false },
-      xaxis: { categories: chartCategories },
+      xaxis: {
+        categories: chartMeta.categories,
+        tickAmount: chartMeta.categories.length,
+        tickPlacement: 'between',
+        labels: {
+          rotate: isCompact ? -65 : -40,
+          rotateAlways: true,
+          hideOverlappingLabels: false,
+          trim: false,
+          minHeight: isCompact ? 72 : 56,
+          style: {
+            fontSize: isCompact ? '10px' : '11px',
+            fontFamily: theme.typography.fontFamily
+          }
+        },
+        axisBorder: { show: true },
+        axisTicks: { show: true }
+      },
       yaxis: {
         labels: {
           formatter: (val: number) =>
-            `₨ ${(val || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`
+            `₨ ${(val || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`,
+          style: { fontSize: isCompact ? '10px' : '11px' }
         }
       },
-      grid: { strokeDashArray: 4, borderColor: 'var(--mui-palette-divider)' }
+      tooltip: {
+        x: {
+          formatter: (_val, opts) => {
+            const ym = data?.rows[opts?.dataPointIndex ?? 0]?.month
+            return ym ? chartMeta.fullByYm.get(ym) ?? ym : String(_val)
+          }
+        },
+        y: {
+          formatter: (val: number) => formatPKR(val)
+        }
+      },
+      grid: {
+        strokeDashArray: 4,
+        borderColor: 'var(--mui-palette-divider)',
+        padding: { left: 8, right: 16, bottom: isCompact ? 8 : 4 }
+      }
     }),
-    [chartCategories]
+    [chartMeta, data?.rows, isCompact, theme.typography.fontFamily]
   )
 
   const plSeries = useMemo(
@@ -240,10 +304,10 @@ const MonthlySummarySection = () => {
             <Card>
               <CardHeader title='Monthly P/L trend' />
               <CardContent>
-                <ResponsiveChartWrapper minHeight={280}>
+                <ResponsiveChartWrapper minHeight={isCompact ? 320 : 300}>
                   <AppReactApexCharts
                     type='line'
-                    height={280}
+                    height={isCompact ? 320 : 300}
                     width='100%'
                     options={{
                       ...chartBase,
@@ -266,10 +330,10 @@ const MonthlySummarySection = () => {
             <Card>
               <CardHeader title='Monthly Net Sales trend' />
               <CardContent>
-                <ResponsiveChartWrapper minHeight={280}>
+                <ResponsiveChartWrapper minHeight={isCompact ? 320 : 300}>
                   <AppReactApexCharts
                     type='line'
-                    height={280}
+                    height={isCompact ? 320 : 300}
                     width='100%'
                     options={{
                       ...chartBase,
