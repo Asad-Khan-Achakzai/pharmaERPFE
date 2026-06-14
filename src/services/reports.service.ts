@@ -59,6 +59,11 @@ export const reportsService = {
     api.get('/reports/product-profitability', { params }),
   profitTrends: (params?: Record<string, string | undefined>) => api.get('/reports/trends', { params }),
 
+  monthlySummary: (params?: { fiscalYearStart?: string }) =>
+    api.get<{ data: import('@/types/monthlySummary').MonthlySummaryResponse }>('/reports/monthly-summary', {
+      params
+    }),
+
   visitSummary: (params: { weekStart: string; weekEnd: string; employeeId?: string }) =>
     api.get('/reports/visit-summary', { params }),
   visitByEmployee: (params: { weekStart: string; weekEnd: string }) =>

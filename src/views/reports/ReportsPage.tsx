@@ -19,6 +19,7 @@ import { reportsService } from '@/services/reports.service'
 import { mapProfitFinancial } from '@/utils/financialMapper'
 import FinancialReportsSection from '@/views/reports/FinancialReportsSection'
 import ProfitCostManagementSection from '@/views/reports/ProfitCostManagementSection'
+import MonthlySummarySection from '@/views/reports/MonthlySummarySection'
 import PageSkeleton from '@/components/skeletons/PageSkeleton'
 import { FIN_LABELS } from '@/constants/financialLabels'
 
@@ -147,6 +148,7 @@ const ReportsPage = () => {
           <Tab label='Operations' />
           <Tab label='Financial position & receipts' />
           <Tab label='Profit & cost' />
+          <Tab label='Monthly Summary' />
         </Tabs>
       </Grid>
 
@@ -159,6 +161,12 @@ const ReportsPage = () => {
       {tab === 2 && (
         <Grid size={{ xs: 12 }}>
           <ProfitCostManagementSection />
+        </Grid>
+      )}
+
+      {tab === 3 && (
+        <Grid size={{ xs: 12 }}>
+          <MonthlySummarySection />
         </Grid>
       )}
 
