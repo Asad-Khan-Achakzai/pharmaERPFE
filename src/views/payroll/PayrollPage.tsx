@@ -707,7 +707,7 @@ const PayrollPage = () => {
                     {fmt((preview.commission as CommissionSnap).amount)}
                   </Typography>
                 ) : null}
-                {(preview.periodFrom || preview.periodTo) && (
+                {(preview.periodFrom != null || preview.periodTo != null) && (
                   <Typography variant='caption' display='block' className='mts-2'>
                     Incentive period:{' '}
                     {preview.periodFrom ? new Date(String(preview.periodFrom)).toLocaleDateString() : '—'} →{' '}

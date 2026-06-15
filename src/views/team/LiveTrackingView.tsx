@@ -145,7 +145,7 @@ export default function LiveTrackingView() {
               const located = hasLiveLocation(item)
               const captured = item.capturedAt ? parseISO(item.capturedAt) : null
               return (
-                <Grid item xs={12} md={6} key={item.userId}>
+                <Grid size={{ xs: 12, md: 6 }} key={item.userId}>
                   <Card variant='outlined' sx={{ height: '100%' }}>
                     <CardContent>
                       <Stack direction='row' alignItems='flex-start' justifyContent='space-between' spacing={2}>

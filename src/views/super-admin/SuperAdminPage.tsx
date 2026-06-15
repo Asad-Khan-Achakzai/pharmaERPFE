@@ -56,6 +56,8 @@ type Company = {
   mrepOwnershipAudit?: boolean
   /** When true, checked-in mobile reps send GPS heartbeats; managers see live tracking on web/mobile. */
   liveTrackingEnabled?: boolean
+  /** When true, mobile app registers Expo push tokens and backend sends push for in-app notifications. */
+  mobilePushEnabled?: boolean
   geoFencingEnabled?: boolean
   geoFenceRadiusMeters?: number
   geoFenceMode?: 'OFF' | 'SOFT' | 'STRICT'
@@ -88,6 +90,7 @@ type CompanyFormState = {
   mrepMultiTerritory: boolean
   mrepOwnershipAudit: boolean
   liveTrackingEnabled: boolean
+  mobilePushEnabled: boolean
   geoFencingEnabled: boolean
   geoFenceRadiusMeters: number
   geoFenceMode: GeoFenceMode
@@ -114,6 +117,7 @@ const emptyForm: CompanyFormState = {
   mrepMultiTerritory: false,
   mrepOwnershipAudit: false,
   liveTrackingEnabled: false,
+  mobilePushEnabled: false,
   geoFencingEnabled: false,
   geoFenceRadiusMeters: 150,
   geoFenceMode: 'OFF',
@@ -184,6 +188,7 @@ const SuperAdminPage = () => {
       mrepMultiTerritory: c.mrepMultiTerritory === true,
       mrepOwnershipAudit: c.mrepOwnershipAudit === true,
       liveTrackingEnabled: c.liveTrackingEnabled === true,
+      mobilePushEnabled: c.mobilePushEnabled === true,
       geoFencingEnabled: c.geoFencingEnabled === true,
       geoFenceRadiusMeters: c.geoFenceRadiusMeters ?? 150,
       geoFenceMode: c.geoFenceMode === 'SOFT' || c.geoFenceMode === 'STRICT' ? c.geoFenceMode : 'OFF',
@@ -208,6 +213,7 @@ const SuperAdminPage = () => {
         mrepMultiTerritory: form.mrepMultiTerritory,
         mrepOwnershipAudit: form.mrepOwnershipAudit,
         liveTrackingEnabled: form.liveTrackingEnabled,
+        mobilePushEnabled: form.mobilePushEnabled,
         geoFencingEnabled: form.geoFencingEnabled,
         geoFenceRadiusMeters: form.geoFenceRadiusMeters,
         geoFenceMode: form.geoFenceMode,
@@ -238,6 +244,7 @@ const SuperAdminPage = () => {
         mrepMultiTerritory: form.mrepMultiTerritory,
         mrepOwnershipAudit: form.mrepOwnershipAudit,
         liveTrackingEnabled: form.liveTrackingEnabled,
+        mobilePushEnabled: form.mobilePushEnabled,
         geoFencingEnabled: form.geoFencingEnabled,
         geoFenceRadiusMeters: form.geoFenceRadiusMeters,
         geoFenceMode: form.geoFenceMode,
@@ -345,6 +352,9 @@ const SuperAdminPage = () => {
                               ) : null}
                               {row.liveTrackingEnabled ? (
                                 <Chip size='small' label='Live tracking' color='primary' variant='outlined' />
+                              ) : null}
+                              {row.mobilePushEnabled ? (
+                                <Chip size='small' label='Mobile push' color='primary' variant='outlined' />
                               ) : null}
                               {row.geoFencingEnabled ? (
                                 <Chip
@@ -605,6 +615,27 @@ const SuperAdminPage = () => {
                 <Typography variant='caption' color='text.secondary' display='block'>
                   Checked-in field reps send periodic GPS pings on mobile; managers view locations on web and mobile
                   (People &amp; Operations → Team → Live tracking).
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.mobilePushEnabled}
+                onChange={e => setForm(f => ({ ...f, mobilePushEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Mobile push notifications
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When enabled, the mobile app registers device tokens and sends push alerts for approvals,
+                  expenses, announcements, and late check-ins (requires Expo push credentials on the server).
                 </Typography>
               </div>
             }
@@ -906,6 +937,27 @@ const SuperAdminPage = () => {
                 <Typography variant='caption' color='text.secondary' display='block'>
                   Checked-in field reps send periodic GPS pings on mobile; managers view locations on web and mobile
                   (People &amp; Operations → Team → Live tracking).
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.mobilePushEnabled}
+                onChange={e => setForm(f => ({ ...f, mobilePushEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Mobile push notifications
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When enabled, the mobile app registers device tokens and sends push alerts for approvals,
+                  expenses, announcements, and late check-ins (requires Expo push credentials on the server).
                 </Typography>
               </div>
             }
