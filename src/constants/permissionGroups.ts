@@ -20,11 +20,16 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'attendance.approve': 'Approve attendance requests (covers direct and escalated inbox actions)',
   'attendance.viewEscalations': "View today's attendance exception summaries (late / open checkout)",
   'attendance.override': 'Mark absent or set today status without full administrator role',
-  'reports.accounting': 'Advanced accounting reports (accountants only)',
-  'accounts.view': 'View financial structure / chart of accounts',
+  'reports.accounting': 'Advanced accounting reports (trial balance, P&L, books)',
+  'payments.view': 'View money accounts, collections & settlements',
+  'payments.create': 'Record collections & settlements',
+  'ledger.view': 'View client, supplier, employee & customer ledgers',
+  'accounts.view': 'View chart of accounts / financial structure',
   'accounts.manage': 'Manage accounts and opening balances',
   'vouchers.view': 'View financial transactions (vouchers)',
-  'vouchers.create': 'Create manual transactions and transfers (advanced)',
+  'vouchers.create': 'Create manual GL entries (accountant)',
+  'vouchers.transfer': 'Voucher entry (transfer between money accounts)',
+  'vouchers.post': 'Post draft vouchers to the general ledger',
   'vouchers.reverse': 'Reverse posted transactions'
 }
 
@@ -38,10 +43,20 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   doctors: ['doctors.view', 'doctors.create', 'doctors.edit', 'doctors.delete', 'doctors.assign'],
   doctorLocations: ['doctorLocations.review'],
   orders: ['orders.view', 'orders.create', 'orders.edit', 'orders.deliver', 'orders.return'],
-  payments: ['payments.view', 'payments.create'],
-  ledger: ['ledger.view'],
-  accounts: ['accounts.view', 'accounts.manage'],
-  vouchers: ['vouchers.view', 'vouchers.create', 'vouchers.post', 'vouchers.reverse'],
+  /** Finance menu & accounting — mirrors web Finance navigation permissions. */
+  finance: [
+    'payments.view',
+    'payments.create',
+    'ledger.view',
+    'accounts.view',
+    'accounts.manage',
+    'vouchers.view',
+    'vouchers.transfer',
+    'vouchers.create',
+    'vouchers.post',
+    'vouchers.reverse',
+    'reports.accounting'
+  ],
   targets: ['targets.view', 'targets.create', 'targets.edit'],
   weeklyPlans: [
     'weeklyPlans.view',
@@ -66,7 +81,7 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
     'attendance.matrix.manage',
     'attendance.governance.view'
   ],
-  reports: ['reports.view', 'reports.accounting'],
+  reports: ['reports.view'],
   suppliers: ['suppliers.view', 'suppliers.manage'],
   procurement: [
     'procurement.view',

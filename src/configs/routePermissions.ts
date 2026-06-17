@@ -2,7 +2,24 @@
  * Maps route prefixes to the permission required to access them.
  * Order matters: more specific routes must come before their parent prefixes.
  * `platform.*` permissions are enforced in AuthGuard: SUPER_ADMIN, `userType === 'PLATFORM'`, or a literal key on `user.permissions` — not `admin.access`.
+ *
+ * `finance.access` is a synthetic key (not on the JWT) — AuthGuard resolves it to any finance-area permission.
  */
+export const FINANCE_AREA_PERMISSIONS = [
+  'payments.view',
+  'payments.create',
+  'ledger.view',
+  'accounts.view',
+  'accounts.manage',
+  'vouchers.view',
+  'vouchers.transfer',
+  'vouchers.create',
+  'reports.accounting',
+  'expenses.view'
+] as const
+
+export const FINANCE_HUB_PERMISSION = 'finance.access'
+
 export const routePermissions: Array<{ path: string; permission: string }> = [
   { path: '/platform', permission: 'platform.dashboard.view' },
   { path: '/orders/add', permission: 'orders.create' },
@@ -19,10 +36,16 @@ export const routePermissions: Array<{ path: string; permission: string }> = [
   { path: '/doctors', permission: 'doctors.view' },
   { path: '/finance/vouchers/new', permission: 'vouchers.create' },
   { path: '/finance/vouchers', permission: 'vouchers.view' },
-  { path: '/finance/transfers', permission: 'payments.create' },
+  { path: '/finance/transfers', permission: 'vouchers.transfer' },
+  { path: '/finance/accounts/advanced', permission: 'accounts.view' },
   { path: '/finance/accounts', permission: 'accounts.view' },
   { path: '/finance/reports', permission: 'reports.accounting' },
-  { path: '/finance', permission: 'reports.view' },
+  { path: '/finance/client-ledger', permission: 'ledger.view' },
+  { path: '/finance/supplier-ledger', permission: 'ledger.view' },
+  { path: '/finance/employee-ledger', permission: 'ledger.view' },
+  { path: '/finance/expense-ledger', permission: 'expenses.view' },
+  { path: '/finance/money-accounts', permission: 'payments.view' },
+  { path: '/finance', permission: FINANCE_HUB_PERMISSION },
   { path: '/ledger', permission: 'ledger.view' },
   { path: '/targets', permission: 'targets.view' },
   { path: '/weekly-plans', permission: 'weeklyPlans.view' },

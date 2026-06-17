@@ -21,12 +21,18 @@ import { SubMenu as VerticalSubMenu, MenuItem as VerticalMenuItem, MenuSection }
 import CustomChip from '@core/components/mui/Chip'
 
 /**
- * `permission` / `explicitPermission` / `roles` are only for `filterMenuByPermission` — they must not reach the DOM
+ * `permission` / `permissionAny` / `explicitPermission` / `roles` are only for `filterMenuByPermission` — they must not reach the DOM
  * (menu wrappers forward extra props to `<a>` / `<button>`).
  */
 function stripMenuMeta<T extends object>(item: T): T {
-  const clean = { ...item } as T & { permission?: unknown; explicitPermission?: unknown; roles?: unknown }
+  const clean = { ...item } as T & {
+    permission?: unknown
+    permissionAny?: unknown
+    explicitPermission?: unknown
+    roles?: unknown
+  }
   delete (clean as { permission?: unknown }).permission
+  delete (clean as { permissionAny?: unknown }).permissionAny
   delete (clean as { explicitPermission?: unknown }).explicitPermission
   delete (clean as { roles?: unknown }).roles
   return clean as T

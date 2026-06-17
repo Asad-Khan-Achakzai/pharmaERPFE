@@ -14,6 +14,7 @@ import { accountService } from '@/services/account.service'
 import { showApiError } from '@/utils/apiErrors'
 import { ACCOUNTING_UX } from '@/constants/accountingUx'
 import { useAccountingUxRole } from '@/hooks/useAccountingUxRole'
+import { useAuth } from '@/contexts/AuthContext'
 import { SimpleAccountCreateDialog } from '@/components/finance/SimpleAccountCreateDialog'
 import { moneyAccountTypeLabel } from '@/constants/simpleAccountTypes'
 import type { Account } from '@/types/accounting'
@@ -22,7 +23,9 @@ import type { SimpleAccountTypeId } from '@/constants/simpleAccountTypes'
 const fmt = (n: number) => `₨ ${(n ?? 0).toLocaleString('en-PK', { minimumFractionDigits: 2 })}`
 
 const MoneyAccountsPage = () => {
+  const { hasPermission } = useAuth()
   const { canCreateSimpleAccount, canCreateMoneyAccountOnly, canAccessAdvancedAccounting } = useAccountingUxRole()
+  const canVoucherEntry = hasPermission('vouchers.transfer')
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
@@ -107,9 +110,11 @@ const MoneyAccountsPage = () => {
                           <Button size='small' variant='outlined' component={Link} href='/payments/add'>
                             Receive payment
                           </Button>
-                          <Button size='small' variant='outlined' component={Link} href='/finance/transfers'>
-                            {ACCOUNTING_UX.transferMoney}
-                          </Button>
+                          {canVoucherEntry && (
+                            <Button size='small' variant='outlined' component={Link} href='/finance/transfers'>
+                              {ACCOUNTING_UX.transferMoney}
+                            </Button>
+                          )}
                         </Stack>
                       </Stack>
                     </CardContent>

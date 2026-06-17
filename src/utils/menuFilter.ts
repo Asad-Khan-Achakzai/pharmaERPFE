@@ -19,19 +19,23 @@ export function filterMenuByPermission<T extends AnyMenuItem>(
       if (!userRole || !roles.includes(userRole)) {
         return acc
       }
-    } else if (item.permission) {
+    } else if (item.permission || (item as { permissionAny?: string[] }).permissionAny?.length) {
+      const permissionAny = (item as { permissionAny?: string[] }).permissionAny
       if (explicit) {
         const keys = userPermissionKeys || []
-        const hasLiteral = keys.includes(item.permission)
+        const required = permissionAny?.length ? permissionAny : item.permission ? [item.permission] : []
+        const hasLiteral = required.some(p => keys.includes(p))
         /** SUPER_ADMIN may not have every key listed on the JWT; still show platform / explicit items. */
         const superSeesExplicit = userRole === 'SUPER_ADMIN'
         /** `platform.dashboard.view` is shown to platform user accounts (userType === 'PLATFORM'), not company admins. */
         const platformUserSeesDashboard =
-          userType === 'PLATFORM' && item.permission === 'platform.dashboard.view'
+          userType === 'PLATFORM' && required.includes('platform.dashboard.view')
         if (!hasLiteral && !superSeesExplicit && !platformUserSeesDashboard) {
           return acc
         }
-      } else if (!hasPermission(item.permission)) {
+      } else if (permissionAny?.length) {
+        if (!permissionAny.some(p => hasPermission(p))) return acc
+      } else if (item.permission && !hasPermission(item.permission)) {
         return acc
       }
     }

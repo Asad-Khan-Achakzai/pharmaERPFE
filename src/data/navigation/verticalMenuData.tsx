@@ -3,6 +3,8 @@ import type { VerticalMenuDataType } from '@/types/menuTypes'
 
 export type MenuItemWithPermission = VerticalMenuDataType & {
   permission?: string
+  /** Show when the user has any one of these permissions (legacy aliases supported). */
+  permissionAny?: string[]
   /** If true, require that exact key in user.permissions (not admin.access / SUPER_ADMIN bypass in menu filter). */
   explicitPermission?: boolean
   /** If set, menu item is only shown for these roles (e.g. SUPER_ADMIN). */
@@ -110,7 +112,7 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
         ]
       },
       { label: 'Expenses', href: '/expenses/list', icon: 'tabler-receipt', permission: 'expenses.view' },
-      { label: 'Voucher Entry', href: '/finance/transfers', icon: 'tabler-arrows-exchange', permission: 'payments.create' },
+      { label: 'Voucher Entry', href: '/finance/transfers', icon: 'tabler-arrows-exchange', permission: 'vouchers.transfer' },
       { label: 'General Ledger', href: '/finance/reports/general-ledger', icon: 'tabler-book', permission: 'reports.accounting' },
       { label: 'Client Ledger', href: '/finance/client-ledger', icon: 'tabler-users-group', permission: 'ledger.view' },
       { label: 'Supplier Ledger', href: '/finance/supplier-ledger', icon: 'tabler-truck', permission: 'ledger.view' },
@@ -120,7 +122,7 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
         label: 'Advanced Accounting',
         icon: 'tabler-calculator',
         children: [
-          { label: 'Financial Structure', href: '/finance/accounts', icon: 'tabler-list-tree', permission: 'reports.view' },
+          { label: 'Financial Structure', href: '/finance/accounts', icon: 'tabler-list-tree', permission: 'accounts.view' },
           { label: 'Customer Balances', href: '/ledger', icon: 'tabler-report-money', permission: 'ledger.view' },
           { label: 'Advanced Financial Structure', href: '/finance/accounts/advanced', permission: 'accounts.view' },
           { label: 'Financial Activity', href: '/finance/vouchers', permission: 'vouchers.view' },

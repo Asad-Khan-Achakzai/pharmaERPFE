@@ -8,7 +8,7 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import { useAuth } from '@/contexts/AuthContext'
 import type { User } from '@/contexts/AuthContext'
-import { getRequiredPermission } from '@/configs/routePermissions'
+import { getRequiredPermission, FINANCE_AREA_PERMISSIONS, FINANCE_HUB_PERMISSION } from '@/configs/routePermissions'
 
 /**
  * `platform.*` routes must not use `hasPermission` alone — `admin.access` would let company tenant admins through.
@@ -63,6 +63,9 @@ function userCanAccessRequiredPermission(
       hasPermission('team.viewAllReports') ||
       hasPermission('attendance.viewTeam')
     )
+  }
+  if (requiredPermission === FINANCE_HUB_PERMISSION) {
+    return FINANCE_AREA_PERMISSIONS.some(p => hasPermission(p))
   }
   return hasPermission(requiredPermission)
 }

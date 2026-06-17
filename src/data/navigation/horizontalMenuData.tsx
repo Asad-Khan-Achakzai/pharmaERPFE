@@ -3,6 +3,8 @@ import type { HorizontalMenuDataType } from '@/types/menuTypes'
 
 export type HorizontalMenuItemWithPermission = HorizontalMenuDataType & {
   permission?: string
+  /** Show when the user has any one of these permissions (legacy aliases supported). */
+  permissionAny?: string[]
   explicitPermission?: boolean
   roles?: string[]
   children?: HorizontalMenuItemWithPermission[]
@@ -104,7 +106,7 @@ const horizontalMenuData = (): HorizontalMenuItemWithPermission[] => [
       },
       { label: 'Money Accounts', href: '/finance/money-accounts', icon: 'tabler-wallet', permission: 'payments.view' },
       { label: 'Expenses', href: '/expenses/list', icon: 'tabler-receipt', permission: 'expenses.view' },
-      { label: 'Voucher Entry', href: '/finance/transfers', icon: 'tabler-arrows-exchange', permission: 'payments.create' },
+      { label: 'Voucher Entry', href: '/finance/transfers', icon: 'tabler-arrows-exchange', permission: 'vouchers.transfer' },
       { label: 'General Ledger', href: '/finance/reports/general-ledger', icon: 'tabler-book', permission: 'reports.accounting' },
       { label: 'Client Ledger', href: '/finance/client-ledger', icon: 'tabler-users-group', permission: 'ledger.view' },
       { label: 'Supplier Ledger', href: '/finance/supplier-ledger', icon: 'tabler-truck', permission: 'ledger.view' },
@@ -114,7 +116,7 @@ const horizontalMenuData = (): HorizontalMenuItemWithPermission[] => [
         label: 'Advanced Accounting',
         icon: 'tabler-calculator',
         children: [
-          { label: 'Financial Structure', href: '/finance/accounts', permission: 'reports.view' },
+          { label: 'Financial Structure', href: '/finance/accounts', permission: 'accounts.view' },
           { label: 'Customer Balances', href: '/ledger', permission: 'ledger.view' },
           { label: 'Advanced Financial Structure', href: '/finance/accounts/advanced', permission: 'accounts.view' },
           { label: 'Financial Activity', href: '/finance/vouchers', permission: 'vouchers.view' },

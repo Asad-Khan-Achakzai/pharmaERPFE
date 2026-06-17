@@ -58,6 +58,8 @@ type Company = {
   liveTrackingEnabled?: boolean
   /** When true, mobile app registers Expo push tokens and backend sends push for in-app notifications. */
   mobilePushEnabled?: boolean
+  /** When true, field rep expenses stay PENDING until a manager approves (mobile + web). */
+  expenseApprovalRequired?: boolean
   geoFencingEnabled?: boolean
   geoFenceRadiusMeters?: number
   geoFenceMode?: 'OFF' | 'SOFT' | 'STRICT'
@@ -91,6 +93,7 @@ type CompanyFormState = {
   mrepOwnershipAudit: boolean
   liveTrackingEnabled: boolean
   mobilePushEnabled: boolean
+  expenseApprovalRequired: boolean
   geoFencingEnabled: boolean
   geoFenceRadiusMeters: number
   geoFenceMode: GeoFenceMode
@@ -118,6 +121,7 @@ const emptyForm: CompanyFormState = {
   mrepOwnershipAudit: false,
   liveTrackingEnabled: false,
   mobilePushEnabled: false,
+  expenseApprovalRequired: false,
   geoFencingEnabled: false,
   geoFenceRadiusMeters: 150,
   geoFenceMode: 'OFF',
@@ -189,6 +193,7 @@ const SuperAdminPage = () => {
       mrepOwnershipAudit: c.mrepOwnershipAudit === true,
       liveTrackingEnabled: c.liveTrackingEnabled === true,
       mobilePushEnabled: c.mobilePushEnabled === true,
+      expenseApprovalRequired: c.expenseApprovalRequired === true,
       geoFencingEnabled: c.geoFencingEnabled === true,
       geoFenceRadiusMeters: c.geoFenceRadiusMeters ?? 150,
       geoFenceMode: c.geoFenceMode === 'SOFT' || c.geoFenceMode === 'STRICT' ? c.geoFenceMode : 'OFF',
@@ -214,6 +219,7 @@ const SuperAdminPage = () => {
         mrepOwnershipAudit: form.mrepOwnershipAudit,
         liveTrackingEnabled: form.liveTrackingEnabled,
         mobilePushEnabled: form.mobilePushEnabled,
+        expenseApprovalRequired: form.expenseApprovalRequired,
         geoFencingEnabled: form.geoFencingEnabled,
         geoFenceRadiusMeters: form.geoFenceRadiusMeters,
         geoFenceMode: form.geoFenceMode,
@@ -245,6 +251,7 @@ const SuperAdminPage = () => {
         mrepOwnershipAudit: form.mrepOwnershipAudit,
         liveTrackingEnabled: form.liveTrackingEnabled,
         mobilePushEnabled: form.mobilePushEnabled,
+        expenseApprovalRequired: form.expenseApprovalRequired,
         geoFencingEnabled: form.geoFencingEnabled,
         geoFenceRadiusMeters: form.geoFenceRadiusMeters,
         geoFenceMode: form.geoFenceMode,
@@ -355,6 +362,9 @@ const SuperAdminPage = () => {
                               ) : null}
                               {row.mobilePushEnabled ? (
                                 <Chip size='small' label='Mobile push' color='primary' variant='outlined' />
+                              ) : null}
+                              {row.expenseApprovalRequired ? (
+                                <Chip size='small' label='Expense approval' color='warning' variant='outlined' />
                               ) : null}
                               {row.geoFencingEnabled ? (
                                 <Chip
@@ -636,6 +646,27 @@ const SuperAdminPage = () => {
                 <Typography variant='caption' color='text.secondary' display='block'>
                   When enabled, the mobile app registers device tokens and sends push alerts for approvals,
                   expenses, announcements, and late check-ins (requires Expo push credentials on the server).
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.expenseApprovalRequired}
+                onChange={e => setForm(f => ({ ...f, expenseApprovalRequired: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Expense approval required
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When enabled, field rep expenses from mobile and web stay PENDING until a manager approves
+                  them and selects the paid-from money account.
                 </Typography>
               </div>
             }
@@ -958,6 +989,27 @@ const SuperAdminPage = () => {
                 <Typography variant='caption' color='text.secondary' display='block'>
                   When enabled, the mobile app registers device tokens and sends push alerts for approvals,
                   expenses, announcements, and late check-ins (requires Expo push credentials on the server).
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.expenseApprovalRequired}
+                onChange={e => setForm(f => ({ ...f, expenseApprovalRequired: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Expense approval required
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When enabled, field rep expenses from mobile and web stay PENDING until a manager approves
+                  them and selects the paid-from money account.
                 </Typography>
               </div>
             }
