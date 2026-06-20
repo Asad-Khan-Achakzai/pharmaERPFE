@@ -34,8 +34,12 @@ export const attendanceService = {
     }
     return todayInFlight
   },
-  report: (params: { employeeId: string; startDate: string; endDate: string }) =>
-    api.get('/attendance/report', { params }),
+  report: (params: {
+    employeeId: string
+    startDate: string
+    endDate: string
+    attendanceLocationStatus?: 'WITHIN_ZONE' | 'OUT_OF_ZONE'
+  }) => api.get('/attendance/report', { params }),
   monthlySummary: (params: { employeeId: string; month: string }) =>
     api.get('/attendance/monthly-summary', { params }),
   /** Admin only: mark employee absent for today (Pacific); clears mistaken check-in. */

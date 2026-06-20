@@ -67,11 +67,56 @@ type Company = {
   onboardingStrictValidation?: boolean
   onboardingKillSwitch?: boolean
   onboardingPilotCohort?: string
+  /** Super Admin: LEGACY (default) or CHECKIN_POLICY_V2 */
+  attendanceSystemMode?: 'LEGACY' | 'CHECKIN_POLICY_V2'
+  checkInPolicy?: {
+    type?: string
+    latitude?: number
+    longitude?: number
+    radiusMeters?: number
+    locationName?: string
+  }
   createdAt?: string
 }
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+function attendancePolicyPayload(form: CompanyFormState): {
+  attendanceSystemMode: 'LEGACY' | 'CHECKIN_POLICY_V2'
+  checkInPolicy?: {
+    type: 'COMPANY_DEFAULT'
+    latitude: number
+    longitude: number
+    radiusMeters: number
+    locationName: string
+  }
+} {
+  const out: {
+    attendanceSystemMode: 'LEGACY' | 'CHECKIN_POLICY_V2'
+    checkInPolicy?: {
+      type: 'COMPANY_DEFAULT'
+      latitude: number
+      longitude: number
+      radiusMeters: number
+      locationName: string
+    }
+  } = { attendanceSystemMode: form.attendanceSystemMode }
+  if (form.attendanceSystemMode === 'CHECKIN_POLICY_V2') {
+    const lat = Number(form.checkInLatitude)
+    const lng = Number(form.checkInLongitude)
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      out.checkInPolicy = {
+        type: 'COMPANY_DEFAULT',
+        latitude: lat,
+        longitude: lng,
+        radiusMeters: form.checkInRadiusMeters || 150,
+        locationName: form.checkInLocationName.trim()
+      }
+    }
+  }
+  return out
+}
 
 type GeoFenceMode = 'OFF' | 'SOFT' | 'STRICT'
 
@@ -101,6 +146,11 @@ type CompanyFormState = {
   onboardingStrictValidation: boolean
   onboardingKillSwitch: boolean
   onboardingPilotCohort: string
+  attendanceSystemMode: 'LEGACY' | 'CHECKIN_POLICY_V2'
+  checkInLocationName: string
+  checkInLatitude: string
+  checkInLongitude: string
+  checkInRadiusMeters: number
 }
 
 const emptyForm: CompanyFormState = {
@@ -128,7 +178,12 @@ const emptyForm: CompanyFormState = {
   onboardingEnabled: false,
   onboardingStrictValidation: false,
   onboardingKillSwitch: false,
-  onboardingPilotCohort: ''
+  onboardingPilotCohort: '',
+  attendanceSystemMode: 'LEGACY',
+  checkInLocationName: '',
+  checkInLatitude: '',
+  checkInLongitude: '',
+  checkInRadiusMeters: 150
 }
 
 const SuperAdminPage = () => {
@@ -200,7 +255,15 @@ const SuperAdminPage = () => {
       onboardingEnabled: c.onboardingEnabled === true,
       onboardingStrictValidation: c.onboardingStrictValidation === true,
       onboardingKillSwitch: c.onboardingKillSwitch === true,
-      onboardingPilotCohort: c.onboardingPilotCohort || ''
+      onboardingPilotCohort: c.onboardingPilotCohort || '',
+      attendanceSystemMode:
+        c.attendanceSystemMode === 'CHECKIN_POLICY_V2' ? 'CHECKIN_POLICY_V2' : 'LEGACY',
+      checkInLocationName: c.checkInPolicy?.locationName || '',
+      checkInLatitude:
+        c.checkInPolicy?.latitude != null ? String(c.checkInPolicy.latitude) : '',
+      checkInLongitude:
+        c.checkInPolicy?.longitude != null ? String(c.checkInPolicy.longitude) : '',
+      checkInRadiusMeters: c.checkInPolicy?.radiusMeters ?? 150
     })
     setEditOpen(true)
   }
@@ -210,9 +273,17 @@ const SuperAdminPage = () => {
     setSaving(true)
     try {
       await superAdminService.createCompany({
-        ...form,
+        name: form.name,
+        address: form.address,
+        city: form.city,
+        state: form.state,
+        country: form.country,
+        phone: form.phone,
+        ntnNo: form.ntnNo,
         email: form.email.trim() || undefined,
+        currency: form.currency,
         timeZone: form.timeZone.trim() || undefined,
+        isActive: form.isActive,
         weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired,
         strictVisitSequence: form.strictVisitSequence,
         mrepMultiTerritory: form.mrepMultiTerritory,
@@ -226,7 +297,8 @@ const SuperAdminPage = () => {
         onboardingEnabled: form.onboardingEnabled,
         onboardingStrictValidation: form.onboardingStrictValidation,
         onboardingKillSwitch: form.onboardingKillSwitch,
-        onboardingPilotCohort: form.onboardingPilotCohort
+        onboardingPilotCohort: form.onboardingPilotCohort,
+        ...attendancePolicyPayload(form)
       })
       setCreateOpen(false)
       await load()
@@ -242,9 +314,17 @@ const SuperAdminPage = () => {
     setSaving(true)
     try {
       await superAdminService.updateCompany(editingId, {
-        ...form,
+        name: form.name,
+        address: form.address,
+        city: form.city,
+        state: form.state,
+        country: form.country,
+        phone: form.phone,
+        ntnNo: form.ntnNo,
         email: form.email.trim() || undefined,
+        currency: form.currency,
         timeZone: form.timeZone.trim(),
+        isActive: form.isActive,
         weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired,
         strictVisitSequence: form.strictVisitSequence,
         mrepMultiTerritory: form.mrepMultiTerritory,
@@ -258,7 +338,8 @@ const SuperAdminPage = () => {
         onboardingEnabled: form.onboardingEnabled,
         onboardingStrictValidation: form.onboardingStrictValidation,
         onboardingKillSwitch: form.onboardingKillSwitch,
-        onboardingPilotCohort: form.onboardingPilotCohort
+        onboardingPilotCohort: form.onboardingPilotCohort,
+        ...attendancePolicyPayload(form)
       })
       setEditOpen(false)
       await load()
@@ -547,6 +628,58 @@ const SuperAdminPage = () => {
             }
             sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
           />
+          <TextField
+            select
+            label='Attendance system mode'
+            fullWidth
+            value={form.attendanceSystemMode}
+            onChange={e =>
+              setForm(f => ({
+                ...f,
+                attendanceSystemMode: e.target.value as 'LEGACY' | 'CHECKIN_POLICY_V2'
+              }))
+            }
+            margin='normal'
+            helperText='Legacy keeps current check-in behavior. V2 enables company default + weekly plan check-in policies (informational zone only).'
+          >
+            <MenuItem value='LEGACY'>Legacy system (current behavior)</MenuItem>
+            <MenuItem value='CHECKIN_POLICY_V2'>Check-in policy V2 (new system)</MenuItem>
+          </TextField>
+          {form.attendanceSystemMode === 'CHECKIN_POLICY_V2' ? (
+            <>
+              <TextField
+                label='Default check-in location name'
+                fullWidth
+                value={form.checkInLocationName}
+                onChange={e => setForm(f => ({ ...f, checkInLocationName: e.target.value }))}
+                margin='normal'
+              />
+              <TextField
+                label='Default latitude'
+                fullWidth
+                value={form.checkInLatitude}
+                onChange={e => setForm(f => ({ ...f, checkInLatitude: e.target.value }))}
+                margin='normal'
+              />
+              <TextField
+                label='Default longitude'
+                fullWidth
+                value={form.checkInLongitude}
+                onChange={e => setForm(f => ({ ...f, checkInLongitude: e.target.value }))}
+                margin='normal'
+              />
+              <TextField
+                label='Default radius (meters)'
+                type='number'
+                fullWidth
+                value={form.checkInRadiusMeters}
+                onChange={e =>
+                  setForm(f => ({ ...f, checkInRadiusMeters: Number(e.target.value) || 150 }))
+                }
+                margin='normal'
+              />
+            </>
+          ) : null}
           <FormControlLabel
             control={
               <Switch
@@ -892,6 +1025,58 @@ const SuperAdminPage = () => {
             }
             sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
           />
+          <TextField
+            select
+            label='Attendance system mode'
+            fullWidth
+            value={form.attendanceSystemMode}
+            onChange={e =>
+              setForm(f => ({
+                ...f,
+                attendanceSystemMode: e.target.value as 'LEGACY' | 'CHECKIN_POLICY_V2'
+              }))
+            }
+            margin='normal'
+            helperText='Legacy keeps current check-in behavior. V2 enables company default + weekly plan check-in policies (informational zone only).'
+          >
+            <MenuItem value='LEGACY'>Legacy system (current behavior)</MenuItem>
+            <MenuItem value='CHECKIN_POLICY_V2'>Check-in policy V2 (new system)</MenuItem>
+          </TextField>
+          {form.attendanceSystemMode === 'CHECKIN_POLICY_V2' ? (
+            <>
+              <TextField
+                label='Default check-in location name'
+                fullWidth
+                value={form.checkInLocationName}
+                onChange={e => setForm(f => ({ ...f, checkInLocationName: e.target.value }))}
+                margin='normal'
+              />
+              <TextField
+                label='Default latitude'
+                fullWidth
+                value={form.checkInLatitude}
+                onChange={e => setForm(f => ({ ...f, checkInLatitude: e.target.value }))}
+                margin='normal'
+              />
+              <TextField
+                label='Default longitude'
+                fullWidth
+                value={form.checkInLongitude}
+                onChange={e => setForm(f => ({ ...f, checkInLongitude: e.target.value }))}
+                margin='normal'
+              />
+              <TextField
+                label='Default radius (meters)'
+                type='number'
+                fullWidth
+                value={form.checkInRadiusMeters}
+                onChange={e =>
+                  setForm(f => ({ ...f, checkInRadiusMeters: Number(e.target.value) || 150 }))
+                }
+                margin='normal'
+              />
+            </>
+          ) : null}
           <FormControlLabel
             control={
               <Switch

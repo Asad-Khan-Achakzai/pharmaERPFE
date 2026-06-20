@@ -94,7 +94,8 @@ const WeeklyPlansPage = () => {
   const searchParams = useSearchParams()
   const { hasPermission, user } = useAuth()
   const canCreate = hasPermission('weeklyPlans.create')
-  const canSeeTeam = hasPermission('team.viewAllReports') || hasPermission('admin.access')
+  const isAdmin = hasPermission('admin.access')
+  const canSeeTeam = hasPermission('team.viewAllReports') || isAdmin
   const [data, setData] = useState<Plan[]>([])
   const [reps, setReps] = useState<any[]>([])
   const [scope, setScope] = useState<TeamScope>(canSeeTeam ? 'team' : 'self')
@@ -128,7 +129,9 @@ const WeeklyPlansPage = () => {
     try {
       const params: Record<string, string> = { limit: '100' }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
-      if (canSeeTeam && scope === 'team') params.scope = 'team'
+      if (canSeeTeam && !isAdmin) {
+        params.scope = scope === 'team' ? 'team' : 'self'
+      }
       const medFromUrl = medicalRepIdFromUrl
       if (medFromUrl && /^[a-f0-9]{24}$/i.test(medFromUrl)) params.medicalRepId = medFromUrl
       const [r, u] = await Promise.all([weeklyPlansService.list(params), usersService.assignable()])
@@ -140,7 +143,7 @@ const WeeklyPlansPage = () => {
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch, scope, canSeeTeam, medicalRepIdFromUrl])
+  }, [appliedFilters, debouncedSearch, scope, canSeeTeam, isAdmin, medicalRepIdFromUrl])
 
   useEffect(() => {
     void fetchData()
@@ -276,7 +279,7 @@ const WeeklyPlansPage = () => {
             placeholder='Search notes, rep…'
           />
           <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
-          {canSeeTeam && <TeamScopeToggle value={scope} onChange={setScope} />}
+          {canSeeTeam && !isAdmin && <TeamScopeToggle value={scope} onChange={setScope} />}
         </Stack>
       </div>
 

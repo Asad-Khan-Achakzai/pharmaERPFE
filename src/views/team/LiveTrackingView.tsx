@@ -16,7 +16,7 @@ import { formatDistanceToNow, parseISO, isValid } from 'date-fns'
 import { attendanceService } from '@/services/attendance.service'
 import { useAuth } from '@/contexts/AuthContext'
 import { showApiError } from '@/utils/apiErrors'
-import type { LiveRepLocation } from '@/types/liveTracking'
+import type { LiveAttendanceStatus, LiveRepLocation } from '@/types/liveTracking'
 
 const REFRESH_MS = 60_000
 
@@ -44,6 +44,36 @@ function freshnessChip(item: LiveRepLocation): { label: string; color: 'success'
     return { label: `${Math.round(item.ageSeconds! / 60)}m ago`, color: 'success' }
   }
   return { label: `${Math.round(item.ageSeconds! / 60)}m ago`, color: 'warning' }
+}
+
+function attendanceChip(status: LiveAttendanceStatus): {
+  label: string
+  color: 'success' | 'warning' | 'default' | 'info'
+} {
+  switch (status) {
+    case 'CHECKED_IN':
+      return { label: 'Checked in', color: 'success' }
+    case 'CHECKED_OUT':
+      return { label: 'Checked out', color: 'default' }
+    case 'LATE_CHECKIN_PENDING':
+      return { label: 'Late check-in pending', color: 'warning' }
+    default:
+      return { label: 'Not checked in', color: 'default' }
+  }
+}
+
+function locationSubtitle(item: LiveRepLocation, located: boolean): string {
+  if (located) {
+    const coords = `${item.lat!.toFixed(5)}, ${item.lng!.toFixed(5)}${
+      item.accuracy != null ? ` · ±${Math.round(item.accuracy)}m` : ''
+    }`
+    if (item.locationSource === 'checkin') return `${coords} · check-in location`
+    if (item.attendanceStatus === 'CHECKED_OUT') return `${coords} · last ping before check-out`
+    return coords
+  }
+  if (item.attendanceStatus === 'CHECKED_OUT') return 'Checked out · no GPS ping in the last 30 minutes'
+  if (item.attendanceStatus === 'NOT_CHECKED_IN') return 'Not checked in today'
+  return 'Checked in · no GPS ping in the last 30 minutes'
 }
 
 export default function LiveTrackingView() {
@@ -104,7 +134,7 @@ export default function LiveTrackingView() {
     <Card>
       <CardHeader
         title='Live tracking'
-        subheader='Your team roster with last known field locations (refreshes every minute). Location data is kept for 30 minutes after each ping.'
+        subheader='Your team roster with last known field locations (refreshes every minute). Reps send GPS every ~5 minutes while checked in, including in the background. Location data is kept for 30 minutes after each ping.'
         action={
           <Button
             variant='outlined'
@@ -142,29 +172,34 @@ export default function LiveTrackingView() {
           <Grid container spacing={2}>
             {rows.map(item => {
               const chip = freshnessChip(item)
+              const attendance = attendanceChip(item.attendanceStatus ?? 'NOT_CHECKED_IN')
               const located = hasLiveLocation(item)
               const captured = item.capturedAt ? parseISO(item.capturedAt) : null
+              const checkOutAt = item.checkOutTime ? parseISO(item.checkOutTime) : null
               return (
                 <Grid size={{ xs: 12, md: 6 }} key={item.userId}>
                   <Card variant='outlined' sx={{ height: '100%' }}>
                     <CardContent>
                       <Stack direction='row' alignItems='flex-start' justifyContent='space-between' spacing={2}>
                         <Box sx={{ minWidth: 0, flex: 1 }}>
-                          <Typography variant='subtitle1' sx={{ fontWeight: 700 }} noWrap>
-                            {item.name}
-                          </Typography>
+                          <Stack direction='row' alignItems='center' spacing={1} sx={{ minWidth: 0 }}>
+                            <Typography variant='subtitle1' sx={{ fontWeight: 700 }} noWrap>
+                              {item.name}
+                            </Typography>
+                            <Chip size='small' label={attendance.label} color={attendance.color} variant='tonal' />
+                          </Stack>
                           <Typography variant='body2' color='text.secondary' sx={{ mt: 0.5 }}>
-                            {located
-                              ? `${item.lat!.toFixed(5)}, ${item.lng!.toFixed(5)}${
-                                  item.accuracy != null ? ` · ±${Math.round(item.accuracy)}m` : ''
-                                }`
-                              : 'Not checked in or no GPS ping in the last 30 minutes'}
+                            {locationSubtitle(item, located)}
                           </Typography>
                           {located ? (
                             <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.75 }}>
                               {captured && isValid(captured)
                                 ? formatDistanceToNow(captured, { addSuffix: true })
                                 : 'Unknown time'}
+                            </Typography>
+                          ) : item.attendanceStatus === 'CHECKED_OUT' && checkOutAt && isValid(checkOutAt) ? (
+                            <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.75 }}>
+                              Checked out {formatDistanceToNow(checkOutAt, { addSuffix: true })}
                             </Typography>
                           ) : null}
                         </Box>

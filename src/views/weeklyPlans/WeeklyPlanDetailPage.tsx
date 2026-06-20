@@ -29,6 +29,7 @@ import { weeklyPlansService } from '@/services/weeklyPlans.service'
 import { doctorsService } from '@/services/doctors.service'
 import { planItemsService } from '@/services/planItems.service'
 import WeeklyPlanWeekBoard from '@/views/weeklyPlans/WeeklyPlanWeekBoard'
+import CheckInPolicySection from '@/views/weeklyPlans/CheckInPolicySection'
 import tableStyles from '@core/styles/table.module.css'
 import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
 import {
@@ -617,6 +618,14 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
               <Typography variant='body2' className='mbe-4' color='text.secondary'>
                 {plan.notes}
               </Typography>
+            )}
+            {plan.attendanceSystemMode === 'CHECKIN_POLICY_V2' && (
+              <CheckInPolicySection
+                planId={params.id}
+                disabled={!canEdit}
+                initial={plan.checkInConfiguration}
+                onSaved={cfg => setPlan((p: any) => (p ? { ...p, checkInConfiguration: cfg } : p))}
+              />
             )}
             {plan.executionMetrics && (
               <Paper variant='outlined' className='mbe-4 p-4'>

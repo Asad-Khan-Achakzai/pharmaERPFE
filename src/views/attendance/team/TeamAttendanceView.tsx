@@ -31,6 +31,7 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import CustomTextField from '@core/components/mui/TextField'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
+import { formatCheckInZoneLabel } from '@/utils/formatDistance'
 import { attendanceService } from '@/services/attendance.service'
 import { useAuth } from '@/contexts/AuthContext'
 import AttendanceModuleLayout from '@/views/attendance/AttendanceModuleLayout'
@@ -62,6 +63,32 @@ function personInitials(name: string): string {
   return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase() || '?'
 }
 
+function ZoneStatusChip({ row, teamV2 }: { row: TodayEmp; teamV2: boolean }) {
+  if (!teamV2 || !row.checkInTime) {
+    return (
+      <Typography variant='caption' color='text.secondary'>
+        —
+      </Typography>
+    )
+  }
+  const label = formatCheckInZoneLabel(row.attendanceLocationStatus, row.distanceFromCheckInPoint)
+  if (!label) {
+    return (
+      <Typography variant='caption' color='text.secondary'>
+        —
+      </Typography>
+    )
+  }
+  return (
+    <Chip
+      size='small'
+      label={label}
+      color={row.attendanceLocationStatus === 'WITHIN_ZONE' ? 'success' : 'warning'}
+      variant='tonal'
+    />
+  )
+}
+
 /** Select value for employees with no resolved schedule (policies off or unassigned). */
 const NO_SHIFT_FILTER = '__no_shift__'
 
@@ -76,6 +103,9 @@ type TodayEmp = {
   shiftId?: string | null
   shiftName?: string | null
   scheduleLabel?: string | null
+  attendanceLocationStatus?: 'WITHIN_ZONE' | 'OUT_OF_ZONE'
+  distanceFromCheckInPoint?: number | null
+  requiredCheckInLocation?: { name?: string }
 }
 
 export default function TeamAttendanceView() {
@@ -83,7 +113,12 @@ export default function TeamAttendanceView() {
   const flags = getAttendancePermissionFlags(user, hasPermission)
 
   const [loading, setLoading] = useState(true)
-  const [todayBoard, setTodayBoard] = useState<{ employees: TodayEmp[]; summary: any; businessDate?: string } | null>(null)
+  const [todayBoard, setTodayBoard] = useState<{
+    employees: TodayEmp[]
+    summary: any
+    businessDate?: string
+    attendanceSystemMode?: 'LEGACY' | 'CHECKIN_POLICY_V2'
+  } | null>(null)
   const [exceptions, setExceptions] = useState<any>(null)
   const [inbox, setInbox] = useState<any[]>([])
   const [busy, setBusy] = useState(false)
@@ -109,7 +144,7 @@ export default function TeamAttendanceView() {
   const [inboxPage, setInboxPage] = useState(0)
   const [inboxRowsPerPage, setInboxRowsPerPage] = useState(5)
   const [teamQuickFilter, setTeamQuickFilter] = useState<
-    '' | 'LATE' | 'PENDING_APPROVAL' | 'MISSING_CO' | 'NOT_IN' | 'PRESENT' | 'ESCALATED_REQUEST'
+    '' | 'LATE' | 'PENDING_APPROVAL' | 'MISSING_CO' | 'NOT_IN' | 'PRESENT' | 'ESCALATED_REQUEST' | 'IN_ZONE' | 'OUT_OF_ZONE'
   >('')
   const [shiftFilter, setShiftFilter] = useState('')
 
@@ -170,6 +205,8 @@ export default function TeamAttendanceView() {
     return map
   }, [inbox])
 
+  const teamV2 = todayBoard?.attendanceSystemMode === 'CHECKIN_POLICY_V2'
+
   const kpis = useMemo(() => {
     const s = todayBoard?.summary as Record<string, number> | undefined
     const present = s?.presentPayroll ?? s?.present ?? 0
@@ -183,8 +220,10 @@ export default function TeamAttendanceView() {
       const m = Math.round((new Date(r.slaDueAt).getTime() - Date.now()) / 60000)
       return m <= 60
     }).length
-    return { present, pendingLate, late, missingCo, pending, escalated, slaRisk }
-  }, [todayBoard, exceptions, inbox, pendingInbox])
+    const withinZone = teamV2 ? (s?.withinZoneToday ?? 0) : 0
+    const outOfZone = teamV2 ? (s?.outOfZoneToday ?? 0) : 0
+    return { present, pendingLate, late, missingCo, pending, escalated, slaRisk, withinZone, outOfZone }
+  }, [todayBoard, exceptions, inbox, pendingInbox, teamV2])
 
   const scheduleFilterOptions = useMemo(() => {
     const emps: TodayEmp[] = todayBoard?.employees || []
@@ -233,6 +272,10 @@ export default function TeamAttendanceView() {
         const req = requestByEmployee.get(e.employeeId)
         return req?.status === 'ESCALATED'
       })
+    } else if (teamQuickFilter === 'IN_ZONE') {
+      list = list.filter(e => e.attendanceLocationStatus === 'WITHIN_ZONE')
+    } else if (teamQuickFilter === 'OUT_OF_ZONE') {
+      list = list.filter(e => e.attendanceLocationStatus === 'OUT_OF_ZONE')
     }
     const dir = 1
     list = [...list].sort((a, b) => {
@@ -327,6 +370,25 @@ export default function TeamAttendanceView() {
                 </Card>
               </Grid>
             ))}
+            {teamV2
+              ? [
+                  { label: 'In check-in zone', value: kpis.withinZone },
+                  { label: 'Out of check-in zone', value: kpis.outOfZone }
+                ].map(k => (
+                  <Grid key={k.label} size={{ xs: 6, md: 3 }}>
+                    <Card elevation={0} variant='outlined' sx={{ borderRadius: 2, height: '100%' }}>
+                      <CardContent sx={{ py: 2 }}>
+                        <Typography variant='caption' color='text.secondary' display='block'>
+                          {k.label}
+                        </Typography>
+                        <Typography variant='h5' sx={{ fontWeight: 700 }}>
+                          {k.value}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))
+              : null}
           </Grid>
 
           <Box>
@@ -692,7 +754,13 @@ export default function TeamAttendanceView() {
                     { id: 'MISSING_CO' as const, label: 'Missing checkout' },
                     { id: 'NOT_IN' as const, label: 'Not checked in' },
                     { id: 'PRESENT' as const, label: 'Present' },
-                    { id: 'ESCALATED_REQUEST' as const, label: 'Escalated' }
+                    { id: 'ESCALATED_REQUEST' as const, label: 'Escalated' },
+                    ...(teamV2
+                      ? [
+                          { id: 'IN_ZONE' as const, label: 'In zone' },
+                          { id: 'OUT_OF_ZONE' as const, label: 'Out of zone' }
+                        ]
+                      : [])
                   ] as const
                 ).map(opt => (
                   <Chip
@@ -802,6 +870,7 @@ export default function TeamAttendanceView() {
                                 {row.lateMinutes != null && row.lateMinutes > 0 ? (
                                   <Chip size='small' variant='outlined' label={`Late ${row.lateMinutes}m`} color='warning' />
                                 ) : null}
+                                {teamV2 ? <ZoneStatusChip row={row} teamV2={teamV2} /> : null}
                               </Stack>
                               <Typography variant='caption' color='text.secondary' display='block'>
                                 {row.scheduleLabel || row.shiftName || 'No schedule'}
@@ -850,6 +919,7 @@ export default function TeamAttendanceView() {
                           <TableCell>Schedule</TableCell>
                           <TableCell>Check-in</TableCell>
                           <TableCell>Check-out</TableCell>
+                          {teamV2 ? <TableCell>Check-in point</TableCell> : null}
                           <TableCell>Late</TableCell>
                           <TableCell>Request</TableCell>
                           <TableCell align='right'> </TableCell>
@@ -878,6 +948,11 @@ export default function TeamAttendanceView() {
                               </TableCell>
                               <TableCell>{formatTeamTs(row.checkInTime)}</TableCell>
                               <TableCell>{formatTeamTs(row.checkOutTime)}</TableCell>
+                              {teamV2 ? (
+                                <TableCell sx={{ maxWidth: 200 }}>
+                                  <ZoneStatusChip row={row} teamV2={teamV2} />
+                                </TableCell>
+                              ) : null}
                               <TableCell>
                                 {row.lateMinutes != null && row.lateMinutes > 0 ? `${row.lateMinutes} min` : ''}
                               </TableCell>
@@ -952,6 +1027,22 @@ export default function TeamAttendanceView() {
               <Typography variant='body2' color='text.secondary'>
                 <strong>Check-out:</strong> {formatTeamTs(drawerEmp.checkOutTime)}
               </Typography>
+              {teamV2 ? (
+                <>
+                  <Typography variant='body2' color='text.secondary'>
+                    <strong>Check-in point:</strong>{' '}
+                    {formatCheckInZoneLabel(
+                      drawerEmp.attendanceLocationStatus,
+                      drawerEmp.distanceFromCheckInPoint
+                    ) || '—'}
+                  </Typography>
+                  {drawerEmp.requiredCheckInLocation?.name ? (
+                    <Typography variant='body2' color='text.secondary'>
+                      <strong>Expected location:</strong> {drawerEmp.requiredCheckInLocation.name}
+                    </Typography>
+                  ) : null}
+                </>
+              ) : null}
               <Typography variant='caption' color='text.secondary'>
                 Export or deep history: use company reporting tools where available.
               </Typography>

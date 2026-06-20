@@ -32,6 +32,7 @@ import { useTheme } from '@mui/material/styles'
 import CustomTextField from '@core/components/mui/TextField'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
+import { formatDistanceMeters } from '@/utils/formatDistance'
 import { attendanceService } from '@/services/attendance.service'
 import { usersService } from '@/services/users.service'
 import { useAuth } from '@/contexts/AuthContext'
@@ -68,6 +69,16 @@ type MeToday = Record<string, unknown> & {
   } | null
   shiftCheckInClosed?: boolean
   shiftCheckInClosedMessage?: string
+  governance?: {
+    attendanceSystemMode?: 'LEGACY' | 'CHECKIN_POLICY_V2'
+  }
+  attendanceLocationStatus?: 'WITHIN_ZONE' | 'OUT_OF_ZONE'
+  distanceFromCheckInPoint?: number | null
+  requiredCheckInLocation?: { name?: string; latitude?: number; longitude?: number }
+  checkInPolicyV2?: {
+    enabled?: boolean
+    requiredCheckInLocation?: { name?: string; radiusMeters?: number }
+  }
 }
 
 type AttRow = {
@@ -80,6 +91,16 @@ type AttRow = {
   lateCheckInApprovalStatus?: string
   markedBy?: string
   notes?: string
+  attendanceLocationStatus?: 'WITHIN_ZONE' | 'OUT_OF_ZONE'
+  distanceFromCheckInPoint?: number | null
+  requiredCheckInLocation?: { name: string; latitude?: number; longitude?: number }
+  resolvedCheckInPolicy?: {
+    type: string
+    locationName: string
+    latitude: number
+    longitude: number
+    radiusMeters: number
+  }
 }
 
 function formatLocalHm(iso: string | undefined): string {
@@ -155,6 +176,8 @@ export default function MyAttendanceView() {
   const [summary, setSummary] = useState<Record<string, number> | null>(null)
   const [monthly, setMonthly] = useState<Record<string, unknown> | null>(null)
   const [histLoading, setHistLoading] = useState(false)
+  const [reportV2, setReportV2] = useState(false)
+  const [locationStatusFilter, setLocationStatusFilter] = useState('')
 
   const [submitCard, setSubmitCard] = useState<string | null>(null)
   const [reqType, setReqType] = useState('LATE_ARRIVAL')
@@ -306,15 +329,23 @@ export default function MyAttendanceView() {
     if (!employeeId) return
     setHistLoading(true)
     try {
-      const r = await attendanceService.report({ employeeId, startDate, endDate })
+      const r = await attendanceService.report({
+        employeeId,
+        startDate,
+        endDate,
+        ...(locationStatusFilter
+          ? { attendanceLocationStatus: locationStatusFilter as 'WITHIN_ZONE' | 'OUT_OF_ZONE' }
+          : {})
+      })
       setRows(r.data?.data?.records || [])
       setSummary(r.data?.data?.summary || null)
+      setReportV2(r.data?.data?.attendanceSystemMode === 'CHECKIN_POLICY_V2')
     } catch (e) {
       showApiError(e, 'Could not load history')
     } finally {
       setHistLoading(false)
     }
-  }, [employeeId, startDate, endDate])
+  }, [employeeId, startDate, endDate, locationStatusFilter])
 
   const runMonthly = useCallback(async () => {
     if (!employeeId) return
@@ -972,6 +1003,19 @@ export default function MyAttendanceView() {
                       value={endDate}
                       onChange={e => setEndDate(e.target.value)}
                     />
+                    {reportV2 || meToday?.governance?.attendanceSystemMode === 'CHECKIN_POLICY_V2' ? (
+                      <CustomTextField
+                        select
+                        label='Check-in zone'
+                        value={locationStatusFilter}
+                        onChange={e => setLocationStatusFilter(e.target.value)}
+                        sx={{ minWidth: 160 }}
+                      >
+                        <MenuItem value=''>All</MenuItem>
+                        <MenuItem value='WITHIN_ZONE'>Within zone</MenuItem>
+                        <MenuItem value='OUT_OF_ZONE'>Out of zone</MenuItem>
+                      </CustomTextField>
+                    ) : null}
                     <Button variant='contained' onClick={() => void runReport()} disabled={histLoading}>
                       Load
                     </Button>
@@ -983,6 +1027,14 @@ export default function MyAttendanceView() {
                       <Chip label={`Late days: ${lateCountRange}`} color='warning' variant='outlined' size='small' />
                       <Chip label={`Open checkout: ${openCheckoutCount}`} variant='outlined' size='small' />
                       <Chip label={`Absent: ${summary.absentDays}`} color='error' variant='tonal' size='small' />
+                      {reportV2 && summary.outOfZoneDays != null ? (
+                        <Chip
+                          label={`Out of zone: ${summary.outOfZoneDays}`}
+                          color='warning'
+                          variant='outlined'
+                          size='small'
+                        />
+                      ) : null}
                     </Stack>
                   ) : null}
                   <TableContainerMini
@@ -999,6 +1051,7 @@ export default function MyAttendanceView() {
                           <TableCell>Check-out</TableCell>
                           <TableCell>Late</TableCell>
                           <TableCell>Approval</TableCell>
+                          {reportV2 ? <TableCell>Check-in zone</TableCell> : null}
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1026,6 +1079,17 @@ export default function MyAttendanceView() {
                                     ? 'Declined'
                                     : '—'}
                             </TableCell>
+                            {reportV2 ? (
+                              <TableCell>
+                                {r.attendanceLocationStatus === 'WITHIN_ZONE'
+                                  ? 'Within zone'
+                                  : r.attendanceLocationStatus === 'OUT_OF_ZONE'
+                                    ? r.distanceFromCheckInPoint != null
+                                      ? `Out · ${formatDistanceMeters(r.distanceFromCheckInPoint)}`
+                                      : 'Out of zone'
+                                    : '—'}
+                              </TableCell>
+                            ) : null}
                           </TableRow>
                         ))}
                       </TableBody>
