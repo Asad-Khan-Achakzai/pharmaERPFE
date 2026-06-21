@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -76,6 +77,12 @@ type Company = {
     radiusMeters?: number
     locationName?: string
   }
+  /** Per-company temporary-file retention (days). null = never delete. */
+  mediaRetention?: {
+    checkinRetentionDays?: number | null
+    visitRetentionDays?: number | null
+    expenseReceiptRetentionDays?: number | null
+  }
   createdAt?: string
 }
 
@@ -118,6 +125,35 @@ function attendancePolicyPayload(form: CompanyFormState): {
   return out
 }
 
+/**
+ * Build the mediaRetention payload from form strings. Empty string = "never
+ * delete" (null). Otherwise a positive integer number of days.
+ */
+function mediaRetentionPayload(form: CompanyFormState): {
+  mediaRetention: {
+    checkinRetentionDays: number | null
+    visitRetentionDays: number | null
+    expenseReceiptRetentionDays: number | null
+  }
+} {
+  const parse = (v: string): number | null => {
+    const t = v.trim()
+
+    if (t === '') return null
+    const n = Math.floor(Number(t))
+
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+
+  return {
+    mediaRetention: {
+      checkinRetentionDays: parse(form.checkinRetentionDays),
+      visitRetentionDays: parse(form.visitRetentionDays),
+      expenseReceiptRetentionDays: parse(form.expenseReceiptRetentionDays)
+    }
+  }
+}
+
 type GeoFenceMode = 'OFF' | 'SOFT' | 'STRICT'
 
 type CompanyFormState = {
@@ -151,6 +187,10 @@ type CompanyFormState = {
   checkInLatitude: string
   checkInLongitude: string
   checkInRadiusMeters: number
+  /** Retention days as strings ('' = never delete). */
+  checkinRetentionDays: string
+  visitRetentionDays: string
+  expenseReceiptRetentionDays: string
 }
 
 const emptyForm: CompanyFormState = {
@@ -183,7 +223,54 @@ const emptyForm: CompanyFormState = {
   checkInLocationName: '',
   checkInLatitude: '',
   checkInLongitude: '',
-  checkInRadiusMeters: 150
+  checkInRadiusMeters: 150,
+  checkinRetentionDays: '',
+  visitRetentionDays: '',
+  expenseReceiptRetentionDays: ''
+}
+
+/**
+ * Retention Policy editor. Per temporary-media type, a day count or empty for
+ * "Never delete". Empty = files are kept forever (production-safe default).
+ */
+const RetentionPolicyFields = ({
+  form,
+  setForm
+}: {
+  form: CompanyFormState
+  setForm: Dispatch<SetStateAction<CompanyFormState>>
+}) => {
+  const fields: { key: keyof CompanyFormState; label: string }[] = [
+    { key: 'checkinRetentionDays', label: 'Check-in images (days)' },
+    { key: 'visitRetentionDays', label: 'Visit images (days)' },
+    { key: 'expenseReceiptRetentionDays', label: 'Expense receipts (days)' }
+  ]
+
+  return (
+    <>
+      <Typography variant='subtitle2' sx={{ mt: 3, mb: 0.5 }}>
+        Media Retention Policy
+      </Typography>
+      <Typography variant='caption' color='text.secondary' sx={{ display: 'block', mb: 1 }}>
+        Temporary files are auto-deleted after the set number of days. Leave a field blank to never delete.
+        Permanent media (product/doctor/pharmacy/profile images) is never affected.
+      </Typography>
+      {fields.map(f => (
+        <TextField
+          key={String(f.key)}
+          label={f.label}
+          type='number'
+          fullWidth
+          margin='normal'
+          value={form[f.key] as string}
+          onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+          placeholder='Never delete'
+          helperText={(form[f.key] as string).trim() === '' ? 'Never delete' : undefined}
+          inputProps={{ min: 1, max: 3650 }}
+        />
+      ))}
+    </>
+  )
 }
 
 const SuperAdminPage = () => {
@@ -263,7 +350,15 @@ const SuperAdminPage = () => {
         c.checkInPolicy?.latitude != null ? String(c.checkInPolicy.latitude) : '',
       checkInLongitude:
         c.checkInPolicy?.longitude != null ? String(c.checkInPolicy.longitude) : '',
-      checkInRadiusMeters: c.checkInPolicy?.radiusMeters ?? 150
+      checkInRadiusMeters: c.checkInPolicy?.radiusMeters ?? 150,
+      checkinRetentionDays:
+        c.mediaRetention?.checkinRetentionDays != null ? String(c.mediaRetention.checkinRetentionDays) : '',
+      visitRetentionDays:
+        c.mediaRetention?.visitRetentionDays != null ? String(c.mediaRetention.visitRetentionDays) : '',
+      expenseReceiptRetentionDays:
+        c.mediaRetention?.expenseReceiptRetentionDays != null
+          ? String(c.mediaRetention.expenseReceiptRetentionDays)
+          : ''
     })
     setEditOpen(true)
   }
@@ -298,7 +393,8 @@ const SuperAdminPage = () => {
         onboardingStrictValidation: form.onboardingStrictValidation,
         onboardingKillSwitch: form.onboardingKillSwitch,
         onboardingPilotCohort: form.onboardingPilotCohort,
-        ...attendancePolicyPayload(form)
+        ...attendancePolicyPayload(form),
+        ...mediaRetentionPayload(form)
       })
       setCreateOpen(false)
       await load()
@@ -339,7 +435,8 @@ const SuperAdminPage = () => {
         onboardingStrictValidation: form.onboardingStrictValidation,
         onboardingKillSwitch: form.onboardingKillSwitch,
         onboardingPilotCohort: form.onboardingPilotCohort,
-        ...attendancePolicyPayload(form)
+        ...attendancePolicyPayload(form),
+        ...mediaRetentionPayload(form)
       })
       setEditOpen(false)
       await load()
@@ -893,6 +990,7 @@ const SuperAdminPage = () => {
             margin='normal'
             helperText='Example: cohort-a, wave-2, enterprise-beta'
           />
+          <RetentionPolicyFields form={form} setForm={setForm} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)} disabled={saving}>
@@ -1287,6 +1385,7 @@ const SuperAdminPage = () => {
             onChange={e => setForm(f => ({ ...f, onboardingPilotCohort: e.target.value }))}
             margin='normal'
           />
+          <RetentionPolicyFields form={form} setForm={setForm} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditOpen(false)} disabled={saving}>

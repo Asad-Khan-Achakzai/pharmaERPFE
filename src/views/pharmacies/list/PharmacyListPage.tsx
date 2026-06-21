@@ -19,6 +19,8 @@ import type { ColumnDef } from '@tanstack/react-table'
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { pharmaciesService } from '@/services/pharmacies.service'
+import MediaUpload from '@/components/media/MediaUpload'
+import EntityImageCell from '@/components/media/EntityImageCell'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import {
   TableListSearchField,
@@ -44,6 +46,7 @@ type Pharmacy = {
   address: string
   discountOnTP: number
   bonusScheme?: { buyQty?: number; getQty?: number }
+  imageUrl?: string | null
   isActive: boolean
 }
 
@@ -73,6 +76,7 @@ const PharmacyListPage = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [viewItem, setViewItem] = useState<Pharmacy | null>(null)
+  const [assetId, setAssetId] = useState<string | null>(null)
 
   const isFormValid = form.name.trim() !== ''
 
@@ -105,6 +109,7 @@ const PharmacyListPage = () => {
   }, [fetchData])
 
   const handleOpen = (item?: Pharmacy) => {
+    setAssetId(null)
     if (item) {
       setEditItem(item)
       setForm({
@@ -139,8 +144,10 @@ const PharmacyListPage = () => {
   const handleSave = async () => {
     setSaving(true)
     try {
-      if (editItem) { await pharmaciesService.update(editItem._id, form); showSuccess('Pharmacy updated') }
-      else { await pharmaciesService.create(form); showSuccess('Pharmacy created') }
+      const body: Record<string, unknown> = { ...form }
+      if (assetId) body.assetId = assetId
+      if (editItem) { await pharmaciesService.update(editItem._id, body); showSuccess('Pharmacy updated') }
+      else { await pharmaciesService.create(body); showSuccess('Pharmacy created') }
       setOpen(false); fetchData()
     } catch (err: any) { showApiError(err, 'Error saving pharmacy') }
     finally { setSaving(false) }
@@ -157,7 +164,12 @@ const PharmacyListPage = () => {
   }, [deleteId])
 
   const columns = useMemo<ColumnDef<Pharmacy, any>[]>(() => [
-    columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
+    columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => (
+      <Stack direction='row' alignItems='center' spacing={1.5}>
+        <EntityImageCell url={row.original.imageUrl} name={row.original.name} rounded={false} />
+        <Typography fontWeight={500}>{row.original.name}</Typography>
+      </Stack>
+    ) }),
     columnHelper.accessor('city', { header: 'City' }),
     columnHelper.accessor('phone', { header: 'Phone' }),
     columnHelper.accessor('discountOnTP', { header: 'Disc. on TP %', cell: ({ row }) => `${row.original.discountOnTP ?? 0}%` }),
@@ -250,6 +262,14 @@ const PharmacyListPage = () => {
         <DialogTitle>{editItem ? 'Edit Pharmacy' : 'Add Pharmacy'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
+            <Grid size={{ xs: 12 }}>
+              <MediaUpload
+                kind='PHARMACY_PHOTO'
+                value={editItem?.imageUrl ?? null}
+                onUploaded={setAssetId}
+                label='Upload pharmacy image'
+              />
+            </Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='City' value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Address' value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} /></Grid>

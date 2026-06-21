@@ -29,6 +29,8 @@ import type { ColumnDef } from '@tanstack/react-table'
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { distributorsService } from '@/services/distributors.service'
+import MediaUpload from '@/components/media/MediaUpload'
+import EntityImageCell from '@/components/media/EntityImageCell'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import {
   TableListSearchField,
@@ -52,6 +54,7 @@ type Distributor = {
   email: string
   discountOnTP: number
   isActive: boolean
+  imageUrl?: string | null
 }
 
 const columnHelper = createColumnHelper<Distributor>()
@@ -65,6 +68,7 @@ const DistributorListPage = () => {
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<Distributor | null>(null)
   const [form, setForm] = useState({ name: '', address: '', city: '', state: '', phone: '', email: '', discountOnTP: 0 })
+  const [assetId, setAssetId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -102,6 +106,7 @@ const DistributorListPage = () => {
   }, [fetchData])
 
   const handleOpen = (item?: Distributor) => {
+    setAssetId(null)
     if (item) {
       setEditItem(item)
       setForm({ name: item.name, address: '', city: item.city || '', state: '', phone: item.phone || '', email: item.email || '', discountOnTP: item.discountOnTP || 0 })
@@ -115,11 +120,13 @@ const DistributorListPage = () => {
   const handleSave = async () => {
     setSaving(true)
     try {
+      const body: Record<string, unknown> = { ...form }
+      if (assetId) body.assetId = assetId
       if (editItem) {
-        await distributorsService.update(editItem._id, form)
+        await distributorsService.update(editItem._id, body)
         showSuccess('Distributor updated')
       } else {
-        await distributorsService.create(form)
+        await distributorsService.create(body)
         showSuccess('Distributor created')
       }
       setOpen(false)
@@ -143,7 +150,12 @@ const DistributorListPage = () => {
   }, [deleteId])
 
   const columns = useMemo<ColumnDef<Distributor, any>[]>(() => [
-    columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
+    columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => (
+      <Stack direction='row' alignItems='center' spacing={1.5}>
+        <EntityImageCell url={row.original.imageUrl} name={row.original.name} rounded />
+        <Typography fontWeight={500}>{row.original.name}</Typography>
+      </Stack>
+    ) }),
     columnHelper.accessor('city', { header: 'City' }),
     columnHelper.accessor('phone', { header: 'Phone' }),
     columnHelper.accessor('discountOnTP', { header: 'Discount on TP', cell: ({ row }) => `${row.original.discountOnTP}%` }),
@@ -238,6 +250,14 @@ const DistributorListPage = () => {
         <DialogTitle>{editItem ? 'Edit Distributor' : 'Add Distributor'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
+            <Grid size={{ xs: 12 }}>
+              <MediaUpload
+                kind='DISTRIBUTOR_PHOTO'
+                value={editItem?.imageUrl ?? null}
+                onUploaded={setAssetId}
+                label='Upload distributor image'
+              />
+            </Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='City' value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Address' value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} /></Grid>

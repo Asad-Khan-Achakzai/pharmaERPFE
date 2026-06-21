@@ -25,11 +25,19 @@ import DialogCloseButton from '@/components/dialogs/DialogCloseButton'
 import tableStyles from '@core/styles/table.module.css'
 import { useAuth } from '@/contexts/AuthContext'
 import { rolesService, type Role } from '@/services/roles.service'
+import { usersService } from '@/services/users.service'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { ALL_PERMISSIONS, DASHBOARD_VIEW, PERMISSION_GROUPS, labelFor } from '@/constants/permissionGroups'
 import { extractPaginatedList } from '@/utils/apiPaginated'
 
-const DEMO_AVATARS = ['1.png', '2.png', '3.png', '4.png', '5.png', '6.png', '7.png']
+type RoleUser = { _id: string; name: string; imageUrl?: string | null }
+
+function personInitials(name?: string): string {
+  if (!name) return '?'
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+
+  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?'
+}
 
 /** Match heights within a row (stretch) and keep a consistent floor across the grid. */
 const ROLE_CARD_MIN_PX = 220
@@ -41,11 +49,6 @@ const cardShellSx = {
   flexDirection: 'column'
 } as const
 const cardItemGridSx = { display: 'flex' } as const
-
-const avatarsForCount = (total: number) => {
-  const n = Math.min(4, Math.max(0, total))
-  return Array.from({ length: n }, (_, i) => DEMO_AVATARS[i % DEMO_AVATARS.length])
-}
 
 const ensureDashboard = (perms: string[]) => (perms.includes(DASHBOARD_VIEW) ? perms : [...perms, DASHBOARD_VIEW])
 
@@ -308,6 +311,7 @@ const RolesListPage = () => {
   const { hasPermission } = useAuth()
   const canManage = hasPermission('roles.manage')
   const [rows, setRows] = useState<Role[]>([])
+  const [usersByRole, setUsersByRole] = useState<Map<string, RoleUser[]>>(new Map())
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Role | null>(null)
@@ -318,13 +322,32 @@ const RolesListPage = () => {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const rolesRes = await rolesService.list({ limit: 200 })
+      const [rolesRes, usersRes] = await Promise.all([
+        rolesService.list({ limit: 200 }),
+        usersService.list({ limit: '200' }).catch(() => null)
+      ])
       const roleList = extractPaginatedList<Role>(rolesRes)
       if (process.env.NODE_ENV === 'development') {
         // eslint-disable-next-line no-console
         console.log('ROLES API RESPONSE', { axiosData: rolesRes.data, roleList })
       }
       setRows(roleList)
+
+      const byRole = new Map<string, RoleUser[]>()
+      if (usersRes) {
+        const userList = extractPaginatedList<
+          RoleUser & { roleId?: { _id?: string } | string | null }
+        >(usersRes)
+        for (const u of userList) {
+          const rid =
+            u.roleId && typeof u.roleId === 'object' ? (u.roleId._id ? String(u.roleId._id) : '') : u.roleId ? String(u.roleId) : ''
+          if (!rid) continue
+          const list = byRole.get(rid) ?? []
+          list.push({ _id: u._id, name: u.name, imageUrl: u.imageUrl })
+          byRole.set(rid, list)
+        }
+      }
+      setUsersByRole(byRole)
     } catch (e) {
       showApiError(e, 'Failed to load')
     } finally {
@@ -395,8 +418,9 @@ const RolesListPage = () => {
         ) : (
           <Grid container spacing={6}>
             {rows.map(r => {
-              const total = r.userCount ?? 0
-              const avatarFiles = avatarsForCount(total)
+              const roleUsers = usersByRole.get(String(r._id)) ?? []
+              const total = r.userCount ?? roleUsers.length
+              const shownUsers = roleUsers.slice(0, 4)
               const deleteDisabled = r.isSystem || total > 0
               const deleteDisabledReason = r.isSystem
                 ? 'System roles cannot be deleted'
@@ -409,9 +433,11 @@ const RolesListPage = () => {
                     <CardContent className='flex flex-col flex-auto gap-4 justify-between'>
                       <div className='flex items-center justify-between gap-2'>
                         <Typography className='grow'>{`Total ${total} user${total === 1 ? '' : 's'}`}</Typography>
-                        <AvatarGroup total={total}>
-                          {avatarFiles.map((img, i) => (
-                            <Avatar key={i} alt={r.name} src={`/images/avatars/${img}`} />
+                        <AvatarGroup total={Math.max(total, shownUsers.length)}>
+                          {shownUsers.map(u => (
+                            <Avatar key={u._id} alt={u.name} src={u.imageUrl || undefined}>
+                              {personInitials(u.name)}
+                            </Avatar>
                           ))}
                         </AvatarGroup>
                       </div>

@@ -46,6 +46,8 @@ export interface User {
   role: string
   userType?: UserType
   permissions: string[]
+  /** Transient signed avatar URL resolved from MediaAsset (source of truth). */
+  imageUrl?: string | null
   /** Active-tenant role metadata for dashboard UI; not used for RBAC checks. */
   resolvedRole?: ResolvedRole | null
   /** Primary territory anchor (zone / area / brick) with path for client-side scoping. */

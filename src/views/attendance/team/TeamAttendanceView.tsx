@@ -100,6 +100,7 @@ type TodayEmp = {
   checkOutTime?: string | null
   hasCheckedOut?: boolean
   lateMinutes?: number | null
+  checkInImageUrl?: string | null
   shiftId?: string | null
   shiftName?: string | null
   scheduleLabel?: string | null
@@ -126,6 +127,7 @@ export default function TeamAttendanceView() {
   const [statusFilter, setStatusFilter] = useState('')
   const [sortBy, setSortBy] = useState<'name' | 'status'>('name')
   const [drawerEmp, setDrawerEmp] = useState<TodayEmp | null>(null)
+  const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null)
   const [inboxSort, setInboxSort] = useState<'newest' | 'oldest'>('newest')
   const [rejectDlg, setRejectDlg] = useState<{ id: string } | null>(null)
   const [rejectNote, setRejectNote] = useState('')
@@ -860,7 +862,21 @@ export default function TeamAttendanceView() {
                       <Card key={row.employeeId} variant='outlined' elevation={0}>
                         <CardContent sx={{ py: 2 }}>
                           <Stack direction='row' spacing={2} alignItems='flex-start'>
-                            <Avatar sx={{ width: 40, height: 40 }}>{personInitials(row.name)}</Avatar>
+                            <Avatar
+                              src={row.checkInImageUrl || undefined}
+                              onClick={
+                                row.checkInImageUrl
+                                  ? () => setImagePreview({ url: row.checkInImageUrl as string, name: row.name })
+                                  : undefined
+                              }
+                              sx={{
+                                width: 40,
+                                height: 40,
+                                cursor: row.checkInImageUrl ? 'pointer' : 'default'
+                              }}
+                            >
+                              {personInitials(row.name)}
+                            </Avatar>
                             <Box sx={{ flex: 1, minWidth: 0 }}>
                               <Typography fontWeight={700} gutterBottom>
                                 {row.name}
@@ -932,7 +948,20 @@ export default function TeamAttendanceView() {
                             <TableRow key={row.employeeId} hover sx={{ '& td': { py: 1.125 } }}>
                               <TableCell>
                                 <Stack direction='row' alignItems='center' gap={1}>
-                                  <Avatar sx={{ width: 28, height: 28, fontSize: '0.75rem' }}>
+                                  <Avatar
+                                    src={row.checkInImageUrl || undefined}
+                                    onClick={
+                                      row.checkInImageUrl
+                                        ? () => setImagePreview({ url: row.checkInImageUrl as string, name: row.name })
+                                        : undefined
+                                    }
+                                    sx={{
+                                      width: 28,
+                                      height: 28,
+                                      fontSize: '0.75rem',
+                                      cursor: row.checkInImageUrl ? 'pointer' : 'default'
+                                    }}
+                                  >
                                     {personInitials(row.name)}
                                   </Avatar>
                                   {row.name}
@@ -1027,6 +1056,29 @@ export default function TeamAttendanceView() {
               <Typography variant='body2' color='text.secondary'>
                 <strong>Check-out:</strong> {formatTeamTs(drawerEmp.checkOutTime)}
               </Typography>
+              {drawerEmp.checkInImageUrl ? (
+                <Box>
+                  <Typography variant='body2' color='text.secondary' sx={{ mb: 0.5 }}>
+                    <strong>Check-in selfie:</strong>
+                  </Typography>
+                  <Box
+                    component='img'
+                    src={drawerEmp.checkInImageUrl}
+                    alt={`${drawerEmp.name} check-in selfie`}
+                    onClick={() =>
+                      setImagePreview({ url: drawerEmp.checkInImageUrl as string, name: drawerEmp.name })
+                    }
+                    sx={{
+                      width: '100%',
+                      maxHeight: 280,
+                      objectFit: 'cover',
+                      borderRadius: 2,
+                      cursor: 'pointer',
+                      border: theme => `1px solid ${theme.palette.divider}`
+                    }}
+                  />
+                </Box>
+              ) : null}
               {teamV2 ? (
                 <>
                   <Typography variant='body2' color='text.secondary'>
@@ -1050,6 +1102,25 @@ export default function TeamAttendanceView() {
           ) : null}
         </Box>
       </Drawer>
+
+      <Dialog open={Boolean(imagePreview)} onClose={() => setImagePreview(null)} maxWidth='sm' fullWidth>
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          {imagePreview?.name ? `${imagePreview.name} · Check-in selfie` : 'Check-in selfie'}
+          <IconButton aria-label='close' onClick={() => setImagePreview(null)} size='small'>
+            <i className='tabler-x' />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 2 }}>
+          {imagePreview ? (
+            <Box
+              component='img'
+              src={imagePreview.url}
+              alt={`${imagePreview.name} check-in selfie`}
+              sx={{ width: '100%', maxHeight: '70vh', objectFit: 'contain', borderRadius: 1 }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(rejectDlg)} onClose={() => setRejectDlg(null)} maxWidth='xs' fullWidth>
         <DialogTitle>Reject request</DialogTitle>

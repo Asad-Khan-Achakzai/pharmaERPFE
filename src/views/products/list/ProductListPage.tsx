@@ -29,6 +29,8 @@ import type { ColumnDef } from '@tanstack/react-table'
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { productsService } from '@/services/products.service'
+import MediaUpload from '@/components/media/MediaUpload'
+import EntityImageCell from '@/components/media/EntityImageCell'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import {
   TableListSearchField,
@@ -52,6 +54,8 @@ type Product = {
   tp: number
   /** Omitted from GET /products when user lacks products.viewCostPrice */
   casting?: number
+  /** Transient signed URL resolved from MediaAsset (source of truth). */
+  imageUrl?: string | null
   isActive: boolean
 }
 
@@ -66,6 +70,7 @@ const ProductListPage = () => {
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<Product | null>(null)
   const [form, setForm] = useState({ name: '', composition: '', mrp: 0, tp: 0, casting: 0 })
+  const [assetId, setAssetId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -109,6 +114,7 @@ const ProductListPage = () => {
   }, [fetchData])
 
   const handleOpen = (item?: Product) => {
+    setAssetId(null)
     if (item) {
       setEditItem(item)
       setForm({
@@ -129,13 +135,15 @@ const ProductListPage = () => {
     setSaving(true)
     try {
       if (editItem) {
-        const body = canViewCostPrice
-          ? form
+        const body: Record<string, unknown> = canViewCostPrice
+          ? { ...form }
           : { name: form.name, composition: form.composition, mrp: form.mrp, tp: form.tp }
+        if (assetId) body.assetId = assetId
         await productsService.update(editItem._id, body)
         showSuccess('Product updated')
       } else {
-        const body = canViewCostPrice ? form : { ...form, casting: 0 }
+        const body: Record<string, unknown> = canViewCostPrice ? { ...form } : { ...form, casting: 0 }
+        if (assetId) body.assetId = assetId
         await productsService.create(body)
         showSuccess('Product created')
       }
@@ -161,7 +169,12 @@ const ProductListPage = () => {
 
   const columns = useMemo<ColumnDef<Product, any>[]>(() => {
     const base: ColumnDef<Product, any>[] = [
-      columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
+      columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => (
+        <Stack direction='row' alignItems='center' spacing={1.5}>
+          <EntityImageCell url={row.original.imageUrl} name={row.original.name} rounded={false} />
+          <Typography fontWeight={500}>{row.original.name}</Typography>
+        </Stack>
+      ) }),
       columnHelper.accessor('mrp', { header: 'MRP', cell: ({ row }) => `₨ ${row.original.mrp?.toFixed(2)}` }),
       columnHelper.accessor('tp', { header: 'TP', cell: ({ row }) => `₨ ${row.original.tp?.toFixed(2)}` })
     ]
@@ -268,6 +281,14 @@ const ProductListPage = () => {
         <DialogTitle>{editItem ? 'Edit Product' : 'Add Product'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
+            <Grid size={{ xs: 12 }}>
+              <MediaUpload
+                kind='PRODUCT_VISUAL'
+                value={editItem?.imageUrl ?? null}
+                onUploaded={setAssetId}
+                label='Upload product image'
+              />
+            </Grid>
             <Grid size={{ xs: 12 }}><CustomTextField required fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Composition' value={form.composition} onChange={e => setForm(p => ({ ...p, composition: e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='MRP' type='number' value={form.mrp} onChange={e => setForm(p => ({ ...p, mrp: +e.target.value }))} /></Grid>
@@ -297,6 +318,16 @@ const ProductListPage = () => {
         <DialogContent>
           {viewItem && (
             <Grid container spacing={3} className='pbs-4'>
+              {viewItem.imageUrl ? (
+                <Grid size={{ xs: 12 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={viewItem.imageUrl}
+                    alt={viewItem.name}
+                    style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, objectFit: 'cover' }}
+                  />
+                </Grid>
+              ) : null}
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Name</Typography><Typography fontWeight={500}>{viewItem.name}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Composition</Typography><Typography>{viewItem.composition || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>MRP</Typography><Typography>₨ {viewItem.mrp?.toFixed(2)}</Typography></Grid>

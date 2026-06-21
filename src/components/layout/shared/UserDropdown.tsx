@@ -25,6 +25,8 @@ import CircularProgress from '@mui/material/CircularProgress'
 // Hook Imports
 import { useSettings } from '@core/hooks/useSettings'
 import { useAuth } from '@/contexts/AuthContext'
+import { mediaService } from '@/services/media.service'
+import { showApiError, showSuccess } from '@/utils/apiErrors'
 
 // Styled component for badge content
 const BadgeContentSpan = styled('span')({
@@ -40,17 +42,35 @@ const UserDropdown = () => {
   // States
   const [open, setOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
 
   // Refs
   const anchorRef = useRef<HTMLDivElement>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
 
   // Hooks
   const router = useRouter()
 
   const { settings } = useSettings()
-  const { user, logout } = useAuth()
+  const { user, logout, refreshUser } = useAuth()
   const userName = user?.name || 'User'
   const userEmail = user?.email || 'No email'
+  const avatarSrc = user?.imageUrl || '/images/avatars/1.png'
+
+  const handlePhotoSelected = async (file: File) => {
+    if (!user?._id) return
+    setUploadingPhoto(true)
+    try {
+      const { assetId } = await mediaService.upload(file, 'USER_AVATAR')
+      await mediaService.attach({ resource: 'users', id: user._id, assetId })
+      await refreshUser()
+      showSuccess('Profile photo updated')
+    } catch (err) {
+      showApiError(err, 'Could not update profile photo')
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
 
   const handleDropdownOpen = () => {
     !open ? setOpen(true) : setOpen(false)
@@ -75,6 +95,18 @@ const UserDropdown = () => {
 
   return (
     <>
+      <input
+        ref={photoInputRef}
+        type='file'
+        accept='image/png,image/jpeg,image/webp'
+        hidden
+        onChange={e => {
+          const f = e.target.files?.[0]
+
+          if (f) void handlePhotoSelected(f)
+          e.target.value = ''
+        }}
+      />
       <Badge
         ref={anchorRef}
         overlap='circular'
@@ -85,7 +117,7 @@ const UserDropdown = () => {
         <Avatar
           ref={anchorRef}
           alt={userName}
-          src='/images/avatars/1.png'
+          src={avatarSrc}
           onClick={handleDropdownOpen}
           className='cursor-pointer bs-[38px] is-[38px]'
         />
@@ -109,7 +141,7 @@ const UserDropdown = () => {
               <ClickAwayListener onClickAway={e => handleDropdownClose(e as MouseEvent | TouchEvent)}>
                 <MenuList>
                   <div className='flex items-center plb-2 pli-6 gap-2' tabIndex={-1}>
-                    <Avatar alt={userName} src='/images/avatars/1.png' />
+                    <Avatar alt={userName} src={avatarSrc} />
                     <div className='flex items-start flex-col'>
                       <Typography className='font-medium' color='text.primary'>
                         {userName}
@@ -118,6 +150,16 @@ const UserDropdown = () => {
                     </div>
                   </div>
                   <Divider className='mlb-1' />
+                  <MenuItem
+                    className='mli-2 gap-3'
+                    disabled={uploadingPhoto}
+                    onClick={() => photoInputRef.current?.click()}
+                  >
+                    {uploadingPhoto ? <CircularProgress size={16} /> : <i className='tabler-camera' />}
+                    <Typography color='text.primary'>
+                      {uploadingPhoto ? 'Uploading…' : 'Change photo'}
+                    </Typography>
+                  </MenuItem>
                   {/* <MenuItem className='mli-2 gap-3' onClick={e => handleDropdownClose(e)}>
                     <i className='tabler-user' />
                     <Typography color='text.primary'>My Profile</Typography>

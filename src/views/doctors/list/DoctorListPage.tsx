@@ -16,6 +16,7 @@ import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
 import MenuItem from '@mui/material/MenuItem'
 import Chip from '@mui/material/Chip'
+import Checkbox from '@mui/material/Checkbox'
 import CircularProgress from '@mui/material/CircularProgress'
 import { createColumnHelper, flexRender, getCoreRowModel, getSortedRowModel, useReactTable } from '@tanstack/react-table'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -23,6 +24,8 @@ import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { doctorsService } from '@/services/doctors.service'
 import { pharmaciesService } from '@/services/pharmacies.service'
+import MediaUpload from '@/components/media/MediaUpload'
+import EntityImageCell from '@/components/media/EntityImageCell'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import DoctorBulkImportDialog from './DoctorBulkImportDialog'
@@ -91,6 +94,7 @@ const emptyForm = (): DoctorFormState => ({
 type Doctor = {
   _id: string
   name: string
+  imageUrl?: string | null
   specialization?: string
   phone?: string
   mobileNo?: string
@@ -138,10 +142,12 @@ const DoctorListPage = () => {
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<Doctor | null>(null)
   const [form, setForm] = useState<DoctorFormState>(emptyForm)
+  const [assetId, setAssetId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleteIds, setDeleteIds] = useState<string[]>([])
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
   const [viewItem, setViewItem] = useState<Doctor | null>(null)
   const [importOpen, setImportOpen] = useState(false)
@@ -215,6 +221,32 @@ const DoctorListPage = () => {
     void fetchData()
   }, [fetchData])
 
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [pagination.pageIndex, pagination.pageSize, appliedFilters, debouncedSearch, scope])
+
+  const pageIds = useMemo(() => data.map(d => d._id), [data])
+  const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id))
+  const somePageSelected = pageIds.some(id => selectedIds.has(id)) && !allPageSelected
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllPage = () => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (allPageSelected) pageIds.forEach(id => next.delete(id))
+      else pageIds.forEach(id => next.add(id))
+      return next
+    })
+  }
+
   const mapDoctorToForm = (item: Doctor): DoctorFormState => ({
     pharmacyId: (() => {
       const ph = item.pharmacyId
@@ -242,6 +274,7 @@ const DoctorListPage = () => {
   })
 
   const handleOpen = (item?: Doctor) => {
+    setAssetId(null)
     if (item) {
       setEditItem(item)
       const ph = item.pharmacyId
@@ -287,7 +320,8 @@ const DoctorListPage = () => {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const body = payloadFromForm(form)
+      const body: Record<string, unknown> = payloadFromForm(form)
+      if (assetId) body.assetId = assetId
       if (editItem) {
         await doctorsService.update(editItem._id, body)
         showSuccess('Doctor updated')
@@ -304,35 +338,75 @@ const DoctorListPage = () => {
     }
   }
 
-  const openDeleteConfirm = (id: string) => {
-    setDeleteId(id)
+  const openDeleteConfirm = (ids: string[]) => {
+    setDeleteIds(ids)
     setConfirmOpen(true)
   }
 
   const handleDelete = useCallback(async () => {
-    if (!deleteId) return
+    if (deleteIds.length === 0) return
     setDeleting(true)
     try {
-      await doctorsService.remove(deleteId)
-      showSuccess('Doctor deleted successfully')
+      const results = await Promise.allSettled(deleteIds.map(id => doctorsService.remove(id)))
+      const failed = results.filter(r => r.status === 'rejected').length
+      const succeeded = results.length - failed
+      if (failed === 0) {
+        showSuccess(
+          succeeded === 1 ? 'Doctor deleted successfully' : `${succeeded} doctors deleted successfully`
+        )
+      } else if (succeeded === 0) {
+        const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+        showApiError(firstError?.reason, 'Error deleting doctors')
+      } else {
+        showApiError(null, `${succeeded} deleted, ${failed} failed`)
+      }
       setConfirmOpen(false)
+      setDeleteIds([])
+      setSelectedIds(new Set())
       fetchData()
-    } catch (err) {
-      showApiError(err, 'Error deleting doctor')
     } finally {
       setDeleting(false)
     }
-  }, [deleteId])
+  }, [deleteIds, fetchData])
 
   const columns = useMemo<ColumnDef<Doctor, any>[]>(
     () => [
+      ...(canDelete
+        ? [
+            columnHelper.display({
+              id: 'select',
+              header: () => (
+                <Checkbox
+                  size='small'
+                  checked={allPageSelected}
+                  indeterminate={somePageSelected}
+                  onChange={toggleSelectAllPage}
+                  inputProps={{ 'aria-label': 'Select all doctors on this page' }}
+                />
+              ),
+              cell: ({ row }) => (
+                <Checkbox
+                  size='small'
+                  checked={selectedIds.has(row.original._id)}
+                  onChange={() => toggleSelect(row.original._id)}
+                  inputProps={{ 'aria-label': `Select ${row.original.name}` }}
+                />
+              )
+            })
+          ]
+        : []),
       columnHelper.accessor('doctorCode', {
         header: 'Code',
         cell: ({ getValue }) => getValue() || '—'
       }),
       columnHelper.accessor('name', {
         header: 'Doctor name',
-        cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography>
+        cell: ({ row }) => (
+          <Stack direction='row' alignItems='center' spacing={1.5}>
+            <EntityImageCell url={row.original.imageUrl} name={row.original.name} rounded />
+            <Typography fontWeight={500}>{row.original.name}</Typography>
+          </Stack>
+        )
       }),
       columnHelper.accessor('specialization', { header: 'Specialty', cell: ({ getValue }) => getValue() || '—' }),
       columnHelper.accessor('zone', { header: 'Zone', cell: ({ getValue }) => getValue() || '—' }),
@@ -369,7 +443,7 @@ const DoctorListPage = () => {
               </IconButton>
             )}
             {canDelete && (
-              <IconButton size='small' onClick={() => openDeleteConfirm(row.original._id)}>
+              <IconButton size='small' onClick={() => openDeleteConfirm([row.original._id])}>
                 <i className='tabler-trash text-textSecondary' />
               </IconButton>
             )}
@@ -377,7 +451,7 @@ const DoctorListPage = () => {
         )
       })
     ],
-    [canEdit, canAssign, canDelete]
+    [canEdit, canAssign, canDelete, allPageSelected, somePageSelected, selectedIds, pageIds]
   )
 
   const table = useReactTable({
@@ -413,18 +487,32 @@ const DoctorListPage = () => {
           <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
           {canSeeTeam && <TeamScopeToggle value={scope} onChange={setScope} />}
         </Stack>
-        {canCreate && (
+        {((canDelete && selectedIds.size > 0) || canCreate) && (
           <Stack direction='row' spacing={1.5} useFlexGap>
-            <Button
-              variant='outlined'
-              startIcon={<i className='tabler-file-upload' />}
-              onClick={() => setImportOpen(true)}
-            >
-              Import Doctors
-            </Button>
-            <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => handleOpen()}>
-              Add Doctor
-            </Button>
+            {canDelete && selectedIds.size > 0 && (
+              <Button
+                variant='outlined'
+                color='error'
+                startIcon={<i className='tabler-trash' />}
+                onClick={() => openDeleteConfirm(Array.from(selectedIds))}
+              >
+                Delete selected ({selectedIds.size})
+              </Button>
+            )}
+            {canCreate && (
+              <>
+                <Button
+                  variant='outlined'
+                  startIcon={<i className='tabler-file-upload' />}
+                  onClick={() => setImportOpen(true)}
+                >
+                  Import Doctors
+                </Button>
+                <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => handleOpen()}>
+                  Add Doctor
+                </Button>
+              </>
+            )}
           </Stack>
         )}
       </div>
@@ -674,6 +762,15 @@ const DoctorListPage = () => {
         <DialogContent dividers>
           <Grid container spacing={3} className='pbs-2'>
             <Grid size={{ xs: 12 }}>
+              <MediaUpload
+                kind='DOCTOR_PHOTO'
+                rounded
+                value={(editItem as { imageUrl?: string | null } | null)?.imageUrl ?? null}
+                onUploaded={setAssetId}
+                label='Upload doctor photo'
+              />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
               <LookupAutocomplete
                 value={selectedPharmacy}
                 onChange={v => {
@@ -864,10 +961,17 @@ const DoctorListPage = () => {
 
       <ConfirmDialog
         open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
+        onClose={() => {
+          setConfirmOpen(false)
+          setDeleteIds([])
+        }}
         onConfirm={handleDelete}
-        title='Delete Doctor?'
-        description='This doctor will be removed. You can contact support to restore it if needed.'
+        title={deleteIds.length > 1 ? `Delete ${deleteIds.length} doctors?` : 'Delete Doctor?'}
+        description={
+          deleteIds.length > 1
+            ? `These ${deleteIds.length} doctors will be removed. You can contact support to restore them if needed.`
+            : 'This doctor will be removed. You can contact support to restore it if needed.'
+        }
         confirmText='Yes, Delete'
         loading={deleting}
       />

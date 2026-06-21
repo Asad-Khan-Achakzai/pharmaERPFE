@@ -33,6 +33,8 @@ import CustomTextField from '@core/components/mui/TextField'
 import { MoneyAccountSelect } from '@/components/finance/MoneyAccountSelect'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { supplierService } from '@/services/supplier.service'
+import MediaUpload from '@/components/media/MediaUpload'
+import EntityImageCell from '@/components/media/EntityImageCell'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import { normalizeDocs } from '@/utils/apiList'
 import {
@@ -58,6 +60,7 @@ type SupplierRow = {
   openingBalance?: number
   notes?: string
   isActive?: boolean
+  imageUrl?: string | null
 }
 
 const formatPKR = (v: number) =>
@@ -83,6 +86,7 @@ const SupplierListPage = () => {
     notes: '',
     isActive: true
   })
+  const [assetId, setAssetId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -150,6 +154,7 @@ const SupplierListPage = () => {
   }, [fetchData])
 
   const handleOpen = (item?: SupplierRow) => {
+    setAssetId(null)
     if (item) {
       setEditItem(item)
       setForm({
@@ -179,7 +184,7 @@ const SupplierListPage = () => {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         name: form.name.trim(),
         phone: form.phone || undefined,
         email: form.email || undefined,
@@ -188,6 +193,7 @@ const SupplierListPage = () => {
         notes: form.notes || undefined,
         isActive: form.isActive
       }
+      if (assetId) payload.assetId = assetId
       if (editItem) {
         await supplierService.update(editItem._id, payload)
         showSuccess('Supplier updated')
@@ -279,7 +285,12 @@ const SupplierListPage = () => {
     return [
       columnHelper.accessor('name', {
         header: 'Name',
-        cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography>
+        cell: ({ row }) => (
+          <Stack direction='row' alignItems='center' spacing={1.5}>
+            <EntityImageCell url={row.original.imageUrl} name={row.original.name} rounded />
+            <Typography fontWeight={500}>{row.original.name}</Typography>
+          </Stack>
+        )
       }),
       columnHelper.accessor('phone', { header: 'Phone' }),
       columnHelper.accessor('email', { header: 'Email' }),
@@ -445,6 +456,14 @@ const SupplierListPage = () => {
         <DialogTitle>{editItem ? 'Edit supplier' : 'Add supplier'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
+            <Grid size={{ xs: 12 }}>
+              <MediaUpload
+                kind='SUPPLIER_PHOTO'
+                value={editItem?.imageUrl ?? null}
+                onUploaded={setAssetId}
+                label='Upload supplier image'
+              />
+            </Grid>
             <Grid size={{ xs: 12 }}>
               <CustomTextField
                 required

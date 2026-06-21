@@ -29,6 +29,8 @@ import type { Role } from '@/services/roles.service'
 import type { Territory } from '@/services/territories.service'
 import { extractPaginatedList } from '@/utils/apiPaginated'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
+import MediaUpload from '@/components/media/MediaUpload'
+import EntityImageCell from '@/components/media/EntityImageCell'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import type { TerritoryCoveragePreview } from '@/components/territories/TerritoryTreePicker'
 import { UserFormCoverageSection } from '@/views/users/UserFormCoverageSection'
@@ -69,6 +71,7 @@ type User = {
   permissions: string[]
   isActive: boolean
   lastLoginAt?: string | null
+  imageUrl?: string | null
   /** MRep hierarchy fields (Phase 4 — extra territories require company flag). */
   employeeCode?: string | null
   managerId?: ManagerRef
@@ -140,6 +143,7 @@ const UserListPage = () => {
     roleId: '' as string,
     employeeCode: ''
   })
+  const [assetId, setAssetId] = useState<string | null>(null)
   const [formManager, setFormManager] = useState<ManagerLookup | null>(null)
   const [formTerritory, setFormTerritory] = useState<Territory | null>(null)
   const [territoryAssignmentType, setTerritoryAssignmentType] = useState<TerritoryAssignmentType>('single_brick')
@@ -276,6 +280,7 @@ const UserListPage = () => {
   }, [fetchData])
 
   const handleOpen = (item?: User) => {
+    setAssetId(null)
     if (item) {
       setEditItem(item)
       const rid = (item.roleId as Role | undefined)?._id
@@ -542,6 +547,7 @@ const UserListPage = () => {
         territoryId,
         coverageTerritoryIds
       }
+      if (assetId) payload.assetId = assetId
       if (editItem) {
         if (form.password?.trim()) payload.password = form.password
         else delete (payload as { password?: string }).password
@@ -603,7 +609,12 @@ const UserListPage = () => {
   }
 
   const columns = useMemo<ColumnDef<User, any>[]>(() => [
-    columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
+    columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => (
+      <Stack direction='row' alignItems='center' spacing={1.5}>
+        <EntityImageCell url={row.original.imageUrl} name={row.original.name} rounded />
+        <Typography fontWeight={500}>{row.original.name}</Typography>
+      </Stack>
+    ) }),
     columnHelper.accessor('email', { header: 'Email' }),
     columnHelper.display({
       id: 'roleName',
@@ -775,6 +786,15 @@ const UserListPage = () => {
         <DialogTitle>{editItem ? 'Edit User' : 'Add User'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
+            <Grid size={{ xs: 12 }}>
+              <MediaUpload
+                kind='USER_AVATAR'
+                rounded
+                value={editItem?.imageUrl ?? null}
+                onUploaded={setAssetId}
+                label='Upload profile image'
+              />
+            </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <CustomTextField
                 required
