@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState, useRef, type MouseEvent } from 'react'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
+import CardContent from '@mui/material/CardContent'
+import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
@@ -35,6 +37,7 @@ import TablePaginationComponent from '@components/TablePaginationComponent'
 import { payrollService } from '@/services/payroll.service'
 import { usersService } from '@/services/users.service'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
+import { MoneyAccountSelect } from '@/components/finance/MoneyAccountSelect'
 import tableStyles from '@core/styles/table.module.css'
 import {
   TableListSearchField,
@@ -117,6 +120,38 @@ const defaultMonthYyyyMm = () => {
   return formatYyyyMm(d)
 }
 
+const formatMonthLabel = (yyyyMm: string) => {
+  const d = parseYyyyMm(yyyyMm)
+  if (!d) return yyyyMm
+  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
+
+type PendingPayrollRow = {
+  payrollId: string
+  employeeId: string
+  name: string
+  netSalary: number
+  status: string
+}
+
+type MissingPayrollRow = {
+  employeeId: string
+  name: string
+  salaryStructureName?: string | null
+}
+
+type PendingSummary = {
+  month: string
+  summary: {
+    readyToPayCount: number
+    unpaidTotal: number
+    missingPayrollCount: number
+    paidCount: number
+  }
+  readyToPay: PendingPayrollRow[]
+  missingPayroll: MissingPayrollRow[]
+}
+
 const PayrollPage = () => {
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('payroll.create')
@@ -147,11 +182,14 @@ const PayrollPage = () => {
   const [payingId, setPayingId] = useState<string | null>(null)
   const [confirmPayOpen, setConfirmPayOpen] = useState(false)
   const [payTargetId, setPayTargetId] = useState<string | null>(null)
+  const [payMoneyAccountId, setPayMoneyAccountId] = useState('')
   const [paying, setPaying] = useState(false)
   const [filterEmployeeId, setFilterEmployeeId] = useState('')
-  const [filterMonth, setFilterMonth] = useState('')
+  const [filterMonth, setFilterMonth] = useState(() => defaultMonthYyyyMm())
   const [filterMonthFrom, setFilterMonthFrom] = useState('')
   const [filterMonthTo, setFilterMonthTo] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [pendingSummary, setPendingSummary] = useState<PendingSummary | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingWasStructure, setEditingWasStructure] = useState(false)
@@ -168,16 +206,25 @@ const PayrollPage = () => {
     try {
       const params: Record<string, string> = { limit: '200' }
       if (filterEmployeeId) params.employeeId = filterEmployeeId
+      if (filterStatus) params.status = filterStatus
       if (filterMonth.trim()) params.month = filterMonth.trim()
       else {
         if (filterMonthFrom.trim()) params.monthFrom = filterMonthFrom.trim()
         if (filterMonthTo.trim()) params.monthTo = filterMonthTo.trim()
       }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
-      const [p, u] = await Promise.all([payrollService.list(params), usersService.assignable()])
+      const monthForPending = filterMonth.trim()
+      const pendingPromise =
+        /^\d{4}-\d{2}$/.test(monthForPending) ? payrollService.pendingSummary(monthForPending) : null
+      const [p, u, pendingRes] = await Promise.all([
+        payrollService.list(params),
+        usersService.assignable(),
+        pendingPromise ?? Promise.resolve(null)
+      ])
       if (seq !== fetchSeq.current) return
       setData(p.data.data || [])
       setUsers(u.data.data || [])
+      setPendingSummary(pendingRes ? (pendingRes.data.data as PendingSummary) : null)
     } catch (err) {
       if (seq === fetchSeq.current) showApiError(err, 'Failed to load payroll')
     } finally {
@@ -188,6 +235,7 @@ const PayrollPage = () => {
     filterMonth,
     filterMonthFrom,
     filterMonthTo,
+    filterStatus,
     appliedFilters,
     debouncedSearch
   ])
@@ -263,6 +311,21 @@ const PayrollPage = () => {
     setOpen(true)
   }, [])
 
+  const openAddForEmployee = useCallback((employeeId: string, month: string) => {
+    setEditingId(null)
+    setEditingWasStructure(false)
+    setForm({
+      employeeId,
+      month,
+      baseSalary: 0,
+      bonus: 0,
+      deductions: 0
+    })
+    setManualMode(false)
+    setPreview(null)
+    setOpen(true)
+  }, [])
+
   const handleSave = async () => {
     if (!form.employeeId || !form.month.trim()) {
       showApiError(new Error('Employee and month are required'), 'Validation')
@@ -314,17 +377,25 @@ const PayrollPage = () => {
 
   const openPayConfirm = (id: string) => {
     setPayTargetId(id)
+    setPayMoneyAccountId('')
     setConfirmPayOpen(true)
   }
 
+  const closePayConfirm = () => {
+    if (paying) return
+    setConfirmPayOpen(false)
+    setPayMoneyAccountId('')
+  }
+
   const handlePay = useCallback(async () => {
-    if (!payTargetId) return
+    if (!payTargetId || !payMoneyAccountId) return
     setPaying(true)
     setPayingId(payTargetId)
     try {
-      await payrollService.pay(payTargetId)
+      await payrollService.pay(payTargetId, { moneyAccountId: payMoneyAccountId })
       showSuccess('Marked as paid')
       setConfirmPayOpen(false)
+      setPayMoneyAccountId('')
       fetchData()
     } catch (err) {
       showApiError(err, 'Failed to mark payroll as paid')
@@ -332,7 +403,7 @@ const PayrollPage = () => {
       setPaying(false)
       setPayingId(null)
     }
-  }, [payTargetId])
+  }, [payTargetId, payMoneyAccountId])
 
   const openDeleteConfirm = useCallback((id: string) => {
     setDeleteTargetId(id)
@@ -457,9 +528,196 @@ const PayrollPage = () => {
   const openFilterPopover = (e: MouseEvent<HTMLElement>) => setFilterAnchor(e.currentTarget)
   const closeFilterPopover = () => setFilterAnchor(null)
 
+  const pendingMonthLabel = filterMonth.trim() ? formatMonthLabel(filterMonth.trim()) : ''
+  const hasPendingMonth = /^\d{4}-\d{2}$/.test(filterMonth.trim())
+  const pendingSummaryData = hasPendingMonth ? pendingSummary : null
+
   return (
     <Card>
-      <CardHeader title='Payroll' />
+      <CardHeader
+        title='Payroll'
+        subheader='Review pending salaries for a month, then pay employees once payroll is created.'
+      />
+      {hasPendingMonth && (
+        <CardContent className='pbs-0'>
+          <Card variant='outlined'>
+            <CardHeader
+              title={`Pending salaries — ${pendingMonthLabel}`}
+              subheader='Employees with unpaid payroll for this month, plus those on a salary structure who still need payroll created.'
+              action={
+                <Stack direction='row' spacing={1} alignItems='center' flexWrap='wrap' useFlexGap>
+                  <AppReactDatepicker
+                    showMonthYearPicker
+                    selected={parseYyyyMm(filterMonth) ?? new Date()}
+                    dateFormat='yyyy-MM'
+                    onChange={(date: Date | null) => {
+                      if (!date) return
+                      setFilterMonth(formatYyyyMm(date))
+                      setFilterMonthFrom('')
+                      setFilterMonthTo('')
+                    }}
+                    customInput={
+                      <CustomTextField size='small' label='Payroll month' helperText='YYYY-MM' sx={{ minWidth: 160 }} />
+                    }
+                  />
+                  {filterStatus === 'PENDING' ? (
+                    <Button size='small' variant='tonal' onClick={() => setFilterStatus('')}>
+                      Show all statuses
+                    </Button>
+                  ) : (
+                    <Button
+                      size='small'
+                      variant='tonal'
+                      onClick={() => setFilterStatus('PENDING')}
+                      disabled={(pendingSummaryData?.summary.readyToPayCount ?? 0) === 0}
+                    >
+                      Filter table: pending only
+                    </Button>
+                  )}
+                </Stack>
+              }
+            />
+            <CardContent>
+              {loading && !pendingSummaryData ? (
+                <div className='flex justify-center p-4'>
+                  <CircularProgress size={28} />
+                </div>
+              ) : pendingSummaryData ? (
+                <Grid container spacing={4}>
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Typography variant='body2' color='text.secondary'>
+                      Ready to pay
+                    </Typography>
+                    <Typography variant='h5' color='warning.main'>
+                      {pendingSummaryData.summary.readyToPayCount}
+                    </Typography>
+                    <Typography variant='caption' color='text.secondary'>
+                      ₨{' '}
+                      {pendingSummaryData.summary.unpaidTotal.toLocaleString('en-PK', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })}{' '}
+                      total
+                    </Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Typography variant='body2' color='text.secondary'>
+                      Payroll not created
+                    </Typography>
+                    <Typography variant='h5'>{pendingSummaryData.summary.missingPayrollCount}</Typography>
+                    <Typography variant='caption' color='text.secondary'>
+                      On salary structure, no row yet
+                    </Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                    <Typography variant='body2' color='text.secondary'>
+                      Already paid
+                    </Typography>
+                    <Typography variant='h5' color='success.main'>
+                      {pendingSummaryData.summary.paidCount}
+                    </Typography>
+                  </Grid>
+
+                  {pendingSummaryData.readyToPay.length > 0 && (
+                    <Grid size={{ xs: 12 }}>
+                      <Typography variant='subtitle2' className='mbe-2'>
+                        Ready to pay
+                      </Typography>
+                      <div className='overflow-x-auto'>
+                        <table className={tableStyles.table}>
+                          <thead>
+                            <tr>
+                              <th>Employee</th>
+                              <th>Net salary</th>
+                              <th>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pendingSummaryData.readyToPay.map(row => (
+                              <tr key={row.payrollId}>
+                                <td>{row.name}</td>
+                                <td>
+                                  ₨{' '}
+                                  {row.netSalary.toLocaleString('en-PK', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2
+                                  })}
+                                </td>
+                                <td>
+                                  {canPay && (
+                                    <Button
+                                      size='small'
+                                      variant='contained'
+                                      color='success'
+                                      onClick={() => openPayConfirm(row.payrollId)}
+                                      disabled={payingId !== null}
+                                    >
+                                      Pay
+                                    </Button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </Grid>
+                  )}
+
+                  {pendingSummaryData.missingPayroll.length > 0 && (
+                    <Grid size={{ xs: 12 }}>
+                      <Typography variant='subtitle2' className='mbe-2'>
+                        Payroll not created yet
+                      </Typography>
+                      <div className='overflow-x-auto'>
+                        <table className={tableStyles.table}>
+                          <thead>
+                            <tr>
+                              <th>Employee</th>
+                              <th>Salary structure</th>
+                              <th>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pendingSummaryData.missingPayroll.map(row => (
+                              <tr key={row.employeeId}>
+                                <td>{row.name}</td>
+                                <td>{row.salaryStructureName || '—'}</td>
+                                <td>
+                                  {canCreate && (
+                                    <Button
+                                      size='small'
+                                      variant='tonal'
+                                      onClick={() => openAddForEmployee(row.employeeId, filterMonth.trim())}
+                                    >
+                                      Create payroll
+                                    </Button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </Grid>
+                  )}
+
+                  {pendingSummaryData.summary.readyToPayCount === 0 &&
+                    pendingSummaryData.summary.missingPayrollCount === 0 && (
+                      <Grid size={{ xs: 12 }}>
+                        <Alert severity='success' variant='outlined'>
+                          All employees on a salary structure have payroll for {pendingMonthLabel}, and every payroll
+                          row is paid.
+                        </Alert>
+                      </Grid>
+                    )}
+                </Grid>
+              ) : null}
+            </CardContent>
+          </Card>
+        </CardContent>
+      )}
+
       <div className='flex flex-col gap-4 pli-6 pbe-4'>
         <div className='flex flex-wrap items-end gap-4'>
           <CustomTextField
@@ -479,10 +737,27 @@ const PayrollPage = () => {
           <CustomTextField
             label='Month (YYYY-MM)'
             value={filterMonth}
-            onChange={e => setFilterMonth(e.target.value)}
+            onChange={e => {
+              setFilterMonth(e.target.value)
+              if (e.target.value.trim()) {
+                setFilterMonthFrom('')
+                setFilterMonthTo('')
+              }
+            }}
             placeholder='Exact month'
             sx={{ minWidth: 140 }}
           />
+          <CustomTextField
+            select
+            sx={{ minWidth: 140 }}
+            label='Status'
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+          >
+            <MenuItem value=''>All</MenuItem>
+            <MenuItem value='PENDING'>Pending</MenuItem>
+            <MenuItem value='PAID'>Paid</MenuItem>
+          </CustomTextField>
           <CustomTextField
             label='Month from'
             value={filterMonthFrom}
@@ -938,17 +1213,47 @@ const PayrollPage = () => {
         </DialogActions>
       </Dialog>
 
-      <ConfirmDialog
-        open={confirmPayOpen}
-        onClose={() => setConfirmPayOpen(false)}
-        onConfirm={handlePay}
-        title='Mark as Paid?'
-        description='This will mark the payroll entry as paid and create a salary expense record.'
-        confirmText='Yes, Mark Paid'
-        confirmColor='success'
-        icon='tabler-cash'
-        loading={paying}
-      />
+      <Dialog open={confirmPayOpen} onClose={closePayConfirm} maxWidth='sm' fullWidth>
+        <DialogTitle>Mark as paid?</DialogTitle>
+        <DialogContent>
+          <Typography color='text.secondary' className='mbe-4'>
+            This marks the payroll as paid and creates a salary expense with GL posting.
+            {payTargetId ? (
+              <>
+                {' '}
+                Net salary:{' '}
+                <strong>
+                  ₨{' '}
+                  {(
+                    data.find(r => r._id === payTargetId)?.netSalary ?? 0
+                  ).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </strong>
+              </>
+            ) : null}
+          </Typography>
+          <MoneyAccountSelect
+            required
+            label='Paid from (Cash/Bank account)'
+            helperText='Which account this salary payment is paid from'
+            value={payMoneyAccountId}
+            onChange={id => setPayMoneyAccountId(id)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closePayConfirm} disabled={paying}>
+            Cancel
+          </Button>
+          <Button
+            variant='contained'
+            color='success'
+            onClick={handlePay}
+            disabled={paying || !payMoneyAccountId}
+            startIcon={paying ? <CircularProgress size={20} color='inherit' /> : undefined}
+          >
+            {paying ? 'Processing...' : 'Yes, mark paid'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <ConfirmDialog
         open={confirmDeleteOpen}

@@ -6,7 +6,8 @@ export const payrollService = {
   create: (data: Record<string, unknown>) => api.post('/payroll', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/payroll/${id}`, data),
   remove: (id: string) => api.delete(`/payroll/${id}`),
-  pay: (id: string) => api.post(`/payroll/${id}/pay`),
+  pay: (id: string, data?: { moneyAccountId?: string }) => api.post(`/payroll/${id}/pay`, data ?? {}),
+  pendingSummary: (month: string) => api.get('/payroll/pending-summary', { params: { month } }),
   downloadPayslip: (id: string) =>
     api.get(`/payroll/${id}/payslip`, { responseType: 'blob' })
 }
