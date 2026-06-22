@@ -48,6 +48,7 @@ export const routePermissions: Array<{ path: string; permission: string }> = [
   { path: '/finance', permission: FINANCE_HUB_PERMISSION },
   { path: '/ledger', permission: 'ledger.view' },
   { path: '/targets', permission: 'targets.view' },
+  { path: '/calendar', permission: 'weeklyPlans.view' },
   { path: '/weekly-plans', permission: 'weeklyPlans.view' },
   { path: '/expenses', permission: 'expenses.view' },
   { path: '/salary-structure', permission: 'payroll.view' },
