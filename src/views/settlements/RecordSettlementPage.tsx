@@ -16,6 +16,7 @@ import Radio from '@mui/material/Radio'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
+import { MoneyAccountSelect } from '@/components/finance/MoneyAccountSelect'
 import { settlementsService } from '@/services/settlements.service'
 import { distributorsService } from '@/services/distributors.service'
 
@@ -27,12 +28,18 @@ const RecordSettlementPage = () => {
     direction: 'DISTRIBUTOR_TO_COMPANY' as 'DISTRIBUTOR_TO_COMPANY' | 'COMPANY_TO_DISTRIBUTOR',
     amount: 0,
     paymentMethod: 'CASH',
+    moneyAccountId: '',
     referenceNumber: '',
     notes: ''
   })
   const [saving, setSaving] = useState(false)
 
-  const isFormValid = form.distributorId !== '' && form.amount > 0 && form.paymentMethod !== ''
+  const isDistributorToCompany = form.direction === 'DISTRIBUTOR_TO_COMPANY'
+  const isFormValid =
+    form.distributorId !== '' &&
+    form.amount > 0 &&
+    form.paymentMethod !== '' &&
+    form.moneyAccountId !== ''
 
   const handleSubmit = async () => {
     if (!form.distributorId || form.amount <= 0) {
@@ -46,6 +53,7 @@ const RecordSettlementPage = () => {
         direction: form.direction,
         amount: form.amount,
         paymentMethod: form.paymentMethod,
+        moneyAccountId: form.moneyAccountId,
         referenceNumber: form.referenceNumber || undefined,
         notes: form.notes || undefined
       })
@@ -110,6 +118,19 @@ const RecordSettlementPage = () => {
               type='number'
               value={form.amount}
               onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <MoneyAccountSelect
+              required
+              label={isDistributorToCompany ? 'Deposit to (Cash/Bank account)' : 'Paid from (Cash/Bank account)'}
+              helperText={
+                isDistributorToCompany
+                  ? 'Which account received this settlement'
+                  : 'Which account this settlement was paid from'
+              }
+              value={form.moneyAccountId}
+              onChange={id => setForm(p => ({ ...p, moneyAccountId: id }))}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>

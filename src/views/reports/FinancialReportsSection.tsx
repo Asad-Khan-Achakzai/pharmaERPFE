@@ -107,6 +107,7 @@ const FinancialReportsSection = () => {
     direction: 'DISTRIBUTOR_TO_COMPANY' as 'DISTRIBUTOR_TO_COMPANY' | 'COMPANY_TO_DISTRIBUTOR',
     amount: 0,
     paymentMethod: 'CASH',
+    moneyAccountId: '',
     referenceNumber: '',
     notes: ''
   })
@@ -283,6 +284,7 @@ const FinancialReportsSection = () => {
       direction,
       amount: direction === 'DISTRIBUTOR_TO_COMPANY' ? remittanceDue : commissionPayable,
       paymentMethod: 'CASH',
+      moneyAccountId: '',
       referenceNumber: '',
       notes: ''
     })
@@ -294,7 +296,10 @@ const FinancialReportsSection = () => {
     setSettlementOpen(false)
   }
 
-  const isSettlementFormValid = Boolean(settlementDistributor?.distributorId) && settlementForm.amount > 0
+  const isSettlementFormValid =
+    Boolean(settlementDistributor?.distributorId) &&
+    settlementForm.amount > 0 &&
+    Boolean(settlementForm.moneyAccountId)
 
   const handleSettlementSubmit = async () => {
     if (!settlementDistributor?.distributorId || settlementForm.amount <= 0) {
@@ -309,6 +314,7 @@ const FinancialReportsSection = () => {
         direction: settlementForm.direction,
         amount: settlementForm.amount,
         paymentMethod: settlementForm.paymentMethod,
+        moneyAccountId: settlementForm.moneyAccountId,
         referenceNumber: settlementForm.referenceNumber || undefined,
         notes: settlementForm.notes || undefined
       })
@@ -918,6 +924,23 @@ const FinancialReportsSection = () => {
                 type='number'
                 value={settlementForm.amount}
                 onChange={e => setSettlementForm(p => ({ ...p, amount: +e.target.value }))}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <MoneyAccountSelect
+                required
+                label={
+                  settlementForm.direction === 'DISTRIBUTOR_TO_COMPANY'
+                    ? 'Deposit to (Cash/Bank account)'
+                    : 'Paid from (Cash/Bank account)'
+                }
+                helperText={
+                  settlementForm.direction === 'DISTRIBUTOR_TO_COMPANY'
+                    ? 'Which account received this settlement'
+                    : 'Which account this settlement was paid from'
+                }
+                value={settlementForm.moneyAccountId}
+                onChange={id => setSettlementForm(p => ({ ...p, moneyAccountId: id }))}
               />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>

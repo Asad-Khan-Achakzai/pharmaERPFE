@@ -12,6 +12,7 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import CustomTextField from '@core/components/mui/TextField'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
+import { MoneyAccountSelect } from '@/components/finance/MoneyAccountSelect'
 import { DoctorLookupAutocomplete, type DoctorLookupOption } from '@/components/lookup/DoctorLookupAutocomplete'
 import { doctorActivitiesService } from '@/services/doctors.service'
 import { usersService } from '@/services/users.service'
@@ -28,6 +29,7 @@ const DoctorActivityCreatePage = () => {
     doctorId: '',
     medicalRepId: '',
     investedAmount: '',
+    moneyAccountId: '',
     commitmentAmount: '',
     startDate: '',
     endDate: ''
@@ -37,6 +39,8 @@ const DoctorActivityCreatePage = () => {
   const endOk = form.endDate !== ''
   const datesLogical = !startOk || !endOk || new Date(form.startDate) < new Date(form.endDate)
 
+  const needsMoneyAccount = Number(form.investedAmount) > 0
+
   const isValid =
     form.doctorId &&
     form.investedAmount !== '' &&
@@ -45,7 +49,8 @@ const DoctorActivityCreatePage = () => {
     endOk &&
     datesLogical &&
     Number(form.investedAmount) >= 0 &&
-    Number(form.commitmentAmount) > 0
+    Number(form.commitmentAmount) > 0 &&
+    (!needsMoneyAccount || form.moneyAccountId !== '')
 
   const handleSubmit = async () => {
     if (!isValid) return
@@ -59,6 +64,10 @@ const DoctorActivityCreatePage = () => {
         endDate: new Date(form.endDate).toISOString()
       }
       payload.medicalRepId = form.medicalRepId || null
+
+      if (Number(form.investedAmount) > 0) {
+        payload.moneyAccountId = form.moneyAccountId
+      }
 
       const res = await doctorActivitiesService.create(payload)
       showSuccess('Activity created')
@@ -117,6 +126,15 @@ const DoctorActivityCreatePage = () => {
               value={form.investedAmount}
               onChange={e => setForm(f => ({ ...f, investedAmount: e.target.value }))}
             />
+            {needsMoneyAccount && (
+              <MoneyAccountSelect
+                required
+                label='Paid from (Cash/Bank account)'
+                helperText='Which account this doctor investment was paid from'
+                value={form.moneyAccountId}
+                onChange={id => setForm(f => ({ ...f, moneyAccountId: id }))}
+              />
+            )}
             <CustomTextField
               required
               label='Commitment — TP sales target (PKR)'
