@@ -63,6 +63,7 @@ export interface User {
     strictVisitSequence?: boolean
     mrepMultiTerritory?: boolean
     mrepOwnershipAudit?: boolean
+    deviceControlEnabled?: boolean
   }
   /** When set, another user may act on this user’s attendance approvals until the given time. */
   attendanceApproveDelegateUserId?: string | null

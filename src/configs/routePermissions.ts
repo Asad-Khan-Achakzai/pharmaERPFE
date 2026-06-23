@@ -63,6 +63,7 @@ export const routePermissions: Array<{ path: string; permission: string }> = [
   { path: '/suppliers', permission: 'suppliers.view' },
   { path: '/users/roles', permission: 'users.view' },
   { path: '/users', permission: 'users.view' },
+  { path: '/device-control', permission: 'deviceControl.manage' },
   { path: '/onboarding', permission: 'onboarding.view' },
   { path: '/audit-log', permission: 'users.view' },
   { path: '/dashboard/mrep/exceptions', permission: 'weeklyPlans.view' },

@@ -59,6 +59,8 @@ type Company = {
   liveTrackingEnabled?: boolean
   /** When true, mobile app registers Expo push tokens and backend sends push for in-app notifications. */
   mobilePushEnabled?: boolean
+  /** When true, each field-force rep is bound to one mobile device; switches require admin approval. */
+  deviceControlEnabled?: boolean
   /** When true, field rep expenses stay PENDING until a manager approves (mobile + web). */
   expenseApprovalRequired?: boolean
   geoFencingEnabled?: boolean
@@ -174,6 +176,7 @@ type CompanyFormState = {
   mrepOwnershipAudit: boolean
   liveTrackingEnabled: boolean
   mobilePushEnabled: boolean
+  deviceControlEnabled: boolean
   expenseApprovalRequired: boolean
   geoFencingEnabled: boolean
   geoFenceRadiusMeters: number
@@ -211,6 +214,7 @@ const emptyForm: CompanyFormState = {
   mrepOwnershipAudit: false,
   liveTrackingEnabled: false,
   mobilePushEnabled: false,
+  deviceControlEnabled: false,
   expenseApprovalRequired: false,
   geoFencingEnabled: false,
   geoFenceRadiusMeters: 150,
@@ -335,6 +339,7 @@ const SuperAdminPage = () => {
       mrepOwnershipAudit: c.mrepOwnershipAudit === true,
       liveTrackingEnabled: c.liveTrackingEnabled === true,
       mobilePushEnabled: c.mobilePushEnabled === true,
+      deviceControlEnabled: c.deviceControlEnabled === true,
       expenseApprovalRequired: c.expenseApprovalRequired === true,
       geoFencingEnabled: c.geoFencingEnabled === true,
       geoFenceRadiusMeters: c.geoFenceRadiusMeters ?? 150,
@@ -385,6 +390,7 @@ const SuperAdminPage = () => {
         mrepOwnershipAudit: form.mrepOwnershipAudit,
         liveTrackingEnabled: form.liveTrackingEnabled,
         mobilePushEnabled: form.mobilePushEnabled,
+        deviceControlEnabled: form.deviceControlEnabled,
         expenseApprovalRequired: form.expenseApprovalRequired,
         geoFencingEnabled: form.geoFencingEnabled,
         geoFenceRadiusMeters: form.geoFenceRadiusMeters,
@@ -427,6 +433,7 @@ const SuperAdminPage = () => {
         mrepOwnershipAudit: form.mrepOwnershipAudit,
         liveTrackingEnabled: form.liveTrackingEnabled,
         mobilePushEnabled: form.mobilePushEnabled,
+        deviceControlEnabled: form.deviceControlEnabled,
         expenseApprovalRequired: form.expenseApprovalRequired,
         geoFencingEnabled: form.geoFencingEnabled,
         geoFenceRadiusMeters: form.geoFenceRadiusMeters,
@@ -884,6 +891,28 @@ const SuperAdminPage = () => {
           <FormControlLabel
             control={
               <Switch
+                checked={form.deviceControlEnabled}
+                onChange={e => setForm(f => ({ ...f, deviceControlEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Device control (single mobile device)
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When enabled, each field-force rep is locked to one mobile device. Logins from a different
+                  device are blocked until an admin approves a device change (Device Control page). Web logins
+                  are never affected.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
                 checked={form.expenseApprovalRequired}
                 onChange={e => setForm(f => ({ ...f, expenseApprovalRequired: e.target.checked }))}
                 color='primary'
@@ -1272,6 +1301,28 @@ const SuperAdminPage = () => {
                 <Typography variant='caption' color='text.secondary' display='block'>
                   When enabled, the mobile app registers device tokens and sends push alerts for approvals,
                   expenses, announcements, and late check-ins (requires Expo push credentials on the server).
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.deviceControlEnabled}
+                onChange={e => setForm(f => ({ ...f, deviceControlEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  Device control (single mobile device)
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When enabled, each field-force rep is locked to one mobile device. Logins from a different
+                  device are blocked until an admin approves a device change (Device Control page). Web logins
+                  are never affected.
                 </Typography>
               </div>
             }
