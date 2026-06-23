@@ -206,12 +206,12 @@ const DoctorActivityEditPage = () => {
             />
 
             <CustomTextField
-              required
+              disabled
               label='Invested amount (PKR)'
               type='number'
               inputProps={{ min: 0, step: 0.01 }}
               value={form.investedAmount}
-              onChange={e => setForm(f => ({ ...f, investedAmount: e.target.value }))}
+              helperText='Locked — the payment from the cash/bank account was already recorded. Create a new activity to record a different investment.'
             />
             <CustomTextField
               required
