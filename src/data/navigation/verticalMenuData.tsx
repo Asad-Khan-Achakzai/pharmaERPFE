@@ -117,6 +117,7 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
       { label: 'Client Ledger', href: '/finance/client-ledger', icon: 'tabler-users-group', permission: 'ledger.view' },
       { label: 'Supplier Ledger', href: '/finance/supplier-ledger', icon: 'tabler-truck', permission: 'ledger.view' },
       { label: 'Expense Ledger', href: '/finance/expense-ledger', icon: 'tabler-receipt-2', permission: 'expenses.view' },
+      { label: 'Activity Ledger', href: '/finance/activity-ledger', icon: 'tabler-stethoscope', permission: 'doctors.view' },
       { label: 'Employee Ledger', href: '/finance/employee-ledger', icon: 'tabler-id', permission: 'ledger.view' },
       {
         label: 'Advanced Accounting',

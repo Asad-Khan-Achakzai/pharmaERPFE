@@ -14,9 +14,11 @@ import Box from '@mui/material/Box'
 import LinearProgress from '@mui/material/LinearProgress'
 import CircularProgress from '@mui/material/CircularProgress'
 import Divider from '@mui/material/Divider'
+import Stack from '@mui/material/Stack'
 import { doctorActivitiesService } from '@/services/doctors.service'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
+import { ACCOUNTING_UX } from '@/constants/accountingUx'
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -75,6 +77,8 @@ const DoctorActivityDetailPage = () => {
   const invested = data.investedAmount ?? 0
   const pct = commitment > 0 ? (achieved / commitment) * 100 : 0
   const remaining = commitment - achieved
+  const voucher = data.voucherId && typeof data.voucherId === 'object' ? data.voucherId : null
+  const hasVoucher = Boolean(voucher || (typeof data.voucherId === 'string' && data.voucherId))
 
   const m = data.metrics
   const achievedCasting = m?.achievedCasting ?? 0
@@ -127,6 +131,51 @@ const DoctorActivityDetailPage = () => {
             </div>
 
             <Divider />
+
+            {invested > 0 && (
+              <>
+                <div>
+                  <Typography variant='overline' color='text.secondary'>
+                    {ACCOUNTING_UX.activityLedger}
+                  </Typography>
+                  {hasVoucher ? (
+                    <Stack spacing={0.5} className='mts-1'>
+                      <Typography>
+                        Investment of {formatPKR(invested)} posted to finance
+                        {voucher?.voucherNumber ? ` (${voucher.voucherNumber})` : ''}.
+                      </Typography>
+                      {voucher?.date ? (
+                        <Typography variant='caption' color='text.secondary'>
+                          Posted {new Date(voucher.date).toLocaleDateString()}
+                          {voucher.narration ? ` — ${voucher.narration}` : ''}
+                        </Typography>
+                      ) : null}
+                      <Button
+                        size='small'
+                        variant='outlined'
+                        component={Link}
+                        href='/finance/activity-ledger'
+                        className='self-start mts-1'
+                      >
+                        View in Activity Ledger
+                      </Button>
+                    </Stack>
+                  ) : (
+                    <Stack spacing={1} className='mts-1'>
+                      <Typography color='warning.main'>
+                        Payment from the selected cash/bank account has not been posted to finance yet.
+                      </Typography>
+                      {canEdit && (
+                        <Button size='small' variant='contained' onClick={handleRecalculate} disabled={busy}>
+                          Post to finance
+                        </Button>
+                      )}
+                    </Stack>
+                  )}
+                </div>
+                <Divider />
+              </>
+            )}
 
             <Grid container spacing={4}>
               <Grid size={{ xs: 12, sm: 6, md: 4 }}>

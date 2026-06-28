@@ -28,6 +28,7 @@ export const ACCOUNTING_UX = {
   clientLedger: 'Client Ledger',
   supplierLedger: 'Supplier Ledger',
   expenseLedger: 'Expense Ledger',
+  activityLedger: 'Activity Ledger',
   employeeLedger: 'Employee Ledger',
   financialSummaryCheck: 'Financial Summary Check',
   businessPositionReport: 'Business Position Report',
@@ -58,8 +59,23 @@ export const ACCOUNTING_UX = {
   autoAccountingHint: 'Accounting is handled automatically — you only need to record the business action.',
   accountantOnlyHint: 'This screen is for accountants and administrators.',
   transferHint: 'Move money between your cash and bank accounts.',
-  noDebitCreditNeeded: 'Enter amounts in plain language — no accounting knowledge required.'
+  noDebitCreditNeeded: 'Enter amounts in plain language — no accounting knowledge required.',
+  doctorActivityInvestment: 'Doctor activity investment'
 } as const
+
+/** Friendly labels for voucher sourceModule (Financial Activity list). */
+export const VOUCHER_SOURCE_LABELS: Record<string, string> = {
+  ORDER: 'Sale / return',
+  COLLECTION: 'Payment received',
+  SETTLEMENT: 'Settlement',
+  EXPENSE: 'Expense',
+  DOCTOR_ACTIVITY: 'Doctor activity',
+  SUPPLIER: 'Supplier payment',
+  PROCUREMENT: 'Purchase',
+  OPENING: 'Opening balance',
+  FUND_TRANSFER: 'Fund transfer',
+  MANUAL: 'Manual entry'
+}
 
 /** Friendly account name map (code → display name for non-accountants). */
 export const FRIENDLY_ACCOUNT_NAMES: Record<string, string> = {

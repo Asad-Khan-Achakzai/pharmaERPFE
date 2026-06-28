@@ -7,5 +7,6 @@ export const ledgerService = {
   clientStatement: (params: Record<string, string>) => api.get('/ledger/client-statement', { params }),
   supplierStatement: (params: Record<string, string>) => api.get('/ledger/supplier-statement', { params }),
   expenseLedger: (params?: Record<string, string>) => api.get('/ledger/expense-ledger', { params }),
+  activityLedger: (params?: Record<string, string>) => api.get('/ledger/activity-ledger', { params }),
   employeeStatement: (params: Record<string, string>) => api.get('/ledger/employee-statement', { params })
 }

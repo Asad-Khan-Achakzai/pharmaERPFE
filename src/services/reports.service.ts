@@ -64,6 +64,12 @@ export const reportsService = {
       params
     }),
 
+  monthlySummaryProductPacks: (params: { month: string; fiscalYearStart?: string }) =>
+    api.get<{ data: import('@/types/monthlySummary').MonthlySummaryProductPacksResponse }>(
+      '/reports/monthly-summary/product-packs',
+      { params }
+    ),
+
   visitSummary: (params: { weekStart: string; weekEnd: string; employeeId?: string }) =>
     api.get('/reports/visit-summary', { params }),
   visitByEmployee: (params: { weekStart: string; weekEnd: string }) =>

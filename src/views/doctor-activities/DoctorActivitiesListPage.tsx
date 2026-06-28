@@ -38,6 +38,7 @@ export type DoctorActivityRow = {
   startDate: string
   endDate: string
   status: string
+  voucherId?: string | null
 }
 
 const progressPercent = (achieved: number, commitment: number) => {
@@ -171,6 +172,7 @@ const DoctorActivitiesListPage = () => {
                       <TableCell align='right'>Commitment</TableCell>
                       <TableCell align='right'>Achieved (TP)</TableCell>
                       <TableCell>Progress</TableCell>
+                      <TableCell>Finance</TableCell>
                       <TableCell>Status</TableCell>
                       <TableCell align='right'> </TableCell>
                     </TableRow>
@@ -191,6 +193,26 @@ const DoctorActivitiesListPage = () => {
                         <TableCell align='right'>{formatPKR(row.achievedSales)}</TableCell>
                         <TableCell>
                           <ProgressCell achieved={row.achievedSales} commitment={row.commitmentAmount} />
+                        </TableCell>
+                        <TableCell>
+                          {row.investedAmount > 0 ? (
+                            row.voucherId ? (
+                              <Button
+                                size='small'
+                                variant='text'
+                                component={Link}
+                                href='/finance/activity-ledger'
+                              >
+                                Posted
+                              </Button>
+                            ) : (
+                              <Chip size='small' label='Not posted' color='warning' variant='outlined' />
+                            )
+                          ) : (
+                            <Typography variant='caption' color='text.secondary'>
+                              —
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell>{statusChip(row.status)}</TableCell>
                         <TableCell align='right'>

@@ -19,13 +19,18 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Paper from '@mui/material/Paper'
 import Box from '@mui/material/Box'
+import CircularProgress from '@mui/material/CircularProgress'
 import type { ApexOptions } from 'apexcharts'
 import CustomTextField from '@core/components/mui/TextField'
 import { showApiError } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
 import PageSkeleton from '@/components/skeletons/PageSkeleton'
 import { currentFiscalYearStart, fiscalYearOptions } from '@/utils/fiscalYear'
-import type { MonthlySummaryResponse, MonthlySummaryRow } from '@/types/monthlySummary'
+import type {
+  MonthlySummaryResponse,
+  MonthlySummaryRow,
+  MonthlySummaryProductPacksResponse
+} from '@/types/monthlySummary'
 import ResponsiveChartWrapper from '@/views/dashboard/ResponsiveChartWrapper'
 
 const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false })
@@ -63,7 +68,7 @@ const NUM_COLS: { key: keyof MonthlySummaryRow; label: string; short?: string }[
   { key: 'netSales', label: 'Net Sales' },
   { key: 'distribution', label: 'Distribution' },
   { key: 'discount', label: 'Discount' },
-  { key: 'stockPurchaseExpenses', label: 'Stock Purchase', short: 'Supplier GRN / purchase' },
+  { key: 'castingCost', label: 'Casting', short: 'Products sold (casting price)' },
   { key: 'expenses', label: 'Expenses', short: 'Payroll + operating' },
   { key: 'pl', label: 'P/L' },
   { key: 'marketing', label: 'Marketing', short: 'Doctor investment' }
@@ -82,7 +87,7 @@ const exportCsv = (data: MonthlySummaryResponse) => {
         r.netSales,
         r.distribution,
         r.discount,
-        r.stockPurchaseExpenses,
+        r.castingCost,
         r.expenses,
         r.pl,
         r.marketing
@@ -96,7 +101,7 @@ const exportCsv = (data: MonthlySummaryResponse) => {
       t.netSales,
       t.distribution,
       t.discount,
-      t.stockPurchaseExpenses,
+      t.castingCost,
       t.expenses,
       t.pl,
       t.marketing
@@ -111,6 +116,8 @@ const exportCsv = (data: MonthlySummaryResponse) => {
   URL.revokeObjectURL(url)
 }
 
+const formatPacks = (v: number) => (v || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })
+
 const MonthlySummarySection = () => {
   const theme = useTheme()
   const isCompact = useMediaQuery(theme.breakpoints.down('md'), { noSsr: true })
@@ -121,6 +128,9 @@ const MonthlySummarySection = () => {
   const [data, setData] = useState<MonthlySummaryResponse | null>(
     monthlySummaryCache?.key === cacheKey ? monthlySummaryCache.data : null
   )
+  const [selectedMonth, setSelectedMonth] = useState('')
+  const [productPacks, setProductPacks] = useState<MonthlySummaryProductPacksResponse | null>(null)
+  const [productPacksLoading, setProductPacksLoading] = useState(false)
 
   const load = useCallback(async () => {
     const hasCache = monthlySummaryCache?.key === cacheKey
@@ -130,6 +140,11 @@ const MonthlySummarySection = () => {
       const payload = res.data.data as MonthlySummaryResponse
       monthlySummaryCache = { key: cacheKey, data: payload }
       setData(payload)
+      if (payload.monthKeys?.length) {
+        setSelectedMonth(prev => (prev && payload.monthKeys.includes(prev) ? prev : payload.monthKeys[payload.monthKeys.length - 1]))
+      } else {
+        setSelectedMonth('')
+      }
     } catch (e) {
       showApiError(e, 'Failed to load monthly summary')
     } finally {
@@ -140,6 +155,30 @@ const MonthlySummarySection = () => {
   useEffect(() => {
     load()
   }, [load])
+
+  const loadProductPacks = useCallback(async () => {
+    if (!selectedMonth) {
+      setProductPacks(null)
+      return
+    }
+    setProductPacksLoading(true)
+    try {
+      const res = await reportsService.monthlySummaryProductPacks({
+        month: selectedMonth,
+        fiscalYearStart: String(fiscalYearStart)
+      })
+      setProductPacks(res.data.data as MonthlySummaryProductPacksResponse)
+    } catch (e) {
+      showApiError(e, 'Failed to load product pack sales')
+      setProductPacks(null)
+    } finally {
+      setProductPacksLoading(false)
+    }
+  }, [fiscalYearStart, selectedMonth])
+
+  useEffect(() => {
+    void loadProductPacks()
+  }, [loadProductPacks])
 
   const chartMeta = useMemo(() => {
     if (!data?.rows?.length) return { categories: [] as string[], fullByYm: new Map<string, string>() }
@@ -418,6 +457,120 @@ const MonthlySummarySection = () => {
                     ))}
                   </Box>
                 ) : null}
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12 }}>
+            <Card>
+              <CardHeader
+                title='Product pack sales'
+                subheader='Physical packs delivered minus returns, by product — for the selected month'
+                action={
+                  <CustomTextField
+                    select
+                    label='Month'
+                    value={selectedMonth}
+                    onChange={e => setSelectedMonth(e.target.value)}
+                    size='small'
+                    sx={{ minWidth: 200 }}
+                    disabled={!data.monthKeys?.length}
+                  >
+                    {(data.monthKeys || []).map(ym => {
+                      const row = data.rows.find(r => r.month === ym)
+                      return (
+                        <MenuItem key={ym} value={ym}>
+                          {row?.monthLabel || chartMonthFullLabel(ym)}
+                        </MenuItem>
+                      )
+                    })}
+                  </CustomTextField>
+                }
+              />
+              <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
+                <TableContainer component={Paper} variant='outlined' sx={{ maxHeight: 480, overflow: 'auto' }}>
+                  <Table stickyHeader size='small' sx={{ minWidth: 720 }}>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>Product</TableCell>
+                        <TableCell align='right' sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>
+                          Delivered
+                        </TableCell>
+                        <TableCell align='right' sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>
+                          Paid
+                        </TableCell>
+                        <TableCell align='right' sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>
+                          Bonus
+                        </TableCell>
+                        <TableCell align='right' sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>
+                          Returned
+                        </TableCell>
+                        <TableCell align='right' sx={{ fontWeight: 700, bgcolor: 'background.paper' }}>
+                          Net packs
+                        </TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {productPacksLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className='text-center p-6'>
+                            <CircularProgress size={32} />
+                          </TableCell>
+                        </TableRow>
+                      ) : !productPacks?.rows?.length ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className='text-center p-6'>
+                            <Typography color='text.secondary'>
+                              No pack sales recorded for {productPacks?.monthLabel || 'this month'}.
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        <>
+                          {productPacks.rows.map(row => (
+                            <TableRow key={row.productId} hover>
+                              <TableCell>
+                                <Typography fontWeight={600}>{row.productName}</Typography>
+                                {row.composition ? (
+                                  <Typography variant='caption' color='text.secondary' className='block'>
+                                    {row.composition}
+                                  </Typography>
+                                ) : null}
+                              </TableCell>
+                              <TableCell align='right'>{formatPacks(row.deliveredPacks)}</TableCell>
+                              <TableCell align='right'>{formatPacks(row.paidPacks)}</TableCell>
+                              <TableCell align='right'>{formatPacks(row.bonusPacks)}</TableCell>
+                              <TableCell align='right'>{formatPacks(row.returnedPacks)}</TableCell>
+                              <TableCell align='right'>
+                                <Typography fontWeight={600}>{formatPacks(row.netPacks)}</Typography>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow sx={{ bgcolor: 'action.hover' }}>
+                            <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
+                            <TableCell align='right' sx={{ fontWeight: 700 }}>
+                              {formatPacks(
+                                productPacks.rows.reduce((s, r) => s + r.deliveredPacks, 0)
+                              )}
+                            </TableCell>
+                            <TableCell align='right' sx={{ fontWeight: 700 }}>
+                              {formatPacks(productPacks.totals.paidPacks)}
+                            </TableCell>
+                            <TableCell align='right' sx={{ fontWeight: 700 }}>
+                              {formatPacks(productPacks.totals.bonusPacks)}
+                            </TableCell>
+                            <TableCell align='right' sx={{ fontWeight: 700 }}>
+                              {formatPacks(productPacks.totals.returnedPacks)}
+                            </TableCell>
+                            <TableCell align='right' sx={{ fontWeight: 700 }}>
+                              {formatPacks(productPacks.totals.netPacks)}
+                            </TableCell>
+                          </TableRow>
+                        </>
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
               </CardContent>
             </Card>
           </Grid>
