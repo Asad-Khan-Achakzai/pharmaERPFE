@@ -3,7 +3,10 @@ import type { Account } from '@/types/accounting'
 
 export const accountService = {
   list: (params?: Record<string, string>) => api.get<{ data: Account[] }>('/accounts', { params }),
-  listMoneyAccounts: () => api.get<{ data: Account[] }>('/accounts/money-accounts'),
+  listMoneyAccounts: (params?: { includeInactive?: boolean }) =>
+    api.get<{ data: Account[] }>('/accounts/money-accounts', {
+      params: params?.includeInactive ? { includeInactive: 'true' } : undefined
+    }),
   businessView: () =>
     api.get<{
       data: {

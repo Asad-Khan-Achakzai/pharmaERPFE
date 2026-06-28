@@ -19,6 +19,7 @@ export type Account = {
   currentBalance: number
   isActive: boolean
   isSystem: boolean
+  description?: string | null
   children?: Account[]
 }
 
