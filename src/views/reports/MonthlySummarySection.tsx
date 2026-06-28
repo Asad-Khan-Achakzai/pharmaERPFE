@@ -10,6 +10,8 @@ import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import MenuItem from '@mui/material/MenuItem'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
@@ -118,6 +120,19 @@ const exportCsv = (data: MonthlySummaryResponse) => {
 
 const formatPacks = (v: number) => (v || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })
 
+/** Prefer current month, then last month with activity, else last month in fiscal year. */
+const pickDefaultMonth = (payload: MonthlySummaryResponse): string => {
+  if (!payload.monthKeys?.length) return ''
+  const now = new Date()
+  const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  if (payload.monthKeys.includes(currentYm)) return currentYm
+  const lastWithData = [...payload.rows]
+    .reverse()
+    .find(r => r.netSales !== 0 || r.discount !== 0 || r.castingCost !== 0)
+  if (lastWithData) return lastWithData.month
+  return payload.monthKeys[payload.monthKeys.length - 1]
+}
+
 const MonthlySummarySection = () => {
   const theme = useTheme()
   const isCompact = useMediaQuery(theme.breakpoints.down('md'), { noSsr: true })
@@ -131,6 +146,7 @@ const MonthlySummarySection = () => {
   const [selectedMonth, setSelectedMonth] = useState('')
   const [productPacks, setProductPacks] = useState<MonthlySummaryProductPacksResponse | null>(null)
   const [productPacksLoading, setProductPacksLoading] = useState(false)
+  const [downloadingMonth, setDownloadingMonth] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const hasCache = monthlySummaryCache?.key === cacheKey
@@ -141,7 +157,9 @@ const MonthlySummarySection = () => {
       monthlySummaryCache = { key: cacheKey, data: payload }
       setData(payload)
       if (payload.monthKeys?.length) {
-        setSelectedMonth(prev => (prev && payload.monthKeys.includes(prev) ? prev : payload.monthKeys[payload.monthKeys.length - 1]))
+        setSelectedMonth(prev =>
+          prev && payload.monthKeys.includes(prev) ? prev : pickDefaultMonth(payload)
+        )
       } else {
         setSelectedMonth('')
       }
@@ -179,6 +197,36 @@ const MonthlySummarySection = () => {
   useEffect(() => {
     void loadProductPacks()
   }, [loadProductPacks])
+
+  const downloadDeliveryDetailsForMonth = useCallback(
+    async (monthYm: string) => {
+      setDownloadingMonth(monthYm)
+      try {
+        const res = await reportsService.monthlySummaryDeliveryDetailsExcel({
+          month: monthYm,
+          fiscalYearStart: String(fiscalYearStart)
+        })
+        const blob = res.data as Blob
+        const cd = res.headers['content-disposition'] as string | undefined
+        let filename = `delivery-details-${monthYm}.xlsx`
+        if (cd) {
+          const match = /filename="?([^";\n]+)"?/.exec(cd)
+          if (match?.[1]) filename = match[1]
+        }
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        a.click()
+        URL.revokeObjectURL(url)
+      } catch (e) {
+        showApiError(e, 'Failed to download delivery details')
+      } finally {
+        setDownloadingMonth(null)
+      }
+    },
+    [fiscalYearStart]
+  )
 
   const chartMeta = useMemo(() => {
     if (!data?.rows?.length) return { categories: [] as string[], fullByYm: new Map<string, string>() }
@@ -410,12 +458,23 @@ const MonthlySummarySection = () => {
                             {col.label}
                           </TableCell>
                         ))}
+                        <TableCell align='center' sx={{ fontWeight: 700, bgcolor: 'background.paper', width: 56 }}>
+                          Excel
+                        </TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {data.rows.map(row => (
-                        <TableRow key={row.month} hover>
-                          <TableCell>{row.monthLabel}</TableCell>
+                        <TableRow
+                          key={row.month}
+                          hover
+                          selected={selectedMonth === row.month}
+                          sx={{ cursor: 'pointer' }}
+                          onClick={() => setSelectedMonth(row.month)}
+                        >
+                          <TableCell sx={{ fontWeight: selectedMonth === row.month ? 600 : 400 }}>
+                            {row.monthLabel}
+                          </TableCell>
                           {NUM_COLS.map(col => {
                             const val = row[col.key] as number
                             return (
@@ -428,6 +487,24 @@ const MonthlySummarySection = () => {
                               </TableCell>
                             )
                           })}
+                          <TableCell align='center' onClick={e => e.stopPropagation()}>
+                            <Tooltip title='Download delivery details (Excel)'>
+                              <span>
+                                <IconButton
+                                  size='small'
+                                  aria-label={`Download ${row.monthLabel} delivery details`}
+                                  disabled={downloadingMonth === row.month}
+                                  onClick={() => void downloadDeliveryDetailsForMonth(row.month)}
+                                >
+                                  {downloadingMonth === row.month ? (
+                                    <CircularProgress size={18} />
+                                  ) : (
+                                    <i className='tabler-download text-[20px]' />
+                                  )}
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </TableCell>
                         </TableRow>
                       ))}
                       <TableRow sx={{ bgcolor: 'action.hover' }}>
@@ -444,6 +521,7 @@ const MonthlySummarySection = () => {
                             </TableCell>
                           )
                         })}
+                        <TableCell />
                       </TableRow>
                     </TableBody>
                   </Table>
@@ -465,26 +543,10 @@ const MonthlySummarySection = () => {
             <Card>
               <CardHeader
                 title='Product pack sales'
-                subheader='Physical packs delivered minus returns, by product — for the selected month'
-                action={
-                  <CustomTextField
-                    select
-                    label='Month'
-                    value={selectedMonth}
-                    onChange={e => setSelectedMonth(e.target.value)}
-                    size='small'
-                    sx={{ minWidth: 200 }}
-                    disabled={!data.monthKeys?.length}
-                  >
-                    {(data.monthKeys || []).map(ym => {
-                      const row = data.rows.find(r => r.month === ym)
-                      return (
-                        <MenuItem key={ym} value={ym}>
-                          {row?.monthLabel || chartMonthFullLabel(ym)}
-                        </MenuItem>
-                      )
-                    })}
-                  </CustomTextField>
+                subheader={
+                  selectedMonth
+                    ? `Physical packs delivered minus returns, by product — ${chartMonthFullLabel(selectedMonth)} (click a month row above to change)`
+                    : 'Physical packs delivered minus returns, by product — select a month from the table above'
                 }
               />
               <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>

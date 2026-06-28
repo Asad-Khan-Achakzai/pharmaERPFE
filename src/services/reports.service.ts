@@ -70,6 +70,12 @@ export const reportsService = {
       { params }
     ),
 
+  monthlySummaryDeliveryDetailsExcel: (params: { month: string; fiscalYearStart?: string }) =>
+    api.get('/reports/monthly-summary/delivery-details', {
+      params,
+      responseType: 'blob'
+    }),
+
   visitSummary: (params: { weekStart: string; weekEnd: string; employeeId?: string }) =>
     api.get('/reports/visit-summary', { params }),
   visitByEmployee: (params: { weekStart: string; weekEnd: string }) =>
