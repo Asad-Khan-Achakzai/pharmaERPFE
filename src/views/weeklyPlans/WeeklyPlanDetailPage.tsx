@@ -29,7 +29,8 @@ import { weeklyPlansService } from '@/services/weeklyPlans.service'
 import { doctorsService } from '@/services/doctors.service'
 import { planItemsService } from '@/services/planItems.service'
 import WeeklyPlanWeekBoard from '@/views/weeklyPlans/WeeklyPlanWeekBoard'
-import CheckInPolicySection from '@/views/weeklyPlans/CheckInPolicySection'
+import { callPointsService, type CallPoint } from '@/services/callPoints.service'
+import { cpByDayToIds, dayKeyForDate, type CpByDay } from '@/views/weeklyPlans/planCpDays'
 import tableStyles from '@core/styles/table.module.css'
 import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
 import {
@@ -40,6 +41,7 @@ import {
 
 type DayPlan = {
   date: string
+  cpId: string
   selectedDoctors: DoctorLookupOption[]
   doctorNotes: string
   plannedTime: string
@@ -48,6 +50,7 @@ type DayPlan = {
 
 const emptyDayPlan = (): DayPlan => ({
   date: '',
+  cpId: '',
   selectedDoctors: [],
   doctorNotes: '',
   plannedTime: '',
@@ -203,6 +206,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
   const canEdit = hasPermission('weeklyPlans.edit')
   const canApprove = hasPermission('weeklyPlans.approve')
   const [statusSavingId, setStatusSavingId] = useState<string | null>(null)
+  const [cpSavingDate, setCpSavingDate] = useState<string | null>(null)
   const [copySaving, setCopySaving] = useState(false)
   const [approvalSaving, setApprovalSaving] = useState<'submit' | 'approve' | 'reject' | null>(null)
   const [rejectOpen, setRejectOpen] = useState(false)
@@ -212,6 +216,45 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
   const [saving, setSaving] = useState(false)
   const [dayPlans, setDayPlans] = useState<DayPlan[]>([])
   const [isDayLayoutPending, startDayLayoutTransition] = useTransition()
+  const [cps, setCps] = useState<CallPoint[]>([])
+
+  useEffect(() => {
+    let active = true
+    callPointsService
+      .lookup({ limit: 200 })
+      .then(r => {
+        if (active) setCps((r.data.data as CallPoint[]) || [])
+      })
+      .catch(() => {
+        if (active) setCps([])
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  /** Existing per-day CP selection (weekday key → cpId) from the saved plan. */
+  const savedCpByDay = useMemo(() => cpByDayToIds(plan?.cpByDay), [plan?.cpByDay])
+
+  const cpIdForDate = useCallback(
+    (ymd: string): string => {
+      const d = parseYyyyMmDd(ymd)
+      if (!d) return ''
+      return savedCpByDay[dayKeyForDate(d)] ?? ''
+    },
+    [savedCpByDay]
+  )
+
+  /** Populated CP ({ name, latitude, longitude }) saved for a given date's weekday, if any. */
+  const cpForDate = useCallback(
+    (ymd: string): { name?: string } | null => {
+      const d = parseYyyyMmDd(ymd)
+      if (!d || !plan?.cpByDay) return null
+      const raw = (plan.cpByDay as Record<string, any>)[dayKeyForDate(d)]
+      return raw && typeof raw === 'object' ? raw : null
+    },
+    [plan?.cpByDay]
+  )
 
   const load = async () => {
     setLoading(true)
@@ -287,7 +330,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       return
     }
     startDayLayoutTransition(() => {
-      setDayPlans(days.map(date => ({ ...emptyDayPlan(), date })))
+      setDayPlans(days.map(date => ({ ...emptyDayPlan(), date, cpId: cpIdForDate(date) })))
     })
   }
 
@@ -332,6 +375,10 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       }
       if (day.date < weekStartYmd || day.date > weekEndYmd) {
         showApiError(null, `Date ${day.date} must fall within the plan week`)
+        return
+      }
+      if (cps.length > 0 && !day.cpId) {
+        showApiError(null, `Select a CP (check-in point) for ${day.date}`)
         return
       }
       for (const t of tasksWithTitle) {
@@ -384,9 +431,24 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       return
     }
 
+    // Per-day CP selection (weekday key → cpId), merged onto the saved plan's selection.
+    const cpByDay: CpByDay = { ...savedCpByDay }
+    let cpChanged = false
+    for (const day of filledDays) {
+      const d = parseYyyyMmDd(day.date)
+      if (!d) continue
+      const key = dayKeyForDate(d)
+      const next = day.cpId || null
+      if ((cpByDay[key] ?? null) !== next) cpChanged = true
+      cpByDay[key] = next
+    }
+
     setSaving(true)
     try {
       await weeklyPlansService.bulkPlanItems(params.id, items)
+      if (cpChanged) {
+        await weeklyPlansService.update(params.id, { cpByDay })
+      }
       showSuccess('Plan items saved')
       setDayPlans([])
       load()
@@ -423,6 +485,24 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       showApiError(e, 'Could not copy previous week')
     } finally {
       setCopySaving(false)
+    }
+  }
+
+  const handleCpChange = async (ymd: string, cpId: string) => {
+    const d = parseYyyyMmDd(ymd)
+    if (!d) return
+    const key = dayKeyForDate(d)
+    const cpByDay: CpByDay = { ...savedCpByDay, [key]: cpId || null }
+    setCpSavingDate(ymd)
+    try {
+      await weeklyPlansService.update(params.id, { cpByDay })
+      showSuccess('CP updated')
+      const planRes = await weeklyPlansService.getById(params.id)
+      setPlan(planRes.data.data)
+    } catch (e) {
+      showApiError(e, 'Could not update CP')
+    } finally {
+      setCpSavingDate(null)
     }
   }
 
@@ -619,14 +699,6 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                 {plan.notes}
               </Typography>
             )}
-            {plan.attendanceSystemMode === 'CHECKIN_POLICY_V2' && (
-              <CheckInPolicySection
-                planId={params.id}
-                disabled={!canEdit}
-                initial={plan.checkInConfiguration}
-                onSaved={cfg => setPlan((p: any) => (p ? { ...p, checkInConfiguration: cfg } : p))}
-              />
-            )}
             {plan.executionMetrics && (
               <Paper variant='outlined' className='mbe-4 p-4'>
                 <Typography variant='subtitle2' className='mbe-2'>
@@ -683,14 +755,49 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                   if (taskCount) summaryParts.push(`${taskCount} task${taskCount !== 1 ? 's' : ''}`)
                   const summary = summaryParts.length ? ` (${summaryParts.join(' · ')})` : ''
 
+                  const dayCp = cpForDate(date)
+                  const dayCpId = cpIdForDate(date)
+                  const dayCpMissing = !!dayCpId && !cps.some(cp => cp._id === dayCpId)
+
                   return (
                     <Paper key={date} variant='outlined' className='p-4'>
-                      <Typography variant='subtitle1' fontWeight={600} className='mbe-2'>
-                        {formatHeadingDate(date)}
-                        <Typography component='span' variant='body2' color='text.secondary' fontWeight={400}>
-                          {summary}
+                      <div className='flex flex-wrap items-center justify-between gap-2 mbe-2'>
+                        <Typography variant='subtitle1' fontWeight={600}>
+                          {formatHeadingDate(date)}
+                          <Typography component='span' variant='body2' color='text.secondary' fontWeight={400}>
+                            {summary}
+                          </Typography>
                         </Typography>
-                      </Typography>
+                        {canEdit ? (
+                          <CustomTextField
+                            select
+                            size='small'
+                            label='Call point (CP)'
+                            value={dayCpId}
+                            onChange={e => handleCpChange(date, e.target.value)}
+                            disabled={cpSavingDate === date}
+                            sx={{ minWidth: 220 }}
+                          >
+                            <MenuItem value=''>No CP</MenuItem>
+                            {dayCpMissing ? (
+                              <MenuItem value={dayCpId}>{dayCp?.name ? `${dayCp.name} (inactive)` : 'Selected CP (inactive)'}</MenuItem>
+                            ) : null}
+                            {cps.map(cp => (
+                              <MenuItem key={cp._id} value={cp._id}>
+                                {cp.name}
+                              </MenuItem>
+                            ))}
+                          </CustomTextField>
+                        ) : (
+                          <Chip
+                            size='small'
+                            variant='tonal'
+                            color={dayCp?.name ? 'primary' : 'default'}
+                            icon={<i className='tabler-map-pin' />}
+                            label={dayCp?.name ? `CP: ${dayCp.name}` : 'No CP selected'}
+                          />
+                        )}
+                      </div>
                       <Divider className='mbe-3' />
                       <div className='overflow-x-auto'>
                         <table className={tableStyles.table}>
@@ -830,10 +937,38 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                               type='date'
                               label='Date'
                               value={day.date}
-                              onChange={e => updateDay(dayIndex, { date: e.target.value })}
+                              onChange={e => {
+                                const nextDate = e.target.value
+                                updateDay(dayIndex, {
+                                  date: nextDate,
+                                  cpId: day.cpId || cpIdForDate(nextDate)
+                                })
+                              }}
                               slotProps={{ inputLabel: { shrink: true } }}
                               helperText='Within plan week'
                             />
+                          </Grid>
+                          <Grid size={{ xs: 12, sm: 4, md: 3 }}>
+                            <CustomTextField
+                              select
+                              fullWidth
+                              label='Check-in point (CP)'
+                              value={cps.some(cp => cp._id === day.cpId) ? day.cpId : ''}
+                              onChange={e => updateDay(dayIndex, { cpId: e.target.value })}
+                              disabled={cps.length === 0}
+                              helperText={
+                                cps.length === 0 ? 'No active CPs — ask your Admin' : 'Start-of-day location'
+                              }
+                            >
+                              <MenuItem value=''>
+                                <em>Select a CP</em>
+                              </MenuItem>
+                              {cps.map(cp => (
+                                <MenuItem key={cp._id} value={cp._id}>
+                                  {cp.name}
+                                </MenuItem>
+                              ))}
+                            </CustomTextField>
                           </Grid>
                           <Grid size={{ xs: 12, sm: 4, md: 3 }}>
                             <CustomTextField

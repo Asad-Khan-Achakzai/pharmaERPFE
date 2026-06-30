@@ -156,6 +156,7 @@ const horizontalMenuData = (): HorizontalMenuItemWithPermission[] => [
         icon: 'tabler-calendar-week',
         children: [
           { label: 'All Plans', href: '/weekly-plans', permission: 'weeklyPlans.view' },
+          { label: 'Call Points (CP)', href: '/call-points', permission: 'callPoints.view' },
           { label: "Today's Visits", href: '/visits/today', permission: 'weeklyPlans.markVisit' }
         ]
       }

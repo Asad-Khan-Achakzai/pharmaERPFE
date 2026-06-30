@@ -24,6 +24,9 @@ import AppReactDatepicker from '@/libs/styles/AppReactDatepicker'
 import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { weeklyPlansService } from '@/services/weeklyPlans.service'
+import { callPointsService, type CallPoint } from '@/services/callPoints.service'
+import PlanDayCpSelector from '@/views/weeklyPlans/PlanDayCpSelector'
+import { enumeratePlanDays, type CpByDay } from '@/views/weeklyPlans/planCpDays'
 import { usersService } from '@/services/users.service'
 import { filterMedicalReps } from '@/utils/userLookups'
 import tableStyles from '@core/styles/table.module.css'
@@ -113,11 +116,21 @@ const WeeklyPlansPage = () => {
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [cps, setCps] = useState<CallPoint[]>([])
+  const [cpByDay, setCpByDay] = useState<CpByDay>({})
+
+  const planDays = useMemo(
+    () => enumeratePlanDays(form.weekStartDate, form.weekEndDate),
+    [form.weekStartDate, form.weekEndDate]
+  )
+  const cpsRequired = cps.length > 0 && planDays.length > 0
+  const allDaysHaveCp = !cpsRequired || planDays.every(d => cpByDay[d.dayKey])
 
   const isFormValid =
     form.weekStartDate !== '' &&
     form.weekEndDate !== '' &&
-    (reps.length > 0 ? form.medicalRepId !== '' : Boolean(user?._id))
+    (reps.length > 0 ? form.medicalRepId !== '' : Boolean(user?._id)) &&
+    allDaysHaveCp
 
   const filterOpen = Boolean(filterAnchor)
   const activeFilterCount = countDateUserFilters(appliedFilters)
@@ -149,6 +162,21 @@ const WeeklyPlansPage = () => {
     void fetchData()
   }, [fetchData])
 
+  useEffect(() => {
+    let active = true
+    callPointsService
+      .lookup({ limit: 200 })
+      .then(r => {
+        if (active) setCps((r.data.data as CallPoint[]) || [])
+      })
+      .catch(() => {
+        if (active) setCps([])
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
   const handleSave = async () => {
     const medicalRepId = reps.length > 0 ? form.medicalRepId : user?._id
     if (!medicalRepId) {
@@ -157,13 +185,19 @@ const WeeklyPlansPage = () => {
     }
     setSaving(true)
     try {
-      await weeklyPlansService.create({
+      const payload: Record<string, unknown> = {
         medicalRepId,
         weekStartDate: form.weekStartDate,
         weekEndDate: form.weekEndDate,
         notes: form.notes || undefined,
         status: form.status
-      })
+      }
+      if (cpsRequired) {
+        const dayCps: CpByDay = {}
+        for (const d of planDays) dayCps[d.dayKey] = cpByDay[d.dayKey] ?? null
+        payload.cpByDay = dayCps
+      }
+      await weeklyPlansService.create(payload)
       showSuccess('Plan created')
       setOpen(false)
       setForm({
@@ -173,6 +207,7 @@ const WeeklyPlansPage = () => {
         notes: '',
         status: 'DRAFT'
       })
+      setCpByDay({})
       fetchData()
     } catch (err) {
       showApiError(err, 'Failed to create plan')
@@ -262,6 +297,7 @@ const WeeklyPlansPage = () => {
                   notes: '',
                   status: 'DRAFT'
                 })
+                setCpByDay({})
                 setOpen(true)
               }}
             >
@@ -424,6 +460,23 @@ const WeeklyPlansPage = () => {
                 onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
               />
             </Grid>
+            {cps.length > 0 && (
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='subtitle2' className='mbe-2'>
+                  Call point (CP) per day
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block' className='mbe-3'>
+                  Select the CP each day starts from. Used to validate the daily check-in location.
+                </Typography>
+                <PlanDayCpSelector
+                  weekStartDate={form.weekStartDate}
+                  weekEndDate={form.weekEndDate}
+                  cps={cps}
+                  value={cpByDay}
+                  onChange={setCpByDay}
+                />
+              </Grid>
+            )}
           </Grid>
         </DialogContent>
         <DialogActions>
