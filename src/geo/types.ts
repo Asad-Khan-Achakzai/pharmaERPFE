@@ -39,6 +39,11 @@ export interface GeoPlatformConfig {
   liveTracking: {
     heartbeatIntervalMs: number
     maxAccuracyMeters: number
+    trackingProfile?: 'balanced' | 'fresh' | 'conservative'
+    schedulerMinIntervalMs?: number
+    schedulerMaxIntervalMs?: number
+    staleDisplayMs?: number
+    retentionDays?: number
   }
   maps: {
     webApiKey: string

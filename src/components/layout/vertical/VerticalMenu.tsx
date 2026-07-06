@@ -16,7 +16,8 @@ import verticalMenuData from '@/data/navigation/verticalMenuData'
 
 // Permission Imports
 import { useAuth } from '@/contexts/AuthContext'
-import { filterMenuByPermission } from '@/utils/menuFilter'
+import { filterMenuByPermissionAndGeo } from '@/utils/geoMenuFilter'
+import { useGeoFeatures } from '@/geo/GeoPlatformProvider'
 
 // Hook Imports
 import useVerticalNav from '@menu/hooks/useVerticalNav'
@@ -47,14 +48,17 @@ const VerticalMenu = ({ scrollMenu }: Props) => {
   const theme = useTheme()
   const verticalNavOptions = useVerticalNav()
   const { hasPermission, user } = useAuth()
+  const { geoPlatform, loading, configReady } = useGeoFeatures()
 
   const { isBreakpointReached, transitionDuration } = verticalNavOptions
-  const filteredMenuData = filterMenuByPermission(
+  const filteredMenuData = filterMenuByPermissionAndGeo(
     verticalMenuData(),
     hasPermission,
+    geoPlatform,
     user?.role,
     user?.permissions,
-    user?.userType
+    user?.userType,
+    { loading, configReady }
   )
 
   const ScrollWrapper = isBreakpointReached ? 'div' : PerfectScrollbar

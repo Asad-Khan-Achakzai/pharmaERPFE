@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -17,10 +17,12 @@ import { attendanceService } from '@/services/attendance.service'
 import { useAuth } from '@/contexts/AuthContext'
 import { LiveTrackingScene } from '@/geo/scenes/LiveTrackingScene'
 import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
+import { useRealtimeChannel, useRealtimeStatus } from '@/realtime/RealtimeProvider'
 import { showApiError } from '@/utils/apiErrors'
-import type { LiveAttendanceStatus, LiveRepLocation } from '@/types/liveTracking'
+import { confidenceLabel, type LiveAttendanceStatus, type LiveRepLocation } from '@/types/liveTracking'
 
-const REFRESH_MS = 60_000
+const POLL_MS = 60_000
+const POLL_VISIBLE_MS = 45_000
 
 function canAccessLiveTracking(hasPermission: (p: string) => boolean): boolean {
   return (
@@ -39,13 +41,17 @@ function hasLiveLocation(item: LiveRepLocation): boolean {
   return item.lat != null && item.lng != null && item.ageSeconds != null
 }
 
-function freshnessChip(item: LiveRepLocation): { label: string; color: 'success' | 'warning' | 'default' } {
+function freshnessChip(item: LiveRepLocation): { label: string; color: 'success' | 'warning' | 'default' | 'error' } {
   if (!hasLiveLocation(item)) return { label: 'No recent location', color: 'default' }
-  if (item.ageSeconds! < 60) return { label: 'Live', color: 'success' }
-  if (item.ageSeconds! < 600) {
-    return { label: `${Math.round(item.ageSeconds! / 60)}m ago`, color: 'success' }
+  const expectedMs = item.expectedNextPingMs ?? 180_000
+  const ageMs = (item.ageSeconds ?? 0) * 1000
+  const staleThreshold = Math.max(expectedMs * 2, 480_000)
+
+  if (ageMs < expectedMs) return { label: 'Live', color: 'success' }
+  if (ageMs < staleThreshold) {
+    return { label: `${Math.round(ageMs / 60_000)}m ago`, color: 'warning' }
   }
-  return { label: `${Math.round(item.ageSeconds! / 60)}m ago`, color: 'warning' }
+  return { label: 'Stale', color: 'error' }
 }
 
 function attendanceChip(status: LiveAttendanceStatus): {
@@ -69,29 +75,60 @@ function locationSubtitle(item: LiveRepLocation, located: boolean): string {
     const coords = `${item.lat!.toFixed(5)}, ${item.lng!.toFixed(5)}${
       item.accuracy != null ? ` · ±${Math.round(item.accuracy)}m` : ''
     }`
-    if (item.locationSource === 'checkin') return `${coords} · check-in location`
-    if (item.attendanceStatus === 'CHECKED_OUT') return `${coords} · last ping before check-out`
-    return coords
+    const conf = item.confidence != null ? ` · ${confidenceLabel(item.confidence)}` : ''
+    if (item.locationSource === 'checkin') return `${coords} · check-in location${conf}`
+    if (item.attendanceStatus === 'CHECKED_OUT') return `${coords} · last ping before check-out${conf}`
+    return `${coords}${conf}`
   }
-  if (item.attendanceStatus === 'CHECKED_OUT') return 'Checked out · no GPS ping in the last 30 minutes'
+  if (item.attendanceStatus === 'CHECKED_OUT') return 'Checked out · no recent GPS ping'
   if (item.attendanceStatus === 'NOT_CHECKED_IN') return 'Not checked in today'
-  return 'Checked in · no GPS ping in the last 30 minutes'
+  return 'Checked in · no recent GPS ping'
+}
+
+function mergeLiveDelta(rows: LiveRepLocation[], payload: Record<string, unknown>): LiveRepLocation[] {
+  const userId = String(payload.userId ?? '')
+  if (!userId) return rows
+  return rows.map((row) => {
+    if (row.userId !== userId) return row
+    return {
+      ...row,
+      lat: typeof payload.lat === 'number' ? payload.lat : row.lat,
+      lng: typeof payload.lng === 'number' ? payload.lng : row.lng,
+      accuracy: typeof payload.accuracy === 'number' ? payload.accuracy : row.accuracy,
+      confidence: typeof payload.confidence === 'number' ? payload.confidence : row.confidence,
+      speed: typeof payload.speed === 'number' ? payload.speed : row.speed,
+      heading: typeof payload.heading === 'number' ? payload.heading : row.heading,
+      trackingContext:
+        typeof payload.trackingContext === 'string' ? payload.trackingContext : row.trackingContext,
+      capturedAt: typeof payload.capturedAt === 'string' ? payload.capturedAt : row.capturedAt,
+      ageSeconds: 0,
+      locationSource: 'snapshot'
+    }
+  })
 }
 
 export default function LiveTrackingView() {
   const { hasPermission } = useAuth()
   const canAccess = canAccessLiveTracking(hasPermission)
+  const { connected: sseConnected } = useRealtimeStatus()
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [rows, setRows] = useState<LiveRepLocation[]>([])
   const [disabledMessage, setDisabledMessage] = useState<string | null>(null)
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const etagRef = useRef<string | null>(null)
 
   const load = useCallback(async (silent = false) => {
     if (!canAccess) return
     if (silent) setRefreshing(true)
     else setLoading(true)
     try {
-      const res = await attendanceService.live()
+      const res = await attendanceService.live({
+        ifNoneMatch: etagRef.current ?? undefined
+      })
+      if (res.status === 304) return
+      const nextEtag = res.headers?.etag as string | undefined
+      if (nextEtag) etagRef.current = nextEtag
       setRows((res.data?.data as LiveRepLocation[]) || [])
       setDisabledMessage(null)
     } catch (err: unknown) {
@@ -102,7 +139,7 @@ export default function LiveTrackingView() {
         setDisabledMessage(
           message || 'Live tracking is not enabled for this company. Ask an administrator to turn it on.'
         )
-      } else {
+      } else if (status !== 304) {
         showApiError(err, 'Could not load live locations')
       }
     } finally {
@@ -114,9 +151,19 @@ export default function LiveTrackingView() {
   useEffect(() => {
     if (!canAccess) return
     void load()
-    const timer = window.setInterval(() => void load(true), REFRESH_MS)
+    const interval = sseConnected ? POLL_VISIBLE_MS * 2 : POLL_MS
+    const timer = window.setInterval(() => void load(true), interval)
     return () => window.clearInterval(timer)
-  }, [load, canAccess])
+  }, [load, canAccess, sseConnected])
+
+  useRealtimeChannel(
+    'live-map',
+    (event) => {
+      if (event.type !== 'rep.location.updated') return
+      setRows((prev) => mergeLiveDelta(prev, event.payload))
+    },
+    canAccess
+  )
 
   if (!canAccess) {
     return (
@@ -136,23 +183,37 @@ export default function LiveTrackingView() {
     <Card>
       <CardHeader
         title='Live tracking'
-        subheader='Your team roster with last known field locations (refreshes every minute). Reps send GPS every ~5 minutes while checked in, including in the background. Location data is kept for 30 minutes after each ping.'
+        subheader='Adaptive GPS from field reps while checked in. Map updates via live stream when available, with polling fallback.'
         action={
-          <Button
-            variant='outlined'
-            size='small'
-            startIcon={<i className='tabler-refresh' />}
-            disabled={refreshing}
-            onClick={() => void load(true)}
-          >
-            Refresh
-          </Button>
+          <Stack direction='row' spacing={1} alignItems='center'>
+            <Chip
+              size='small'
+              label={sseConnected ? 'Live stream' : 'Polling'}
+              color={sseConnected ? 'success' : 'default'}
+              variant='tonal'
+            />
+            <Button
+              variant='outlined'
+              size='small'
+              startIcon={<i className='tabler-refresh' />}
+              disabled={refreshing}
+              onClick={() => void load(true)}
+            >
+              Refresh
+            </Button>
+          </Stack>
         }
       />
       <CardContent>
         <GeoFeatureGate feature='managerLiveMap'>
           <Box sx={{ mb: 3 }}>
-            <LiveTrackingScene height={420} rows={rows} loading={loading} />
+            <LiveTrackingScene
+              height={420}
+              rows={rows}
+              loading={loading}
+              selectedUserId={selectedUserId}
+              onSelectUser={(row) => setSelectedUserId(row?.userId ?? null)}
+            />
           </Box>
         </GeoFeatureGate>
         {disabledMessage ? (
@@ -172,7 +233,7 @@ export default function LiveTrackingView() {
             <i className='tabler-map-pin text-5xl text-textSecondary' />
             <Typography variant='h6'>No team members</Typography>
             <Typography color='text.secondary'>
-              You have no active reports in your team scope. Assign managers on the User List if this looks wrong.
+              You have no active reports in your team scope.
             </Typography>
           </Box>
         ) : (
@@ -185,7 +246,15 @@ export default function LiveTrackingView() {
               const checkOutAt = item.checkOutTime ? parseISO(item.checkOutTime) : null
               return (
                 <Grid size={{ xs: 12, md: 6 }} key={item.userId}>
-                  <Card variant='outlined' sx={{ height: '100%' }}>
+                  <Card
+                    variant='outlined'
+                    sx={{
+                      height: '100%',
+                      borderColor: selectedUserId === item.userId ? 'primary.main' : undefined,
+                      cursor: located ? 'pointer' : 'default'
+                    }}
+                    onClick={() => located && setSelectedUserId(item.userId)}
+                  >
                     <CardContent>
                       <Stack direction='row' alignItems='flex-start' justifyContent='space-between' spacing={2}>
                         <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -198,11 +267,12 @@ export default function LiveTrackingView() {
                           <Typography variant='body2' color='text.secondary' sx={{ mt: 0.5 }}>
                             {locationSubtitle(item, located)}
                           </Typography>
-                          {located ? (
+                          {located && captured && isValid(captured) ? (
                             <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.75 }}>
-                              {captured && isValid(captured)
-                                ? formatDistanceToNow(captured, { addSuffix: true })
-                                : 'Unknown time'}
+                              Last ping {formatDistanceToNow(captured, { addSuffix: true })}
+                              {chip.color === 'error'
+                                ? ' · rep may be on Expo Go or background GPS off'
+                                : null}
                             </Typography>
                           ) : item.attendanceStatus === 'CHECKED_OUT' && checkOutAt && isValid(checkOutAt) ? (
                             <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.75 }}>
@@ -220,6 +290,7 @@ export default function LiveTrackingView() {
                               rel='noopener noreferrer'
                               aria-label={`Open ${item.name} on map`}
                               size='small'
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <i className='tabler-external-link' />
                             </IconButton>

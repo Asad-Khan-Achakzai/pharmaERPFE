@@ -101,6 +101,10 @@ export const attendanceService = {
   escalateAttendanceRequest: (id: string, body?: { comment?: string }) =>
     api.post(`/attendance/requests/${id}/escalate`, body ?? {}),
 
-  /** Manager live map — latest rep GPS pings (last 30 min). Requires company liveTrackingEnabled. */
-  live: () => api.get('/attendance/live')
+  /** Manager live map — ETag-aware polling + optional SSE deltas. */
+  live: (config?: { ifNoneMatch?: string }) =>
+    api.get('/attendance/live', {
+      headers: config?.ifNoneMatch ? { 'If-None-Match': config.ifNoneMatch } : undefined,
+      validateStatus: (status) => status === 200 || status === 304
+    })
 }

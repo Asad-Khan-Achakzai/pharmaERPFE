@@ -4,9 +4,11 @@ import type { LiveAttendanceStatus } from '@/types/liveTracking'
 
 export function liveRepMarkerColor(
   attendanceStatus: LiveAttendanceStatus | undefined,
-  ageSeconds: number | null | undefined
+  ageSeconds: number | null | undefined,
+  confidence?: number | null
 ): string {
   if (attendanceStatus !== 'CHECKED_IN') return '#9e9e9e'
+  if ((confidence ?? 100) < 20) return '#757575'
   return (ageSeconds ?? 0) >= 600 ? '#ed6c02' : '#2e7d32'
 }
 

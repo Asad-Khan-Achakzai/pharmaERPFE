@@ -12,6 +12,8 @@ import {
 interface GeoPlatformContextValue {
   geoPlatform: GeoPlatformConfig
   loading: boolean
+  /** True after a successful /geo/config fetch for the signed-in user. */
+  configReady: boolean
   isEnabled: (feature: GeoFeatureKey) => boolean
   refresh: () => Promise<void>
 }
@@ -22,10 +24,12 @@ export function GeoPlatformProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [geoPlatform, setGeoPlatform] = useState<GeoPlatformConfig>(DEFAULT_GEO_PLATFORM)
   const [loading, setLoading] = useState(true)
+  const [configReady, setConfigReady] = useState(false)
 
   const load = useCallback(async () => {
     if (!user) {
       setGeoPlatform(DEFAULT_GEO_PLATFORM)
+      setConfigReady(false)
       setLoading(false)
       return
     }
@@ -33,8 +37,10 @@ export function GeoPlatformProvider({ children }: { children: ReactNode }) {
     try {
       const cfg = await fetchGeoConfig()
       setGeoPlatform(cfg)
+      setConfigReady(true)
     } catch {
       setGeoPlatform(DEFAULT_GEO_PLATFORM)
+      setConfigReady(false)
     } finally {
       setLoading(false)
     }
@@ -50,8 +56,8 @@ export function GeoPlatformProvider({ children }: { children: ReactNode }) {
   )
 
   const value = useMemo(
-    () => ({ geoPlatform, loading, isEnabled, refresh: load }),
-    [geoPlatform, loading, isEnabled, load]
+    () => ({ geoPlatform, loading, configReady, isEnabled, refresh: load }),
+    [geoPlatform, loading, configReady, isEnabled, load]
   )
 
   return <GeoPlatformContext.Provider value={value}>{children}</GeoPlatformContext.Provider>
@@ -63,6 +69,7 @@ export function useGeoFeatures() {
     return {
       geoPlatform: DEFAULT_GEO_PLATFORM,
       loading: false,
+      configReady: false,
       isEnabled: () => false,
       refresh: async () => {}
     }

@@ -14,7 +14,8 @@ import horizontalMenuData from '@/data/navigation/horizontalMenuData'
 
 // Permission Imports
 import { useAuth } from '@/contexts/AuthContext'
-import { filterMenuByPermission } from '@/utils/menuFilter'
+import { filterMenuByPermissionAndGeo } from '@/utils/geoMenuFilter'
+import { useGeoFeatures } from '@/geo/GeoPlatformProvider'
 
 // Hook Imports
 import useVerticalNav from '@menu/hooks/useVerticalNav'
@@ -55,14 +56,17 @@ const HorizontalMenu = () => {
   const verticalNavOptions = useVerticalNav()
   const theme = useTheme()
   const { hasPermission, user } = useAuth()
+  const { geoPlatform, loading, configReady } = useGeoFeatures()
 
   const { transitionDuration } = verticalNavOptions
-  const filteredMenuData = filterMenuByPermission(
+  const filteredMenuData = filterMenuByPermissionAndGeo(
     horizontalMenuData(),
     hasPermission,
+    geoPlatform,
     user?.role,
     user?.permissions,
-    user?.userType
+    user?.userType,
+    { loading, configReady }
   )
 
   return (

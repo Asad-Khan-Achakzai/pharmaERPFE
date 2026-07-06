@@ -18,6 +18,7 @@ import {
   PLATFORM_GROUP_ORDER,
   setGeoFeatureWithDeps
 } from '@/views/super-admin/geoPlatformForm'
+import { LiveTrackingTunablesSection } from '@/views/super-admin/LiveTrackingTunablesSection'
 
 type Props = {
   value: GeoPlatformFormState
@@ -173,6 +174,14 @@ export default function GeoPlatformFormSection({ value, onChange }: Props) {
           </Box>
         )
       })}
+
+      {(value.features.liveTracking || value.features.managerLiveMap) && value.enabled ? (
+        <LiveTrackingTunablesSection
+          value={value.liveTracking}
+          onChange={liveTracking => onChange({ ...value, liveTracking })}
+          disabled={!value.enabled}
+        />
+      ) : null}
     </>
   )
 }

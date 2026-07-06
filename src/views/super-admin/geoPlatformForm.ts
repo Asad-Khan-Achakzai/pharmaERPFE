@@ -5,16 +5,21 @@ import {
   type GeoFeatures
 } from '@/geo/types'
 
+import type { LiveTrackingTunables } from '@/views/super-admin/LiveTrackingTunablesSection'
+import { defaultLiveTrackingTunables } from '@/views/super-admin/LiveTrackingTunablesSection'
+
 export type GeoPlatformFormState = {
   enabled: boolean
   features: GeoFeatures
   maxGoogleCallsPerDay: string
+  liveTracking: LiveTrackingTunables
 }
 
 export const emptyGeoPlatformForm = (): GeoPlatformFormState => ({
   enabled: false,
   features: { ...DEFAULT_GEO_FEATURES },
-  maxGoogleCallsPerDay: ''
+  maxGoogleCallsPerDay: '',
+  liveTracking: defaultLiveTrackingTunables()
 })
 
 export type GeoFeaturePlatform = 'mobile' | 'web' | 'both'
@@ -181,6 +186,15 @@ export function geoPlatformFormFromCompany(company: {
     enabled?: boolean
     features?: Partial<GeoFeatures>
     limits?: { maxGoogleCallsPerDay?: number | null }
+    liveTracking?: Partial<{
+      heartbeatIntervalMs: number
+      maxAccuracyMeters: number
+      trackingProfile: 'balanced' | 'fresh' | 'conservative'
+      schedulerMinIntervalMs: number
+      schedulerMaxIntervalMs: number
+      staleDisplayMs: number
+      retentionDays: number
+    }>
   }
   liveTrackingEnabled?: boolean
   geoFencingEnabled?: boolean
@@ -207,6 +221,20 @@ export function geoPlatformFormFromCompany(company: {
   }
   if (base.features.managerLiveMap) {
     base.features.liveTracking = true
+  }
+  const lt = gp?.liveTracking
+  if (lt) {
+    base.liveTracking = {
+      heartbeatIntervalMs: lt.heartbeatIntervalMs != null ? String(lt.heartbeatIntervalMs) : base.liveTracking.heartbeatIntervalMs,
+      maxAccuracyMeters: lt.maxAccuracyMeters != null ? String(lt.maxAccuracyMeters) : base.liveTracking.maxAccuracyMeters,
+      trackingProfile: lt.trackingProfile ?? base.liveTracking.trackingProfile,
+      schedulerMinIntervalMs:
+        lt.schedulerMinIntervalMs != null ? String(lt.schedulerMinIntervalMs) : base.liveTracking.schedulerMinIntervalMs,
+      schedulerMaxIntervalMs:
+        lt.schedulerMaxIntervalMs != null ? String(lt.schedulerMaxIntervalMs) : base.liveTracking.schedulerMaxIntervalMs,
+      staleDisplayMs: lt.staleDisplayMs != null ? String(lt.staleDisplayMs) : base.liveTracking.staleDisplayMs,
+      retentionDays: lt.retentionDays != null ? String(lt.retentionDays) : base.liveTracking.retentionDays
+    }
   }
   return base
 }
@@ -254,11 +282,24 @@ function normalizeLiveTrackingFeatures(features: GeoFeatures): GeoFeatures {
 export function buildGeoPlatformPayload(form: GeoPlatformFormState) {
   const limitRaw = form.maxGoogleCallsPerDay.trim()
   const features = normalizeLiveTrackingFeatures(form.features)
+  const lt = form.liveTracking
   return {
     enabled: form.enabled,
     features,
     limits: {
       maxGoogleCallsPerDay: limitRaw === '' ? null : Number(limitRaw)
+    },
+    liveTracking: {
+      heartbeatIntervalMs: Number(lt.heartbeatIntervalMs) || 300000,
+      maxAccuracyMeters: Number(lt.maxAccuracyMeters) || 150,
+      trackingProfile: lt.trackingProfile,
+      schedulerMinIntervalMs: Number(lt.schedulerMinIntervalMs) || 30000,
+      schedulerMaxIntervalMs: Number(lt.schedulerMaxIntervalMs) || 600000,
+      staleDisplayMs: Number(lt.staleDisplayMs) || 1800000,
+      retentionDays: Number(lt.retentionDays) || 90,
+      geofenceContextEnabled: true,
+      snapshotQualityGateEnabled: true,
+      lowBatteryModeEnabled: true
     }
   }
 }
