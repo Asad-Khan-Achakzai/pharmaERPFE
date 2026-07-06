@@ -271,7 +271,7 @@ export default function LiveTrackingView() {
                             <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.75 }}>
                               Last ping {formatDistanceToNow(captured, { addSuffix: true })}
                               {chip.color === 'error'
-                                ? ' · rep may be on Expo Go or background GPS off'
+                                ? ' · GPS ping overdue — check rep mobile app is open or background location is active'
                                 : null}
                             </Typography>
                           ) : item.attendanceStatus === 'CHECKED_OUT' && checkOutAt && isValid(checkOutAt) ? (
