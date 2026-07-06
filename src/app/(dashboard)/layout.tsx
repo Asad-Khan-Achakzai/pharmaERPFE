@@ -19,6 +19,7 @@ import HorizontalFooter from '@components/layout/horizontal/Footer'
 import ScrollToTop from '@core/components/scroll-to-top'
 import AuthGuard from '@/hocs/AuthGuard'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { GeoPlatformProvider } from '@/geo/GeoPlatformProvider'
 import AppReactToastify from '@/libs/styles/AppReactToastify'
 
 // Util Imports
@@ -34,6 +35,7 @@ const Layout = async (props: ChildrenType) => {
   return (
     <Providers direction={direction}>
       <AuthProvider>
+        <GeoPlatformProvider>
         <AuthGuard>
           <LayoutWrapper
             systemMode={systemMode}
@@ -54,6 +56,7 @@ const Layout = async (props: ChildrenType) => {
             </Button>
           </ScrollToTop>
         </AuthGuard>
+        </GeoPlatformProvider>
         <AppReactToastify position='top-right' />
       </AuthProvider>
     </Providers>

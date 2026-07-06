@@ -37,6 +37,7 @@ import { territoriesService, type TerritoryNode } from '@/services/territories.s
 import { reportsService } from '@/services/reports.service'
 import { showApiError } from '@/utils/apiErrors'
 import { applyTerritoryScope } from '@/utils/territoryViewerScope'
+import TerritoryBoundariesMapSection from '@/views/territories/TerritoryBoundariesMapSection'
 
 const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false, loading: () => <Skeleton height={260} variant="rounded" /> })
 
@@ -641,6 +642,8 @@ export default function TerritoryAnalyticsPage() {
           )}
         </Stack>
       </Paper>
+
+      <TerritoryBoundariesMapSection territoryId={parentId || undefined} />
 
       <Grid container spacing={2} sx={{ justifyContent: 'center' }}>
         <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ display: 'flex', justifyContent: 'center' }}>

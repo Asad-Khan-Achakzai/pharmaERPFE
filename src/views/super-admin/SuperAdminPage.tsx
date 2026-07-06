@@ -32,6 +32,14 @@ import { useAuth } from '@/contexts/AuthContext'
 import { superAdminService } from '@/services/superAdmin.service'
 import { showApiError } from '@/utils/apiErrors'
 import { allIanaTimeZones, countryCodeFromLabel, suggestTimeZoneForCountry } from '@/constants/countryTimeZones'
+import GeoPlatformFormSection from '@/views/super-admin/GeoPlatformFormSection'
+import {
+  buildGeoPlatformPayload,
+  emptyGeoPlatformForm,
+  geoPlatformFormFromCompany,
+  applyLiveFieldTrackingBundle,
+  type GeoPlatformFormState
+} from '@/views/super-admin/geoPlatformForm'
 
 type Company = {
   _id: string
@@ -66,6 +74,11 @@ type Company = {
   geoFencingEnabled?: boolean
   geoFenceRadiusMeters?: number
   geoFenceMode?: 'OFF' | 'SOFT' | 'STRICT'
+  geoPlatform?: {
+    enabled?: boolean
+    features?: Record<string, boolean>
+    limits?: { maxGoogleCallsPerDay?: number | null }
+  }
   onboardingEnabled?: boolean
   onboardingStrictValidation?: boolean
   onboardingKillSwitch?: boolean
@@ -287,6 +300,7 @@ const SuperAdminPage = () => {
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<CompanyFormState>(emptyForm)
+  const [geoForm, setGeoForm] = useState<GeoPlatformFormState>(emptyGeoPlatformForm())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [summaryCompany, setSummaryCompany] = useState<Company | null>(null)
   const [summaryData, setSummaryData] = useState<any>(null)
@@ -316,6 +330,7 @@ const SuperAdminPage = () => {
 
   const openCreate = () => {
     setForm(emptyForm)
+    setGeoForm(emptyGeoPlatformForm())
     setCreateOpen(true)
   }
 
@@ -365,6 +380,7 @@ const SuperAdminPage = () => {
           ? String(c.mediaRetention.expenseReceiptRetentionDays)
           : ''
     })
+    setGeoForm(geoPlatformFormFromCompany(c))
     setEditOpen(true)
   }
 
@@ -400,7 +416,8 @@ const SuperAdminPage = () => {
         onboardingKillSwitch: form.onboardingKillSwitch,
         onboardingPilotCohort: form.onboardingPilotCohort,
         ...attendancePolicyPayload(form),
-        ...mediaRetentionPayload(form)
+        ...mediaRetentionPayload(form),
+        geoPlatform: buildGeoPlatformPayload(geoForm)
       })
       setCreateOpen(false)
       await load()
@@ -443,7 +460,8 @@ const SuperAdminPage = () => {
         onboardingKillSwitch: form.onboardingKillSwitch,
         onboardingPilotCohort: form.onboardingPilotCohort,
         ...attendancePolicyPayload(form),
-        ...mediaRetentionPayload(form)
+        ...mediaRetentionPayload(form),
+        geoPlatform: buildGeoPlatformPayload(geoForm)
       })
       setEditOpen(false)
       await load()
@@ -850,7 +868,11 @@ const SuperAdminPage = () => {
             control={
               <Switch
                 checked={form.liveTrackingEnabled}
-                onChange={e => setForm(f => ({ ...f, liveTrackingEnabled: e.target.checked }))}
+                onChange={e => {
+                  const on = e.target.checked
+                  setForm(f => ({ ...f, liveTrackingEnabled: on }))
+                  setGeoForm(g => applyLiveFieldTrackingBundle(g, on))
+                }}
                 color='primary'
               />
             }
@@ -860,8 +882,8 @@ const SuperAdminPage = () => {
                   Live tracking
                 </Typography>
                 <Typography variant='caption' color='text.secondary' display='block'>
-                  Checked-in field reps send periodic GPS pings on mobile; managers view locations on web and mobile
-                  (People &amp; Operations → Team → Live tracking).
+                  Enables rep GPS while checked in and the manager live map on web and mobile. Syncs with Geo Platform
+                  → Live field tracking below.
                 </Typography>
               </div>
             }
@@ -1020,6 +1042,7 @@ const SuperAdminPage = () => {
             helperText='Example: cohort-a, wave-2, enterprise-beta'
           />
           <RetentionPolicyFields form={form} setForm={setForm} />
+          <GeoPlatformFormSection value={geoForm} onChange={setGeoForm} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateOpen(false)} disabled={saving}>
@@ -1268,7 +1291,11 @@ const SuperAdminPage = () => {
             control={
               <Switch
                 checked={form.liveTrackingEnabled}
-                onChange={e => setForm(f => ({ ...f, liveTrackingEnabled: e.target.checked }))}
+                onChange={e => {
+                  const on = e.target.checked
+                  setForm(f => ({ ...f, liveTrackingEnabled: on }))
+                  setGeoForm(g => applyLiveFieldTrackingBundle(g, on))
+                }}
                 color='primary'
               />
             }
@@ -1278,8 +1305,8 @@ const SuperAdminPage = () => {
                   Live tracking
                 </Typography>
                 <Typography variant='caption' color='text.secondary' display='block'>
-                  Checked-in field reps send periodic GPS pings on mobile; managers view locations on web and mobile
-                  (People &amp; Operations → Team → Live tracking).
+                  Enables rep GPS while checked in and the manager live map on web and mobile. Syncs with Geo Platform
+                  → Live field tracking below.
                 </Typography>
               </div>
             }
@@ -1437,6 +1464,7 @@ const SuperAdminPage = () => {
             margin='normal'
           />
           <RetentionPolicyFields form={form} setForm={setForm} />
+          <GeoPlatformFormSection value={geoForm} onChange={setGeoForm} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditOpen(false)} disabled={saving}>

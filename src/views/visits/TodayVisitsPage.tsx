@@ -30,6 +30,8 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
+import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
+import { DailyRouteScene } from '@/geo/scenes/DailyRouteScene'
 import CustomTextField from '@core/components/mui/TextField'
 import { planItemsService } from '@/services/planItems.service'
 import { visitsService } from '@/services/visits.service'
@@ -246,6 +248,11 @@ const TodayVisitsPage = () => {
             }
           />
           <CardContent>
+            <GeoFeatureGate feature='dailyPlanMaps'>
+              <Box sx={{ mb: 3 }}>
+                <DailyRouteScene height={360} date={date} />
+              </Box>
+            </GeoFeatureGate>
             <CustomTextField
               type='date'
               label='Business date'

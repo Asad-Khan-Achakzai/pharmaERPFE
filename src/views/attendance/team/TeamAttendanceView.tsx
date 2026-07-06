@@ -36,27 +36,15 @@ import { attendanceService } from '@/services/attendance.service'
 import { useAuth } from '@/contexts/AuthContext'
 import AttendanceModuleLayout from '@/views/attendance/AttendanceModuleLayout'
 import { getAttendancePermissionFlags } from '@/views/attendance/attendancePermissions'
-import { employeeStatusLabel, requestTypeLabel } from '@/utils/attendanceUi'
+import { employeeStatusLabel, formatTeamBoardTime, requestTypeLabel } from '@/utils/attendanceUi'
 import AttendanceWorkflowTimeline from '@/components/attendance/AttendanceWorkflowTimeline'
 import AttendanceApprovalPath from '@/components/attendance/AttendanceApprovalPath'
 import { slaSummaryLine } from '@/utils/attendanceWorkflowUi'
 import { escalationExplainer, nextStepHint } from '@/utils/attendanceApprovalPathUi'
+import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
+import { AttendanceZoneScene } from '@/geo/scenes/AttendanceZoneScene'
 
 const REJECT_NOTE_MIN = 10
-
-function formatTeamTs(v?: string | null): string {
-  if (!v) return '—'
-  try {
-    return new Date(v).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
-    })
-  } catch {
-    return '—'
-  }
-}
 
 function personInitials(name: string): string {
   const p = name.trim().split(/\s+/).filter(Boolean)
@@ -892,7 +880,7 @@ export default function TeamAttendanceView() {
                                 {row.scheduleLabel || row.shiftName || 'No schedule'}
                               </Typography>
                               <Typography variant='caption' color='text.secondary' display='block'>
-                                In {formatTeamTs(row.checkInTime)}{' · '}Out {formatTeamTs(row.checkOutTime)}
+                                In {formatTeamBoardTime(row.checkInTime)}{' · '}Out {formatTeamBoardTime(row.checkOutTime)}
                               </Typography>
                               {req ? (
                                 <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.5 }}>
@@ -975,8 +963,8 @@ export default function TeamAttendanceView() {
                                   {row.scheduleLabel || row.shiftName || '—'}
                                 </Typography>
                               </TableCell>
-                              <TableCell>{formatTeamTs(row.checkInTime)}</TableCell>
-                              <TableCell>{formatTeamTs(row.checkOutTime)}</TableCell>
+                              <TableCell>{formatTeamBoardTime(row.checkInTime)}</TableCell>
+                              <TableCell>{formatTeamBoardTime(row.checkOutTime)}</TableCell>
                               {teamV2 ? (
                                 <TableCell sx={{ maxWidth: 200 }}>
                                   <ZoneStatusChip row={row} teamV2={teamV2} />
@@ -1051,10 +1039,10 @@ export default function TeamAttendanceView() {
                 {drawerEmp.scheduleLabel || drawerEmp.shiftName || '—'}
               </Typography>
               <Typography variant='body2' color='text.secondary'>
-                <strong>Check-in:</strong> {formatTeamTs(drawerEmp.checkInTime)}
+                <strong>Check-in:</strong> {formatTeamBoardTime(drawerEmp.checkInTime)}
               </Typography>
               <Typography variant='body2' color='text.secondary'>
-                <strong>Check-out:</strong> {formatTeamTs(drawerEmp.checkOutTime)}
+                <strong>Check-out:</strong> {formatTeamBoardTime(drawerEmp.checkOutTime)}
               </Typography>
               {drawerEmp.checkInImageUrl ? (
                 <Box>
@@ -1094,6 +1082,16 @@ export default function TeamAttendanceView() {
                     </Typography>
                   ) : null}
                 </>
+              ) : null}
+              {teamV2 ? (
+                <GeoFeatureGate feature='attendanceMaps'>
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant='body2' color='text.secondary' sx={{ mb: 1 }}>
+                      <strong>Check-in zones today</strong>
+                    </Typography>
+                    <AttendanceZoneScene height={240} date={todayBoard?.businessDate} />
+                  </Box>
+                </GeoFeatureGate>
               ) : null}
               <Typography variant='caption' color='text.secondary'>
                 Export or deep history: use company reporting tools where available.

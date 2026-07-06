@@ -38,6 +38,8 @@ import {
 } from '@/components/standard-list-toolbar'
 
 import tableStyles from '@core/styles/table.module.css'
+import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
+import { LocationPickerScene } from '@/geo/scenes/LocationPickerScene'
 
 const columnHelper = createColumnHelper<CallPoint>()
 
@@ -323,6 +325,18 @@ const CallPointsPage = () => {
                 value={form.name}
                 onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
               />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <GeoFeatureGate feature='callPointMaps'>
+                <LocationPickerScene
+                  lat={form.latitude.trim() === '' ? null : Number(form.latitude)}
+                  lng={form.longitude.trim() === '' ? null : Number(form.longitude)}
+                  onChange={({ lat, lng }) =>
+                    setForm(p => ({ ...p, latitude: String(lat), longitude: String(lng) }))
+                  }
+                  height={260}
+                />
+              </GeoFeatureGate>
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
               <CustomTextField

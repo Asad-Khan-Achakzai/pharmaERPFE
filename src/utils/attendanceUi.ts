@@ -79,6 +79,33 @@ export function formatShiftRangeLabel(startMinutes: number, endMinutes: number, 
   return overnight ? `${s} → ${e} (next day)` : `${s} – ${e}`
 }
 
+/** `GET /attendance/today` returns business-local HH:mm strings, not ISO instants. */
+const TEAM_BOARD_HM = /^(\d{1,2}):(\d{2})$/
+
+export function formatTeamBoardTime(v?: string | null): string {
+  if (v == null || String(v).trim() === '') return '—'
+  const s = String(v).trim()
+  if (TEAM_BOARD_HM.test(s)) {
+    const [h, m] = s.split(':').map(Number)
+    const d = new Date()
+    d.setHours(h, m, 0, 0)
+    if (Number.isNaN(d.getTime())) return s
+    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  }
+  try {
+    const parsed = new Date(s)
+    if (Number.isNaN(parsed.getTime())) return '—'
+    return parsed.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    })
+  } catch {
+    return '—'
+  }
+}
+
 export function employeeStatusLabel(status: string): string {
   switch (status) {
     case 'PRESENT':

@@ -38,6 +38,8 @@ import {
   doctorLookupOptionLabel,
   renderDoctorLookupOption
 } from '@/components/lookup/doctorLookupDisplay'
+import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
+import { WeeklyRouteScene } from '@/geo/scenes/WeeklyRouteScene'
 
 type DayPlan = {
   date: string
@@ -217,6 +219,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
   const [dayPlans, setDayPlans] = useState<DayPlan[]>([])
   const [isDayLayoutPending, startDayLayoutTransition] = useTransition()
   const [cps, setCps] = useState<CallPoint[]>([])
+  const [routeMapDate, setRouteMapDate] = useState('')
 
   useEffect(() => {
     let active = true
@@ -290,6 +293,12 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
     if (!plan?.weekStartDate || !plan?.weekEndDate) return []
     return enumerateWeekYmd(plan.weekStartDate, plan.weekEndDate)
   }, [plan?.weekStartDate, plan?.weekEndDate])
+
+  useEffect(() => {
+    if (!weekYmds.length) return
+    const preferred = String(plan?.editLock?.businessTodayYmd || '')
+    setRouteMapDate((prev) => (prev && weekYmds.includes(prev) ? prev : weekYmds.includes(preferred) ? preferred : weekYmds[0]))
+  }, [weekYmds, plan?.editLock?.businessTodayYmd])
 
   const itemsByYmd = useMemo(() => {
     const m: Record<string, any[]> = {}
@@ -716,6 +725,33 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                   </Stack>
                 ) : null}
               </Paper>
+            )}
+
+            {weekYmds.length > 0 && (
+              <GeoFeatureGate feature='weeklyPlanMaps'>
+                <Paper variant='outlined' className='mbe-4 p-4'>
+                  <Typography variant='subtitle2' className='mbe-2'>
+                    Daily route map
+                  </Typography>
+                  <CustomTextField
+                    select
+                    size='small'
+                    label='Day'
+                    value={routeMapDate}
+                    onChange={e => setRouteMapDate(e.target.value)}
+                    sx={{ minWidth: 200, mb: 2 }}
+                  >
+                    {weekYmds.map(ymd => (
+                      <MenuItem key={ymd} value={ymd}>
+                        {formatHeadingDate(ymd)}
+                      </MenuItem>
+                    ))}
+                  </CustomTextField>
+                  {routeMapDate ? (
+                    <WeeklyRouteScene weeklyPlanId={params.id} date={routeMapDate} height={320} />
+                  ) : null}
+                </Paper>
+              </GeoFeatureGate>
             )}
 
             {weekYmds.length > 0 && (

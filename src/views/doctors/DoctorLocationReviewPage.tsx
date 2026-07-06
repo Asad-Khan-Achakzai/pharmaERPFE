@@ -7,6 +7,7 @@ import CardContent from '@mui/material/CardContent'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
+import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -22,6 +23,8 @@ import {
 } from '@/services/doctorLocationSuggestions.service'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import tableStyles from '@core/styles/table.module.css'
+import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
+import { DoctorLocationReviewScene } from '@/geo/scenes/DoctorLocationReviewScene'
 
 function mapsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps?q=${lat},${lng}`
@@ -38,6 +41,7 @@ export default function DoctorLocationReviewPage() {
   const [actingId, setActingId] = useState<string | null>(null)
   const [rejectRow, setRejectRow] = useState<DoctorLocationSuggestionRow | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [mapRow, setMapRow] = useState<DoctorLocationSuggestionRow | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -99,6 +103,20 @@ export default function DoctorLocationReviewPage() {
           }
         />
         <CardContent>
+          <GeoFeatureGate feature='doctorLocationReviewMaps'>
+            {mapRow ? (
+              <Box sx={{ mb: 3 }}>
+                <DoctorLocationReviewScene
+                  suggestedLat={mapRow.latitude}
+                  suggestedLng={mapRow.longitude}
+                  verifiedLat={mapRow.doctorId?.latitude}
+                  verifiedLng={mapRow.doctorId?.longitude}
+                  doctorName={mapRow.doctorId?.name}
+                  height={300}
+                />
+              </Box>
+            ) : null}
+          </GeoFeatureGate>
           {loading ? (
             <Stack spacing={1}>
               {[1, 2, 3].map(n => (
@@ -203,6 +221,14 @@ export default function DoctorLocationReviewPage() {
                               onClick={() => void approve(row)}
                             >
                               Approve
+                            </Button>
+                            <Button
+                              size='small'
+                              variant='outlined'
+                              disabled={actingId === row._id}
+                              onClick={() => setMapRow(row)}
+                            >
+                              Map
                             </Button>
                             <Button
                               size='small'

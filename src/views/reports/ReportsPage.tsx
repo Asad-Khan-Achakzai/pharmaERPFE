@@ -20,6 +20,8 @@ import { mapProfitFinancial } from '@/utils/financialMapper'
 import FinancialReportsSection from '@/views/reports/FinancialReportsSection'
 import ProfitCostManagementSection from '@/views/reports/ProfitCostManagementSection'
 import MonthlySummarySection from '@/views/reports/MonthlySummarySection'
+import GeoAnalyticsSection from '@/views/reports/GeoAnalyticsSection'
+import GeoHeatMapSection from '@/views/reports/GeoHeatMapSection'
 import PageSkeleton from '@/components/skeletons/PageSkeleton'
 import { FIN_LABELS } from '@/constants/financialLabels'
 
@@ -201,6 +203,14 @@ const ReportsPage = () => {
                 </Button>
               </CardContent>
             </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12 }}>
+            <GeoAnalyticsSection from={from} to={to} />
+          </Grid>
+
+          <Grid size={{ xs: 12 }}>
+            <GeoHeatMapSection from={from} to={to} />
           </Grid>
 
           <Grid size={{ xs: 12 }}>

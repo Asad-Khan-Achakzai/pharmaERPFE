@@ -46,6 +46,9 @@ import tableStyles from '@core/styles/table.module.css'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import { DoctorOwnershipPanel } from '@/components/doctors/DoctorMrepIntelligenceSection'
+import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
+import { DoctorMapScene } from '@/geo/scenes/DoctorMapScene'
+import { LocationPickerScene } from '@/geo/scenes/LocationPickerScene'
 
 export type DoctorFormState = {
   pharmacyId: string
@@ -67,6 +70,8 @@ export type DoctorFormState = {
   pmdcRegistration: string
   designation: string
   patientCount: string
+  latitude: string
+  longitude: string
 }
 
 const emptyForm = (): DoctorFormState => ({
@@ -88,7 +93,9 @@ const emptyForm = (): DoctorFormState => ({
   grade: '',
   pmdcRegistration: '',
   designation: '',
-  patientCount: ''
+  patientCount: '',
+  latitude: '',
+  longitude: ''
 })
 
 type Doctor = {
@@ -131,6 +138,20 @@ const formatCoords = (lat?: number | null, lng?: number | null) => {
   return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
 }
 
+const parseCoordField = (value: string): number | null => {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const n = Number(trimmed)
+  return Number.isFinite(n) ? n : null
+}
+
+const coordsFromForm = (lat: string, lng: string) => {
+  const latitude = parseCoordField(lat)
+  const longitude = parseCoordField(lng)
+  if (latitude == null && longitude == null) return { latitude: null, longitude: null }
+  return { latitude, longitude }
+}
+
 const DoctorListPage = () => {
   const searchParams = useSearchParams()
   const [data, setData] = useState<Doctor[]>([])
@@ -150,6 +171,11 @@ const DoctorListPage = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
   const [viewItem, setViewItem] = useState<Doctor | null>(null)
+  const [locationOpen, setLocationOpen] = useState(false)
+  const [locationTarget, setLocationTarget] = useState<Doctor | null>(null)
+  const [locationLat, setLocationLat] = useState('')
+  const [locationLng, setLocationLng] = useState('')
+  const [locationSaving, setLocationSaving] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [assignTarget, setAssignTarget] = useState<Doctor | null>(null)
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
@@ -270,7 +296,9 @@ const DoctorListPage = () => {
     grade: item.grade || '',
     pmdcRegistration: item.pmdcRegistration || '',
     designation: item.designation || '',
-    patientCount: item.patientCount != null && item.patientCount !== undefined ? String(item.patientCount) : ''
+    patientCount: item.patientCount != null && item.patientCount !== undefined ? String(item.patientCount) : '',
+    latitude: typeof item.latitude === 'number' ? String(item.latitude) : '',
+    longitude: typeof item.longitude === 'number' ? String(item.longitude) : ''
   })
 
   const handleOpen = (item?: Doctor) => {
@@ -313,11 +341,60 @@ const DoctorListPage = () => {
       grade: f.grade.trim(),
       pmdcRegistration: f.pmdcRegistration.trim(),
       designation: f.designation.trim(),
-      patientCount
+      patientCount,
+      ...coordsFromForm(f.latitude, f.longitude)
+    }
+  }
+
+  const openLocationDialog = (item: Doctor) => {
+    setLocationTarget(item)
+    setLocationLat(typeof item.latitude === 'number' ? String(item.latitude) : '')
+    setLocationLng(typeof item.longitude === 'number' ? String(item.longitude) : '')
+    setLocationOpen(true)
+  }
+
+  const saveLocation = async () => {
+    if (!locationTarget) return
+    const lat = parseCoordField(locationLat)
+    const lng = parseCoordField(locationLng)
+    if ((lat != null && lng == null) || (lat == null && lng != null)) {
+      showApiError(new Error('Provide both latitude and longitude, or clear both.'), 'Invalid location')
+      return
+    }
+    setLocationSaving(true)
+    try {
+      const { latitude, longitude } = coordsFromForm(locationLat, locationLng)
+      await doctorsService.update(locationTarget._id, { latitude, longitude })
+      showSuccess(latitude != null && longitude != null ? 'Doctor location saved' : 'Doctor location cleared')
+      setLocationOpen(false)
+      setLocationTarget(null)
+      await fetchData()
+      if (viewItem?._id === locationTarget._id) {
+        setViewItem(prev =>
+          prev
+            ? {
+                ...prev,
+                latitude,
+                longitude,
+                locationStatus: latitude != null && longitude != null ? 'VERIFIED' : 'UNVERIFIED'
+              }
+            : prev
+        )
+      }
+    } catch (err) {
+      showApiError(err, 'Could not save doctor location')
+    } finally {
+      setLocationSaving(false)
     }
   }
 
   const handleSave = async () => {
+    const lat = parseCoordField(form.latitude)
+    const lng = parseCoordField(form.longitude)
+    if ((lat != null && lng == null) || (lat == null && lng != null)) {
+      showApiError(new Error('Provide both latitude and longitude, or leave both empty.'), 'Invalid location')
+      return
+    }
     setSaving(true)
     try {
       const body: Record<string, unknown> = payloadFromForm(form)
@@ -733,9 +810,31 @@ const DoctorListPage = () => {
                     </IconButton>
                   </Stack>
                 ) : (
-                  <Typography className='mts-1'>—</Typography>
+                  <Typography className='mts-1'>No GPS location set</Typography>
                 )}
+                {canEdit ? (
+                  <Button
+                    size='small'
+                    variant='outlined'
+                    className='mts-2'
+                    onClick={() => openLocationDialog(viewItem)}
+                  >
+                    {formatCoords(viewItem.latitude, viewItem.longitude) ? 'Edit location' : 'Set location'}
+                  </Button>
+                ) : null}
               </Grid>
+              {typeof viewItem.latitude === 'number' && typeof viewItem.longitude === 'number' ? (
+                <Grid size={{ xs: 12 }}>
+                  <GeoFeatureGate feature='doctorMaps'>
+                    <DoctorMapScene
+                      lat={viewItem.latitude}
+                      lng={viewItem.longitude}
+                      name={viewItem.name}
+                      height={260}
+                    />
+                  </GeoFeatureGate>
+                </Grid>
+              ) : null}
               <Grid size={{ xs: 12 }}>
                 <Typography variant='body2' color='text.secondary'>
                   PMDC # / Duplicate / SMART
@@ -926,6 +1025,55 @@ const DoctorListPage = () => {
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
+              <Typography variant='overline' color='text.secondary'>
+                GPS location
+              </Typography>
+              <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+                Search, click the map, or drag the pin. Saved locations are marked verified for visit geo-fencing.
+              </Typography>
+              <GeoFeatureGate feature='doctorMaps'>
+                <LocationPickerScene
+                  lat={parseCoordField(form.latitude)}
+                  lng={parseCoordField(form.longitude)}
+                  onChange={({ lat, lng }) =>
+                    setForm(p => ({ ...p, latitude: String(lat), longitude: String(lng) }))
+                  }
+                  height={260}
+                />
+              </GeoFeatureGate>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Latitude'
+                type='number'
+                value={form.latitude}
+                helperText='Optional — decimal between -90 and 90'
+                onChange={e => setForm(p => ({ ...p, latitude: e.target.value }))}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Longitude'
+                type='number'
+                value={form.longitude}
+                helperText='Optional — decimal between -180 and 180'
+                onChange={e => setForm(p => ({ ...p, longitude: e.target.value }))}
+              />
+            </Grid>
+            {form.latitude.trim() || form.longitude.trim() ? (
+              <Grid size={{ xs: 12 }}>
+                <Button
+                  size='small'
+                  color='secondary'
+                  onClick={() => setForm(p => ({ ...p, latitude: '', longitude: '' }))}
+                >
+                  Clear GPS location
+                </Button>
+              </Grid>
+            ) : null}
+            <Grid size={{ xs: 12 }}>
               <CustomTextField
                 fullWidth
                 label='PMDC # / Duplicate / SMART'
@@ -992,6 +1140,66 @@ const DoctorListPage = () => {
         }}
         doctor={assignTarget as any}
       />
+
+      <Dialog open={locationOpen} onClose={() => !locationSaving && setLocationOpen(false)} maxWidth='md' fullWidth>
+        <DialogTitle>
+          {locationTarget ? `${formatCoords(locationTarget.latitude, locationTarget.longitude) ? 'Edit' : 'Set'} location — ${locationTarget.name}` : 'Doctor location'}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+            Search for the clinic or hospital, click the map, or drag the pin.
+          </Typography>
+          <GeoFeatureGate feature='doctorMaps'>
+            <LocationPickerScene
+              lat={parseCoordField(locationLat)}
+              lng={parseCoordField(locationLng)}
+              onChange={({ lat, lng }) => {
+                setLocationLat(String(lat))
+                setLocationLng(String(lng))
+              }}
+              height={320}
+            />
+          </GeoFeatureGate>
+          <Grid container spacing={2} className='mts-3'>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Latitude'
+                type='number'
+                value={locationLat}
+                onChange={e => setLocationLat(e.target.value)}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Longitude'
+                type='number'
+                value={locationLng}
+                onChange={e => setLocationLng(e.target.value)}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            color='secondary'
+            disabled={locationSaving || (!locationLat.trim() && !locationLng.trim())}
+            onClick={() => {
+              setLocationLat('')
+              setLocationLng('')
+            }}
+          >
+            Clear
+          </Button>
+          <Button onClick={() => setLocationOpen(false)} disabled={locationSaving}>
+            Cancel
+          </Button>
+          <Button variant='contained' onClick={() => void saveLocation()} disabled={locationSaving}>
+            {locationSaving ? 'Saving…' : 'Save location'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   )
 }

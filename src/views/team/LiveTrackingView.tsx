@@ -15,6 +15,8 @@ import Typography from '@mui/material/Typography'
 import { formatDistanceToNow, parseISO, isValid } from 'date-fns'
 import { attendanceService } from '@/services/attendance.service'
 import { useAuth } from '@/contexts/AuthContext'
+import { LiveTrackingScene } from '@/geo/scenes/LiveTrackingScene'
+import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
 import { showApiError } from '@/utils/apiErrors'
 import type { LiveAttendanceStatus, LiveRepLocation } from '@/types/liveTracking'
 
@@ -148,6 +150,11 @@ export default function LiveTrackingView() {
         }
       />
       <CardContent>
+        <GeoFeatureGate feature='managerLiveMap'>
+          <Box sx={{ mb: 3 }}>
+            <LiveTrackingScene height={420} rows={rows} loading={loading} />
+          </Box>
+        </GeoFeatureGate>
         {disabledMessage ? (
           <Box className='flex flex-col items-center gap-2 p-8 text-center'>
             <i className='tabler-map-off text-5xl text-textSecondary' />

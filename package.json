@@ -36,6 +36,7 @@
     "@mui/material-nextjs": "7.3.6",
     "@tanstack/match-sorter-utils": "^8.19.4",
     "@tanstack/react-table": "^8.21.3",
+    "@vis.gl/react-google-maps": "^1.8.3",
     "apexcharts": "^5.10.4",
     "axios": "^1.14.0",
     "classnames": "2.5.1",
