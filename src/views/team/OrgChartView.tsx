@@ -15,6 +15,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { usersService } from '@/services/users.service'
 import { reportsService } from '@/services/reports.service'
 import { showApiError } from '@/utils/apiErrors'
+import { parseOverviewPayload } from '@/utils/mrepOverviewUtils'
 
 type TeamUser = {
   _id: string
@@ -65,7 +66,7 @@ function OrgNode({
 }: {
   node: TreeNode
   depth: number
-  kpiByRep: Map<string, { coverage: number | null; territoryLabel: string }>
+  kpiByRep: Map<string, { coverage: number | null; teamSize: number | null; isManager: boolean }>
 }) {
   const kpi = kpiByRep.get(node._id)
   const ter =
@@ -80,10 +81,17 @@ function OrgNode({
         <Chip size='small' variant='tonal' label={node.roleId?.name || 'User'} />
         <Chip size='small' variant='outlined' label={ter} />
         {kpi?.coverage != null ? (
-          <Chip size='small' color={kpi.coverage >= 70 ? 'success' : 'warning'} label={`Cov ${kpi.coverage}%`} />
+          <Chip
+            size='small'
+            color={kpi.coverage >= 70 ? 'success' : 'warning'}
+            label={`Cov ${kpi.coverage}%${kpi.isManager ? ' (team)' : ''}`}
+          />
         ) : (
           <Chip size='small' variant='outlined' label='Cov —' />
         )}
+        {kpi?.isManager && kpi.teamSize != null ? (
+          <Chip size='small' variant='outlined' label={`Team ${kpi.teamSize}`} />
+        ) : null}
         <Button component={Link} href={`/dashboard/manager?repId=${encodeURIComponent(node._id)}`} size='small'>
           Field KPIs
         </Button>
@@ -104,9 +112,9 @@ export default function OrgChartView() {
   const [users, setUsers] = useState<TeamUser[]>([])
   const [loading, setLoading] = useState(true)
   const [month] = useState(ymNow)
-  const [kpiByRep, setKpiByRep] = useState<Map<string, { coverage: number | null; territoryLabel: string }>>(
-    () => new Map()
-  )
+  const [kpiByRep, setKpiByRep] = useState<
+    Map<string, { coverage: number | null; teamSize: number | null; isManager: boolean }>
+  >(() => new Map())
 
   const load = useCallback(async () => {
     if (!canSee) return
@@ -119,18 +127,17 @@ export default function OrgChartView() {
       const body = teamRes.data?.data || teamRes.data
       const docs = (body as { docs?: TeamUser[] })?.docs || []
       setUsers(docs)
-      const m = new Map<string, { coverage: number | null; territoryLabel: string }>()
+      const m = new Map<string, { coverage: number | null; teamSize: number | null; isManager: boolean }>()
       if (monthly) {
-        const reps = (monthly.data as any)?.data?.reps ?? (monthly.data as any)?.reps ?? []
-        if (Array.isArray(reps)) {
-          for (const r of reps) {
-            const id = String(r.repId || '')
-            if (!id) continue
-            m.set(id, {
-              coverage: r.coverage?.coveragePercent ?? null,
-              territoryLabel: ''
-            })
-          }
+        const payload = parseOverviewPayload(monthly.data)
+        for (const r of payload.reps) {
+          const id = String(r.repId || '')
+          if (!id) continue
+          m.set(id, {
+            coverage: r.coverage?.coveragePercent ?? null,
+            teamSize: r.hasTeamRollup ? (r.teamSize ?? 0) : null,
+            isManager: Boolean(r.hasTeamRollup)
+          })
         }
       }
       setKpiByRep(m)
@@ -158,7 +165,7 @@ export default function OrgChartView() {
     <Card>
       <CardHeader
         title='Org chart (reporting tree)'
-        subheader='Built from /users/team (full company for tenant administrators; otherwise your reporting subtree). Coverage % is from Field performance for the current month.'
+        subheader='Built from /users/team. Coverage % uses Field performance team roll-up for managers and individual metrics for MReps.'
       />
       <CardContent>
         {loading ? (

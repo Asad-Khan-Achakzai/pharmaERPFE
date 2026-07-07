@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { reportsService } from '@/services/reports.service'
 import { weeklyPlansService } from '@/services/weeklyPlans.service'
 import { showApiError } from '@/utils/apiErrors'
+import { individualKpis, parseOverviewPayload, roleShortLabel } from '@/utils/mrepOverviewUtils'
 import { MrepExceptionsPanel, type OverviewRep } from '@/components/mrep/MrepExceptionsPanel'
 
 const ymNow = () => {
@@ -49,8 +50,8 @@ export default function MrepExceptionsPage() {
         canSeeApprovals ? weeklyPlansService.pendingApprovals().catch(() => ({ data: { data: [] } })) : Promise.resolve(null)
       ])
 
-      const reps = (ov.data as any)?.data?.reps ?? (ov.data as any)?.reps ?? []
-      setOverviewReps(Array.isArray(reps) ? reps : [])
+      const ovPayload = parseOverviewPayload(ov.data)
+      setOverviewReps(ovPayload.reps as OverviewRep[])
 
       const dr = (dev.data as any)?.data?.reps ?? (dev.data as any)?.reps ?? []
       setDeviationReps(Array.isArray(dr) ? dr : [])
@@ -78,7 +79,10 @@ export default function MrepExceptionsPage() {
   const overviewByRepId = useMemo(() => {
     const m = new Map<string, OverviewRep>()
     for (const r of overviewReps) {
-      if (r.repId) m.set(String(r.repId), r)
+      const row = r as { repId?: string; name?: string | null }
+      if (row.repId) {
+        m.set(String(row.repId), { repId: row.repId, name: row.name, ...individualKpis(r as any) } as OverviewRep)
+      }
     }
     return m
   }, [overviewReps])

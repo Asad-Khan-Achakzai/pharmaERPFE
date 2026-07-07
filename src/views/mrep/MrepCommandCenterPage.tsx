@@ -25,6 +25,13 @@ import { weeklyPlansService } from '@/services/weeklyPlans.service'
 import { showApiError } from '@/utils/apiErrors'
 import { MrepExceptionsPanel, type OverviewRep } from '@/components/mrep/MrepExceptionsPanel'
 import { MrepRankingWidget, type RankRow } from '@/components/mrep/MrepRankingWidget'
+import {
+  individualKpis,
+  parseOverviewPayload,
+  roleShortLabel,
+  type MrepOverviewRow,
+  type MrepScopeSummary
+} from '@/utils/mrepOverviewUtils'
 
 const ymNow = () => {
   const d = new Date()
@@ -36,7 +43,7 @@ const pct = (v: number | null | undefined) => (v == null || Number.isNaN(Number(
 const fmtPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
-type MrepOverviewRep = OverviewRep & {
+type MrepOverviewRep = OverviewRep & MrepOverviewRow & {
   employeeCode?: string | null
   ordersInPeriod?: { grossRevenue?: number; orderCount?: number }
   planExecution?: OverviewRep['planExecution'] & {
@@ -70,6 +77,7 @@ export default function MrepCommandCenterPage() {
   const [month, setMonth] = useState(ymNow)
   const [loading, setLoading] = useState(true)
   const [overviewReps, setOverviewReps] = useState<MrepOverviewRep[]>([])
+  const [scopeSummary, setScopeSummary] = useState<MrepScopeSummary | null>(null)
   const [deviationReps, setDeviationReps] = useState<
     Array<{ repId: string; name?: string | null; planExecution?: MrepOverviewRep['planExecution'] }>
   >([])
@@ -97,8 +105,9 @@ export default function MrepCommandCenterPage() {
         canSeeApprovals ? weeklyPlansService.pendingApprovals().catch(() => ({ data: { data: [] } })) : Promise.resolve(null)
       ])
 
-      const reps = (ov.data as any)?.data?.reps ?? (ov.data as any)?.reps ?? []
-      setOverviewReps(Array.isArray(reps) ? reps : [])
+      const ovPayload = parseOverviewPayload(ov.data)
+      setOverviewReps(ovPayload.reps as MrepOverviewRep[])
+      setScopeSummary(ovPayload.scopeSummary ?? null)
 
       const dr = (dev.data as any)?.data?.reps ?? (dev.data as any)?.reps ?? []
       setDeviationReps(Array.isArray(dr) ? dr : [])
@@ -118,6 +127,7 @@ export default function MrepCommandCenterPage() {
     } catch (e) {
       showApiError(e, 'Could not load command center')
       setOverviewReps([])
+      setScopeSummary(null)
       setDeviationReps([])
       setRankings([])
       setTrends(null)
@@ -134,12 +144,23 @@ export default function MrepCommandCenterPage() {
   const overviewByRepId = useMemo(() => {
     const m = new Map<string, OverviewRep>()
     for (const r of overviewReps) {
-      if (r.repId) m.set(String(r.repId), r)
+      if (r.repId) {
+        m.set(String(r.repId), { repId: r.repId, name: r.name, ...individualKpis(r) } as OverviewRep)
+      }
     }
     return m
   }, [overviewReps])
 
   const kpiStrip = useMemo(() => {
+    if (scopeSummary) {
+      return {
+        teamSize: scopeSummary.teamSize ?? overviewReps.length,
+        avgCoverage: scopeSummary.coverage?.coveragePercent ?? null,
+        avgVisitCompletion: scopeSummary.planExecution?.visitCompletionPercent ?? null,
+        totalRevenue: Number(scopeSummary.ordersInPeriod?.grossRevenue ?? 0),
+        avgAdherence: scopeSummary.planExecution?.adherencePercent ?? null
+      }
+    }
     const n = overviewReps.length
     if (!n) {
       return {
@@ -182,7 +203,7 @@ export default function MrepCommandCenterPage() {
       totalRevenue: rev,
       avgAdherence: adhN ? Math.round(adhSum / adhN) : null
     }
-  }, [overviewReps])
+  }, [overviewReps, scopeSummary])
 
   const trendByRepPrevMonth = useMemo(() => {
     const m = new Map<string, number | null>()
@@ -237,10 +258,10 @@ export default function MrepCommandCenterPage() {
             {(
               [
                 { label: 'Team size', value: String(kpiStrip.teamSize), link: '/team/tree' },
-                { label: 'Avg coverage %', value: pct(kpiStrip.avgCoverage), link: '/doctors/list?scope=team' },
+                { label: 'Scope coverage %', value: pct(kpiStrip.avgCoverage), link: '/doctors/list?scope=team' },
                 { label: 'Visit completion %', value: pct(kpiStrip.avgVisitCompletion), link: '/weekly-plans' },
                 { label: 'Plan adherence %', value: pct(kpiStrip.avgAdherence), link: '/dashboard/mrep/trends' },
-                { label: 'Team revenue', value: fmtPKR(kpiStrip.totalRevenue), link: '/orders/list' }
+                { label: 'Scope revenue', value: fmtPKR(kpiStrip.totalRevenue), link: '/orders/list' }
               ] as const
             ).map(k => (
               <Paper key={k.label} variant='outlined' sx={{ p: 2, flex: 1, minWidth: 0 }}>
@@ -309,9 +330,10 @@ export default function MrepCommandCenterPage() {
                       </TableRow>
                     ) : (
                       overviewReps.map(r => {
+                        const kpi = r
                         const prevCov = trendByRepPrevMonth.get(String(r.repId)) ?? null
-                        const currCov = r.coverage?.coveragePercent ?? null
-                        const pe = r.planExecution
+                        const currCov = kpi.coverage?.coveragePercent ?? null
+                        const pe = kpi.planExecution
                         const visited = pe?.visited
                         const planTotal = (pe as { planItemsTotal?: number } | undefined)?.planItemsTotal
                         const visitsVsPlan =
@@ -320,16 +342,15 @@ export default function MrepCommandCenterPage() {
                           <TableRow key={r.repId} hover>
                             <TableCell>
                               <Typography fontWeight={600}>{r.name || '—'}</Typography>
-                              {r.employeeCode ? (
-                                <Typography variant='caption' color='text.secondary' display='block'>
-                                  {r.employeeCode}
-                                </Typography>
-                              ) : null}
+                              <Typography variant='caption' color='text.secondary' display='block'>
+                                {roleShortLabel(r.roleCode, r.roleName)}
+                                {r.employeeCode ? ` · ${r.employeeCode}` : ''}
+                              </Typography>
                             </TableCell>
                             <TableCell align='right'>{pct(currCov)}</TableCell>
                             <TableCell align='right'>{visitsVsPlan}</TableCell>
-                            <TableCell align='right'>{fmtPKR(Number(r.ordersInPeriod?.grossRevenue || 0))}</TableCell>
-                            <TableCell align='right'>{pct(r.planExecution?.adherencePercent)}</TableCell>
+                            <TableCell align='right'>{fmtPKR(Number(kpi.ordersInPeriod?.grossRevenue || 0))}</TableCell>
+                            <TableCell align='right'>{pct(pe?.adherencePercent)}</TableCell>
                             <TableCell align='center'>{trendArrow(currCov, prevCov)}</TableCell>
                             <TableCell align='right'>
                               <Stack direction='row' spacing={0.5} justifyContent='flex-end' flexWrap='wrap'>

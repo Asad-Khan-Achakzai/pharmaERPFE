@@ -19,34 +19,23 @@ import TableFooter from '@mui/material/TableFooter'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Skeleton from '@mui/material/Skeleton'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
+import IconButton from '@mui/material/IconButton'
+import Box from '@mui/material/Box'
 import { useAuth } from '@/contexts/AuthContext'
 import { reportsService } from '@/services/reports.service'
 import { usersService } from '@/services/users.service'
 import { showApiError } from '@/utils/apiErrors'
-
-type MrepRow = {
-  repId: string
-  name?: string | null
-  email?: string | null
-  employeeCode?: string | null
-  coverage?: { coveragePercent?: number | null }
-  planExecution?: {
-    adherencePercent?: number | null
-    visitCompletionPercent?: number | null
-    missed?: number
-    unplannedRatio?: number | null
-    visited?: number
-  }
-  target?: {
-    salesTarget?: number | null
-    achievedSales?: number | null
-    salesAchievementPercent?: number | null
-  }
-  attendanceScorePercent?: number | null
-  ordersInPeriod?: { orderCount?: number; returnedOrderCount?: number; grossRevenue?: number }
-  /** Same KPI as dashboard "Gross sales (TP)" for the month (delivery − return TP). */
-  totalGrossSalesTp?: number | null
-}
+import {
+  displayKpis,
+  flattenHierarchy,
+  parseOverviewPayload,
+  roleShortLabel,
+  type MrepKpiSlice,
+  type MrepOverviewRow,
+  type MrepScopeSummary
+} from '@/utils/mrepOverviewUtils'
 
 const ymNow = () => {
   const d = new Date()
@@ -58,8 +47,33 @@ const pct = (v: number | null | undefined) => (v == null || Number.isNaN(Number(
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
-const mean = (values: number[]) =>
-  values.length ? values.reduce((a, b) => a + b, 0) / values.length : null
+const COL_COUNT = 13
+
+function KpiCells({ kpi }: { kpi: MrepKpiSlice }) {
+  return (
+    <>
+      <TableCell align='right'>{pct(kpi.coverage?.coveragePercent)}</TableCell>
+      <TableCell align='right'>{pct(kpi.planExecution?.visitCompletionPercent)}</TableCell>
+      <TableCell align='right'>{pct(kpi.planExecution?.adherencePercent)}</TableCell>
+      <TableCell align='right'>{kpi.planExecution?.missed ?? '—'}</TableCell>
+      <TableCell align='right'>{pct(kpi.planExecution?.unplannedRatio)}</TableCell>
+      <TableCell align='right'>
+        <Typography variant='body2' component='span' display='block'>
+          {pct(kpi.target?.salesAchievementPercent)}
+        </Typography>
+        <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.25 }}>
+          {kpi.target?.achievedSales != null || kpi.target?.salesTarget != null
+            ? `${formatPKR(Number(kpi.target?.achievedSales ?? 0))} / ${formatPKR(Number(kpi.target?.salesTarget ?? 0))}`
+            : '—'}
+        </Typography>
+      </TableCell>
+      <TableCell align='right'>{pct(kpi.attendanceScorePercent)}</TableCell>
+      <TableCell align='right'>{kpi.ordersInPeriod?.orderCount ?? 0}</TableCell>
+      <TableCell align='right'>{kpi.ordersInPeriod?.returnedOrderCount ?? 0}</TableCell>
+      <TableCell align='right'>{formatPKR(Number(kpi.totalGrossSalesTp ?? 0))}</TableCell>
+    </>
+  )
+}
 
 const ManagerMrepPage = () => {
   const searchParams = useSearchParams()
@@ -77,8 +91,31 @@ const ManagerMrepPage = () => {
   const [month, setMonth] = useState(ymNow)
   const [repId, setRepId] = useState('')
   const [teamUsers, setTeamUsers] = useState<{ _id: string; name: string }[]>([])
-  const [rows, setRows] = useState<MrepRow[]>([])
+  const [rows, setRows] = useState<MrepOverviewRow[]>([])
+  const [scopeSummary, setScopeSummary] = useState<MrepScopeSummary | null>(null)
   const [loading, setLoading] = useState(false)
+  const [managerView, setManagerView] = useState<'team' | 'individual'>('team')
+  const [tableLayout, setTableLayout] = useState<'flat' | 'hierarchy'>('hierarchy')
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set())
+
+  const hasManagerRows = useMemo(() => rows.some(r => r.hasTeamRollup), [rows])
+  const canUseHierarchy = rows.some(r => r.managerId && rows.some(x => x.repId === r.managerId))
+
+  const displayRows = useMemo(() => {
+    if (tableLayout === 'hierarchy' && canUseHierarchy) {
+      return flattenHierarchy(rows, collapsedIds)
+    }
+    return rows.map(r => ({ ...r, depth: 0, hasChildren: false }))
+  }, [rows, tableLayout, collapsedIds, canUseHierarchy])
+
+  const toggleCollapsed = (id: string) => {
+    setCollapsedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   useEffect(() => {
     if (!canFilterByRep) return
@@ -111,11 +148,14 @@ const ManagerMrepPage = () => {
       const params: Record<string, string> = { month }
       if (repId) params.repId = repId
       const res = await reportsService.mrepMonthlyOverview({ params })
-      const data = (res.data as { data?: { reps?: MrepRow[] } })?.data
-      setRows(data?.reps || [])
+      const data = parseOverviewPayload(res.data)
+      setRows(data.reps)
+      setScopeSummary(data.scopeSummary ?? null)
+      setCollapsedIds(new Set())
     } catch (e) {
       showApiError(e, 'Could not load performance overview')
       setRows([])
+      setScopeSummary(null)
     } finally {
       setLoading(false)
     }
@@ -125,53 +165,7 @@ const ManagerMrepPage = () => {
     void load()
   }, [load])
 
-  const totals = useMemo(() => {
-    if (!rows.length) return null
-    const cov: number[] = []
-    const visitComp: number[] = []
-    const adherence: number[] = []
-    const unplanned: number[] = []
-    const attendance: number[] = []
-    let missed = 0
-    let orderCount = 0
-    let returnedOrderCount = 0
-    let grossSalesTp = 0
-    let achievedSales = 0
-    let salesTarget = 0
-    for (const r of rows) {
-      missed += r.planExecution?.missed ?? 0
-      orderCount += r.ordersInPeriod?.orderCount ?? 0
-      returnedOrderCount += r.ordersInPeriod?.returnedOrderCount ?? 0
-      grossSalesTp += Number(r.totalGrossSalesTp ?? 0)
-      achievedSales += Number(r.target?.achievedSales ?? 0)
-      salesTarget += Number(r.target?.salesTarget ?? 0)
-      const c = r.coverage?.coveragePercent
-      if (c != null && !Number.isNaN(Number(c))) cov.push(Number(c))
-      const vc = r.planExecution?.visitCompletionPercent
-      if (vc != null && !Number.isNaN(Number(vc))) visitComp.push(Number(vc))
-      const ad = r.planExecution?.adherencePercent
-      if (ad != null && !Number.isNaN(Number(ad))) adherence.push(Number(ad))
-      const up = r.planExecution?.unplannedRatio
-      if (up != null && !Number.isNaN(Number(up))) unplanned.push(Number(up))
-      const att = r.attendanceScorePercent
-      if (att != null && !Number.isNaN(Number(att))) attendance.push(Number(att))
-    }
-    const salesAchievementPercent = salesTarget > 0 ? (achievedSales / salesTarget) * 100 : null
-    return {
-      coveragePercent: mean(cov),
-      visitCompletionPercent: mean(visitComp),
-      adherencePercent: mean(adherence),
-      missed,
-      unplannedRatio: mean(unplanned),
-      achievedSales,
-      salesTarget,
-      salesAchievementPercent,
-      attendanceScorePercent: mean(attendance),
-      orderCount,
-      returnedOrderCount,
-      grossSalesTp
-    }
-  }, [rows])
+  const footer = scopeSummary
 
   if (!canSee) {
     return (
@@ -189,10 +183,10 @@ const ManagerMrepPage = () => {
         <Card>
           <CardHeader
             title='Field performance'
-            subheader='Sales vs target uses net delivered sales (pharmacy invoice amounts on deliver, net of returns)—same as the Targets page. Gross sales (TP) is trade-price (TP) volume from deliveries minus returns in the month; it is not used for target %.'
+            subheader='Managers show team roll-up by default (self plus everyone reporting under them). Use Team / Individual to see a manager’s own field activity. Expand rows in hierarchy view to drill into ASMs and MReps.'
           />
           <CardContent>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }} alignItems={{ sm: 'center' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }} alignItems={{ sm: 'center' }} flexWrap='wrap' useFlexGap>
               <TextField
                 label='Month'
                 type='month'
@@ -218,6 +212,34 @@ const ManagerMrepPage = () => {
                   ))}
                 </TextField>
               ) : null}
+              {hasManagerRows ? (
+                <ToggleButtonGroup
+                  exclusive
+                  size='small'
+                  value={managerView}
+                  onChange={(_, v: 'team' | 'individual' | null) => {
+                    if (v) setManagerView(v)
+                  }}
+                  aria-label='Manager metrics view'
+                >
+                  <ToggleButton value='team'>Team</ToggleButton>
+                  <ToggleButton value='individual'>Individual</ToggleButton>
+                </ToggleButtonGroup>
+              ) : null}
+              {canUseHierarchy ? (
+                <ToggleButtonGroup
+                  exclusive
+                  size='small'
+                  value={tableLayout}
+                  onChange={(_, v: 'flat' | 'hierarchy' | null) => {
+                    if (v) setTableLayout(v)
+                  }}
+                  aria-label='Table layout'
+                >
+                  <ToggleButton value='hierarchy'>Hierarchy</ToggleButton>
+                  <ToggleButton value='flat'>Flat</ToggleButton>
+                </ToggleButtonGroup>
+              ) : null}
             </Stack>
 
             {loading ? (
@@ -227,7 +249,9 @@ const ManagerMrepPage = () => {
                 <Table size='small'>
                   <TableHead>
                     <TableRow>
-                      <TableCell>Representative</TableCell>
+                      <TableCell>User</TableCell>
+                      <TableCell>Role</TableCell>
+                      <TableCell align='right'>Team size</TableCell>
                       <TableCell align='right'>Coverage</TableCell>
                       <TableCell align='right'>Visit completion</TableCell>
                       <TableCell align='right'>In-sequence</TableCell>
@@ -241,51 +265,64 @@ const ManagerMrepPage = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {rows.length === 0 ? (
+                    {displayRows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={11}>
+                        <TableCell colSpan={COL_COUNT}>
                           <Typography variant='body2' color='text.secondary'>
                             No rows for this month or your visibility scope.
                           </Typography>
                         </TableCell>
                       </TableRow>
                     ) : (
-                      rows.map(r => (
-                        <TableRow key={r.repId} hover>
-                          <TableCell>
-                            <Typography fontWeight={600}>{r.name || '—'}</Typography>
-                            {r.employeeCode ? (
-                              <Typography variant='caption' color='text.secondary' display='block'>
-                                {r.employeeCode}
-                              </Typography>
-                            ) : null}
-                          </TableCell>
-                          <TableCell align='right'>{pct(r.coverage?.coveragePercent)}</TableCell>
-                          <TableCell align='right'>{pct(r.planExecution?.visitCompletionPercent)}</TableCell>
-                          <TableCell align='right'>{pct(r.planExecution?.adherencePercent)}</TableCell>
-                          <TableCell align='right'>{r.planExecution?.missed ?? '—'}</TableCell>
-                          <TableCell align='right'>{pct(r.planExecution?.unplannedRatio)}</TableCell>
-                          <TableCell align='right'>
-                            <Typography variant='body2' component='span' display='block'>
-                              {pct(r.target?.salesAchievementPercent)}
-                            </Typography>
-                            <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.25 }}>
-                              {r.target?.achievedSales != null || r.target?.salesTarget != null
-                                ? `${formatPKR(Number(r.target?.achievedSales ?? 0))} / ${formatPKR(Number(r.target?.salesTarget ?? 0))}`
-                                : '—'}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align='right'>{pct(r.attendanceScorePercent)}</TableCell>
-                          <TableCell align='right'>{r.ordersInPeriod?.orderCount ?? 0}</TableCell>
-                          <TableCell align='right'>{r.ordersInPeriod?.returnedOrderCount ?? 0}</TableCell>
-                          <TableCell align='right'>
-                            {formatPKR(Number(r.totalGrossSalesTp ?? 0))}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      displayRows.map(r => {
+                        const kpi = displayKpis(r, managerView)
+                        const collapsed = collapsedIds.has(r.repId)
+                        return (
+                          <TableRow key={r.repId} hover>
+                            <TableCell>
+                              <Stack direction='row' alignItems='flex-start' spacing={0.5}>
+                                {tableLayout === 'hierarchy' && r.hasChildren ? (
+                                  <IconButton
+                                    size='small'
+                                    aria-label={collapsed ? 'Expand' : 'Collapse'}
+                                    onClick={() => toggleCollapsed(r.repId)}
+                                    sx={{ mt: -0.5, p: 0.25 }}
+                                  >
+                                    <Typography variant='body2' component='span' sx={{ width: 16, textAlign: 'center' }}>
+                                      {collapsed ? '▸' : '▾'}
+                                    </Typography>
+                                  </IconButton>
+                                ) : (
+                                  <Box sx={{ width: 28, flexShrink: 0 }} />
+                                )}
+                                <Box sx={{ pl: r.depth * 2 }}>
+                                  <Typography fontWeight={r.depth === 0 ? 700 : 600}>{r.name || '—'}</Typography>
+                                  {r.employeeCode ? (
+                                    <Typography variant='caption' color='text.secondary' display='block'>
+                                      {r.employeeCode}
+                                    </Typography>
+                                  ) : null}
+                                  {r.hasTeamRollup && managerView === 'individual' ? (
+                                    <Typography variant='caption' color='primary.main' display='block'>
+                                      Individual
+                                    </Typography>
+                                  ) : r.hasTeamRollup ? (
+                                    <Typography variant='caption' color='text.secondary' display='block'>
+                                      Team roll-up
+                                    </Typography>
+                                  ) : null}
+                                </Box>
+                              </Stack>
+                            </TableCell>
+                            <TableCell>{roleShortLabel(r.roleCode, r.roleName)}</TableCell>
+                            <TableCell align='right'>{r.hasTeamRollup ? (r.teamSize ?? 0) : '—'}</TableCell>
+                            <KpiCells kpi={kpi} />
+                          </TableRow>
+                        )
+                      })
                     )}
                   </TableBody>
-                  {totals && rows.length > 0 ? (
+                  {footer && rows.length > 0 ? (
                     <TableFooter>
                       <TableRow
                         sx={{
@@ -296,26 +333,33 @@ const ManagerMrepPage = () => {
                           }
                         }}
                       >
-                        <TableCell>Total / average</TableCell>
-                        <TableCell align='right'>{pct(totals.coveragePercent)}</TableCell>
-                        <TableCell align='right'>{pct(totals.visitCompletionPercent)}</TableCell>
-                        <TableCell align='right'>{pct(totals.adherencePercent)}</TableCell>
-                        <TableCell align='right'>{totals.missed}</TableCell>
-                        <TableCell align='right'>{pct(totals.unplannedRatio)}</TableCell>
+                        <TableCell colSpan={3}>
+                          Scope total
+                          {footer.teamSize != null ? (
+                            <Typography variant='caption' color='text.secondary' display='block'>
+                              {footer.teamSize} people in view
+                            </Typography>
+                          ) : null}
+                        </TableCell>
+                        <TableCell align='right'>{pct(footer.coverage?.coveragePercent)}</TableCell>
+                        <TableCell align='right'>{pct(footer.planExecution?.visitCompletionPercent)}</TableCell>
+                        <TableCell align='right'>{pct(footer.planExecution?.adherencePercent)}</TableCell>
+                        <TableCell align='right'>{footer.planExecution?.missed ?? '—'}</TableCell>
+                        <TableCell align='right'>{pct(footer.planExecution?.unplannedRatio)}</TableCell>
                         <TableCell align='right'>
                           <Typography variant='body2' component='span' display='block'>
-                            {pct(totals.salesAchievementPercent)}
+                            {pct(footer.target?.salesAchievementPercent)}
                           </Typography>
                           <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.25 }}>
-                            {totals.salesTarget > 0 || totals.achievedSales > 0
-                              ? `${formatPKR(totals.achievedSales)} / ${formatPKR(totals.salesTarget)}`
+                            {footer.target?.salesTarget != null || footer.target?.achievedSales != null
+                              ? `${formatPKR(Number(footer.target?.achievedSales ?? 0))} / ${formatPKR(Number(footer.target?.salesTarget ?? 0))}`
                               : '—'}
                           </Typography>
                         </TableCell>
-                        <TableCell align='right'>{pct(totals.attendanceScorePercent)}</TableCell>
-                        <TableCell align='right'>{totals.orderCount}</TableCell>
-                        <TableCell align='right'>{totals.returnedOrderCount}</TableCell>
-                        <TableCell align='right'>{formatPKR(totals.grossSalesTp)}</TableCell>
+                        <TableCell align='right'>{pct(footer.attendanceScorePercent)}</TableCell>
+                        <TableCell align='right'>{footer.ordersInPeriod?.orderCount ?? 0}</TableCell>
+                        <TableCell align='right'>{footer.ordersInPeriod?.returnedOrderCount ?? 0}</TableCell>
+                        <TableCell align='right'>{formatPKR(Number(footer.totalGrossSalesTp ?? 0))}</TableCell>
                       </TableRow>
                     </TableFooter>
                   ) : null}

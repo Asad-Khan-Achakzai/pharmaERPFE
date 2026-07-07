@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import DashboardWelcomeColumn from '@/views/dashboard/DashboardWelcomeColumn'
 import { useDashboardV3Data } from '../core/dashboardDataOrchestrator'
 import { reportsService } from '@/services/reports.service'
+import { parseOverviewPayload } from '@/utils/mrepOverviewUtils'
 
 const formatPKR = (v: number) => `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
@@ -27,6 +28,8 @@ export function WelcomeHeroWidget() {
   const d = useDashboardV3Data()
   const { user } = useAuth()
   const [mrepSalesRows, setMrepSalesRows] = useState<MrepSalesRow[]>([])
+  const [mrepScopeTp, setMrepScopeTp] = useState<number | null>(null)
+  const [mrepPersonalTp, setMrepPersonalTp] = useState<number | null>(null)
   const [mrepSalesLoading, setMrepSalesLoading] = useState(false)
   const greeting = useMemo(() => {
     const hour = new Date().getHours()
@@ -70,6 +73,8 @@ export function WelcomeHeroWidget() {
   useEffect(() => {
     if (!canLoadFieldSales) {
       setMrepSalesRows([])
+      setMrepScopeTp(null)
+      setMrepPersonalTp(null)
       setMrepSalesLoading(false)
       return
     }
@@ -80,11 +85,24 @@ export function WelcomeHeroWidget() {
       .mrepMonthlyOverview({ params: { month: ymNow() } })
       .then(res => {
         if (cancel) return
-        const data = (res.data as { data?: { reps?: MrepSalesRow[] } })?.data
-        setMrepSalesRows(data?.reps || [])
+        const payload = parseOverviewPayload(res.data)
+        setMrepSalesRows(payload.reps)
+        setMrepScopeTp(payload.scopeSummary?.totalGrossSalesTp != null ? Number(payload.scopeSummary.totalGrossSalesTp) : null)
+        const self = payload.reps.find(row => String(row.repId) === String(user?._id))
+        setMrepPersonalTp(
+          self?.personalMetrics?.totalGrossSalesTp != null
+            ? Number(self.personalMetrics.totalGrossSalesTp)
+            : self?.totalGrossSalesTp != null
+              ? Number(self.totalGrossSalesTp)
+              : null
+        )
       })
       .catch(() => {
-        if (!cancel) setMrepSalesRows([])
+        if (!cancel) {
+          setMrepSalesRows([])
+          setMrepScopeTp(null)
+          setMrepPersonalTp(null)
+        }
       })
       .finally(() => {
         if (!cancel) setMrepSalesLoading(false)
@@ -93,7 +111,7 @@ export function WelcomeHeroWidget() {
     return () => {
       cancel = true
     }
-  }, [canLoadFieldSales])
+  }, [canLoadFieldSales, user?._id])
 
   const highlight = useMemo(() => {
     if (!d.canSeeCompanyFinancials || !d.canLoadDashboardKpis) return undefined
@@ -122,12 +140,13 @@ export function WelcomeHeroWidget() {
       )
     }
 
-    const ownRow = mrepSalesRows.find(row => String(row.repId) === String(user?._id))
-    const ownSales = Number(ownRow?.totalGrossSalesTp ?? 0)
+    const ownSales = mrepPersonalTp ?? Number(
+      mrepSalesRows.find(row => String(row.repId) === String(user?._id))?.totalGrossSalesTp ?? 0
+    )
     const hasTeamScope = d.hasPermission('team.viewAllReports')
-    const teamSales = mrepSalesRows
-      .filter(row => String(row.repId) !== String(user?._id))
-      .reduce((sum, row) => sum + Number(row.totalGrossSalesTp ?? 0), 0)
+    const teamSales =
+      mrepScopeTp ??
+      mrepSalesRows.reduce((sum, row) => sum + Number(row.totalGrossSalesTp ?? 0), 0)
 
     if (hasTeamScope) {
       return (
@@ -162,7 +181,7 @@ export function WelcomeHeroWidget() {
         </Typography>
       </>
     )
-  }, [canLoadFieldSales, d, mrepSalesLoading, mrepSalesRows, user?._id])
+  }, [canLoadFieldSales, d, mrepSalesLoading, mrepSalesRows, mrepScopeTp, mrepPersonalTp, user?._id])
 
   const sub = useMemo(() => {
     if (canLoadFieldSales && mrepSalesLoading && !mrepSalesRows.length) {
