@@ -1,7 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { AdvancedMarker, Map, Pin, APIProvider, type MapMouseEvent } from '@vis.gl/react-google-maps'
+import { AdvancedMarker, Map, APIProvider, type MapMouseEvent } from '@vis.gl/react-google-maps'
+import { MapMarker } from '@/geo/components/markers/MapMarker'
+import { getMarker } from '@/geo/marker/MarkerStateResolver'
 import { useGeoMapApiKey, useGeoMapId } from '@/geo/hooks/useGeoMapApiKey'
 import { GeoMapPlaceCamera, GeoMapPlaceSearch } from '@/geo/components/GeoMapPlaceSearch'
 import { useGeoFeatures } from '@/geo/GeoPlatformProvider'
@@ -20,6 +22,7 @@ function MapPickerBody({
   position,
   mapId,
   countryCode,
+  searchEnabled,
   onMapClick,
   onPlaceSelect,
   onDragEnd,
@@ -28,6 +31,7 @@ function MapPickerBody({
   position: { lat: number; lng: number } | null
   mapId: string
   countryCode: string
+  searchEnabled: boolean
   onMapClick: (event: MapMouseEvent) => void
   onPlaceSelect: (pick: { lat: number; lng: number; label?: string; viewport?: google.maps.LatLngBounds }) => void
   onDragEnd: (ev: google.maps.MapMouseEvent) => void
@@ -44,11 +48,15 @@ function MapPickerBody({
       {...EMBEDDED_GEO_MAP_UI}
     >
       <GeoMapResizeSync />
-      <GeoMapPlaceSearch countryCode={countryCode} onPlaceSelect={onPlaceSelect} />
+      <GeoMapPlaceSearch
+        countryCode={countryCode}
+        onPlaceSelect={onPlaceSelect}
+        forceEnabled={searchEnabled}
+      />
       <GeoMapPlaceCamera target={cameraTarget} />
       {position && mapId ? (
         <AdvancedMarker position={position} draggable onDragEnd={onDragEnd}>
-          <Pin background='#1565c0' borderColor='#fff' glyphColor='#fff' />
+          <MapMarker visual={getMarker('callPoint', 'selected')} title='Selected location' />
         </AdvancedMarker>
       ) : null}
     </Map>
@@ -60,6 +68,7 @@ function MapPickerFrame({
   mapHeight,
   mapId,
   countryCode,
+  searchEnabled,
   onMapClick,
   onPlaceSelect,
   onDragEnd,
@@ -71,6 +80,7 @@ function MapPickerFrame({
   mapHeight: number | string
   mapId: string
   countryCode: string
+  searchEnabled: boolean
   position: { lat: number; lng: number } | null
   onMapClick: (event: MapMouseEvent) => void
   onPlaceSelect: (pick: { lat: number; lng: number; label?: string; viewport?: google.maps.LatLngBounds }) => void
@@ -95,6 +105,7 @@ function MapPickerFrame({
           position={position}
           mapId={mapId}
           countryCode={countryCode}
+          searchEnabled={searchEnabled}
           onMapClick={onMapClick}
           onPlaceSelect={onPlaceSelect}
           onDragEnd={onDragEnd}
@@ -109,12 +120,17 @@ export function LocationPickerScene({
   lat,
   lng,
   onChange,
-  height = 280
+  height = 280,
+  searchEnabled = true,
+  expandedTitle = 'Set location'
 }: {
   lat: number | null
   lng: number | null
   onChange: (coords: { lat: number; lng: number }) => void
   height?: number | string
+  /** Address search on the map (default on for entity location pickers). */
+  searchEnabled?: boolean
+  expandedTitle?: string
 }) {
   const apiKey = useGeoMapApiKey()
   const mapId = useGeoMapId()
@@ -196,6 +212,7 @@ export function LocationPickerScene({
     apiKey,
     mapId,
     countryCode,
+    searchEnabled,
     position,
     onMapClick: handleClick,
     onPlaceSelect: handlePlaceSelect,
@@ -214,7 +231,7 @@ export function LocationPickerScene({
   return (
     <Box>
       <Typography variant='caption' color='text.secondary' display='block' sx={{ mb: 0.75 }}>
-        Search for an address, click the map, or drag the pin to set the call point location.
+        Search for an address, click the map, or drag the pin to set the location.
       </Typography>
       {!mapId ? (
         <Typography variant='caption' color='warning.main' display='block' sx={{ mb: 0.75 }}>
@@ -262,7 +279,7 @@ export function LocationPickerScene({
           sx={{ px: 2, py: 1.5, borderBottom: theme => `1px solid ${theme.palette.divider}` }}
         >
           <Typography variant='subtitle1' fontWeight={600}>
-            Set call point location
+            {expandedTitle}
           </Typography>
           <Stack direction='row' spacing={1} alignItems='center'>
             <Button variant='contained' size='small' onClick={() => setExpanded(false)}>

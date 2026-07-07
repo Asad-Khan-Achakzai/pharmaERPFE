@@ -2,6 +2,7 @@ export const GEO_FEATURE_KEYS = [
   'liveTracking',
   'managerLiveMap',
   'doctorMaps',
+  'pharmacyMaps',
   'doctorLocationReviewMaps',
   'callPointMaps',
   'attendanceMaps',
@@ -59,6 +60,19 @@ export const DEFAULT_GEO_FEATURES: GeoFeatures = GEO_FEATURE_KEYS.reduce(
   },
   {} as GeoFeatures
 )
+
+/** Web-only geo features (mobile may gate UI but has no dedicated screen). */
+export const GEO_WEB_ONLY_FEATURES = [
+  'pharmacyMaps',
+  'doctorLocationReviewMaps',
+  'callPointMaps',
+  'attendanceMaps',
+  'weeklyPlanMaps',
+  'heatMaps',
+  'routeAnalytics',
+  'travelAnalytics',
+  'aiGeoApis'
+] as const satisfies readonly GeoFeatureKey[]
 
 export const DEFAULT_GEO_PLATFORM: GeoPlatformConfig = {
   enabled: false,

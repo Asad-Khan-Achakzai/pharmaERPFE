@@ -10,7 +10,9 @@ import {
   useState,
   type ReactNode
 } from 'react'
-import { sseClient, type RealtimeEvent } from './sseClient'
+import { DEFAULT_REALTIME_CHANNELS } from '@/realtime/channels'
+import { sseTransport } from '@/realtime/SseTransport'
+import type { RealtimeEvent } from '@/realtime/types'
 
 interface RealtimeContextValue {
   connected: boolean
@@ -26,22 +28,27 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
     if (!token) {
-      sseClient.disconnect()
+      sseTransport.disconnect()
       setConnected(false)
       return undefined
     }
 
-    sseClient.connect(token, 'live-map')
-    setConnected(true)
+    sseTransport.connect(token, [...DEFAULT_REALTIME_CHANNELS])
 
-    const off = sseClient.subscribe((event) => {
+    const poll = setInterval(() => {
+      setConnected(sseTransport.isConnected())
+    }, 2000)
+    setConnected(sseTransport.isConnected())
+
+    const off = sseTransport.subscribe((event) => {
       const set = channelHandlers.current.get(event.channel)
       set?.forEach((h) => h(event))
     })
 
     return () => {
+      clearInterval(poll)
       off()
-      sseClient.disconnect()
+      sseTransport.disconnect()
       setConnected(false)
     }
   }, [])

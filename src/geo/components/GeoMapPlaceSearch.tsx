@@ -5,6 +5,7 @@ import { ControlPosition, MapControl, useMap, useMapsLibrary } from '@vis.gl/rea
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import CircularProgress from '@mui/material/CircularProgress'
+import { useGeoFeatures } from '@/geo/GeoPlatformProvider'
 
 type PlacePick = {
   lat: number
@@ -16,6 +17,8 @@ type PlacePick = {
 type Props = {
   countryCode?: string
   onPlaceSelect: (pick: PlacePick) => void
+  /** Show search in embedded pickers even when placesAutocomplete flag is off. */
+  forceEnabled?: boolean
 }
 
 /** Pan/zoom map when a place is picked from search. */
@@ -35,7 +38,9 @@ export function GeoMapPlaceCamera({ target }: { target: PlacePick | null }) {
   return null
 }
 
-export function GeoMapPlaceSearch({ countryCode = 'pk', onPlaceSelect }: Props) {
+export function GeoMapPlaceSearch({ countryCode = 'pk', onPlaceSelect, forceEnabled = false }: Props) {
+  const { isEnabled } = useGeoFeatures()
+  const placesEnabled = forceEnabled || isEnabled('placesAutocomplete')
   const inputRef = useRef<HTMLInputElement>(null)
   const places = useMapsLibrary('places')
   const geocoding = useMapsLibrary('geocoding')
@@ -52,7 +57,7 @@ export function GeoMapPlaceSearch({ countryCode = 'pk', onPlaceSelect }: Props) 
   }, [])
 
   useEffect(() => {
-    if (!places || !inputRef.current) return
+    if (!placesEnabled || !places || !inputRef.current) return
 
     const country = countryCode.trim().toLowerCase()
     const ac = new places.Autocomplete(inputRef.current, {
@@ -64,7 +69,7 @@ export function GeoMapPlaceSearch({ countryCode = 'pk', onPlaceSelect }: Props) 
     return () => {
       google.maps.event.clearInstanceListeners(ac)
     }
-  }, [places, countryCode])
+  }, [placesEnabled, places, countryCode])
 
   useEffect(() => {
     if (!autocomplete) return
@@ -102,6 +107,8 @@ export function GeoMapPlaceSearch({ countryCode = 'pk', onPlaceSelect }: Props) 
       })
     })
   }
+
+  if (!placesEnabled) return null
 
   return (
     <MapControl position={ControlPosition.TOP_CENTER}>

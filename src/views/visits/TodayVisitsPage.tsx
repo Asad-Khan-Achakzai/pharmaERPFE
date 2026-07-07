@@ -66,7 +66,7 @@ const toggleProduct = (list: ProductOption[], p: ProductOption): ProductOption[]
 }
 
 const TodayVisitsPage = () => {
-  const { hasPermission } = useAuth()
+  const { hasPermission, user } = useAuth()
   const canMark = hasPermission('weeklyPlans.markVisit')
   const [execution, setExecution] = useState<TodayExecutionPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -250,7 +250,7 @@ const TodayVisitsPage = () => {
           <CardContent>
             <GeoFeatureGate feature='dailyPlanMaps'>
               <Box sx={{ mb: 3 }}>
-                <DailyRouteScene height={360} date={date} />
+                <DailyRouteScene height={360} date={date} employeeId={user?._id} />
               </Box>
             </GeoFeatureGate>
             <CustomTextField

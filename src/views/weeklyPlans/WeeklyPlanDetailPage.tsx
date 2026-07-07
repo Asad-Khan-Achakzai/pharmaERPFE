@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use, useMemo, useRef, useCallback, useTransition } from 'react'
+import { useState, useEffect, use, useMemo, useRef, useCallback, useTransition, Fragment } from 'react'
 import Link from 'next/link'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -40,6 +40,8 @@ import {
 } from '@/components/lookup/doctorLookupDisplay'
 import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
 import { WeeklyRouteScene } from '@/geo/scenes/WeeklyRouteScene'
+import { VisitContextScene } from '@/geo/scenes/VisitContextScene'
+import { optimizeGeoRoute } from '@/geo/services/geo.service'
 
 type DayPlan = {
   date: string
@@ -220,6 +222,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
   const [isDayLayoutPending, startDayLayoutTransition] = useTransition()
   const [cps, setCps] = useState<CallPoint[]>([])
   const [routeMapDate, setRouteMapDate] = useState('')
+  const [routeOptimizing, setRouteOptimizing] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -307,6 +310,30 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
     }
     return m
   }, [groupedExistingItems])
+
+  const routeMapVisitCount = useMemo(() => {
+    if (!routeMapDate) return 0
+    return (itemsByYmd[routeMapDate] || []).filter(
+      (item: { type?: string; doctorId?: { latitude?: number; longitude?: number } | null }) =>
+        item.type === 'DOCTOR_VISIT' &&
+        typeof item.doctorId?.latitude === 'number' &&
+        typeof item.doctorId?.longitude === 'number'
+    ).length
+  }, [itemsByYmd, routeMapDate])
+
+  const handleOptimizeRoute = async () => {
+    if (!routeMapDate || routeOptimizing) return
+    setRouteOptimizing(true)
+    try {
+      await optimizeGeoRoute({ weeklyPlanId: params.id, date: routeMapDate })
+      showSuccess('Visit order optimized for the selected day')
+      await load()
+    } catch (e) {
+      showApiError(e, 'Could not optimize route')
+    } finally {
+      setRouteOptimizing(false)
+    }
+  }
 
   const updateDay = useCallback((index: number, patch: Partial<DayPlan>) => {
     setDayPlans(prev => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)))
@@ -733,20 +760,37 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                   <Typography variant='subtitle2' className='mbe-2'>
                     Daily route map
                   </Typography>
-                  <CustomTextField
-                    select
-                    size='small'
-                    label='Day'
-                    value={routeMapDate}
-                    onChange={e => setRouteMapDate(e.target.value)}
-                    sx={{ minWidth: 200, mb: 2 }}
-                  >
-                    {weekYmds.map(ymd => (
-                      <MenuItem key={ymd} value={ymd}>
-                        {formatHeadingDate(ymd)}
-                      </MenuItem>
-                    ))}
-                  </CustomTextField>
+                  <Stack direction='row' flexWrap='wrap' gap={2} alignItems='center' className='mbe-2'>
+                    <CustomTextField
+                      select
+                      size='small'
+                      label='Day'
+                      value={routeMapDate}
+                      onChange={e => setRouteMapDate(e.target.value)}
+                      sx={{ minWidth: 200 }}
+                    >
+                      {weekYmds.map(ymd => (
+                        <MenuItem key={ymd} value={ymd}>
+                          {formatHeadingDate(ymd)}
+                        </MenuItem>
+                      ))}
+                    </CustomTextField>
+                    <GeoFeatureGate feature='routeOptimization'>
+                      {canEdit && routeMapVisitCount >= 2 ? (
+                        <Button
+                          variant='outlined'
+                          size='small'
+                          disabled={routeOptimizing || !routeMapDate}
+                          onClick={() => void handleOptimizeRoute()}
+                          startIcon={
+                            routeOptimizing ? <CircularProgress size={16} color='inherit' /> : undefined
+                          }
+                        >
+                          {routeOptimizing ? 'Optimizing…' : 'Optimize visit order'}
+                        </Button>
+                      ) : null}
+                    </GeoFeatureGate>
+                  </Stack>
                   {routeMapDate ? (
                     <WeeklyRouteScene weeklyPlanId={params.id} date={routeMapDate} height={320} />
                   ) : null}
@@ -846,35 +890,46 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                           </thead>
                           <tbody>
                             {items.map((it: any) => (
-                              <tr key={it._id}>
-                                <td>{it.type === 'DOCTOR_VISIT' ? 'Doctor visit' : 'Other task'}</td>
-                                <td>
-                                  {it.type === 'DOCTOR_VISIT' ? it.doctorId?.name || '—' : it.title || '—'}
-                                  {it.notes ? (
-                                    <Typography variant='caption' display='block' color='text.secondary'>
-                                      {it.notes}
-                                    </Typography>
-                                  ) : null}
-                                </td>
-                                <td>
-                                  {canEdit ? (
-                                    <CustomTextField
-                                      select
-                                      size='small'
-                                      value={it.status}
-                                      onChange={e => handleStatusChange(it._id, e.target.value)}
-                                      disabled={statusSavingId === it._id}
-                                      sx={{ minWidth: 140 }}
-                                    >
-                                      <MenuItem value='PENDING'>Pending</MenuItem>
-                                      <MenuItem value='VISITED'>Visited</MenuItem>
-                                      <MenuItem value='MISSED'>Missed</MenuItem>
-                                    </CustomTextField>
-                                  ) : (
-                                    <Chip size='small' label={it.status} variant='tonal' />
-                                  )}
-                                </td>
-                              </tr>
+                              <Fragment key={it._id}>
+                                <tr>
+                                  <td>{it.type === 'DOCTOR_VISIT' ? 'Doctor visit' : 'Other task'}</td>
+                                  <td>
+                                    {it.type === 'DOCTOR_VISIT' ? it.doctorId?.name || '—' : it.title || '—'}
+                                    {it.notes ? (
+                                      <Typography variant='caption' display='block' color='text.secondary'>
+                                        {it.notes}
+                                      </Typography>
+                                    ) : null}
+                                  </td>
+                                  <td>
+                                    {canEdit ? (
+                                      <CustomTextField
+                                        select
+                                        size='small'
+                                        value={it.status}
+                                        onChange={e => handleStatusChange(it._id, e.target.value)}
+                                        disabled={statusSavingId === it._id}
+                                        sx={{ minWidth: 140 }}
+                                      >
+                                        <MenuItem value='PENDING'>Pending</MenuItem>
+                                        <MenuItem value='VISITED'>Visited</MenuItem>
+                                        <MenuItem value='MISSED'>Missed</MenuItem>
+                                      </CustomTextField>
+                                    ) : (
+                                      <Chip size='small' label={it.status} variant='tonal' />
+                                    )}
+                                  </td>
+                                </tr>
+                                {it.status === 'IN_PROGRESS' ? (
+                                  <tr>
+                                    <td colSpan={3}>
+                                      <GeoFeatureGate feature='activeVisitMaps'>
+                                        <VisitContextScene planItemId={String(it._id)} height={220} />
+                                      </GeoFeatureGate>
+                                    </td>
+                                  </tr>
+                                ) : null}
+                              </Fragment>
                             ))}
                           </tbody>
                         </table>

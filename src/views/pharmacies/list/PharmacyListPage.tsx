@@ -36,11 +36,15 @@ import {
 import tableStyles from '@core/styles/table.module.css'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
+import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
+import { LocationPickerScene } from '@/geo/scenes/LocationPickerScene'
+import { DoctorMapScene } from '@/geo/scenes/DoctorMapScene'
 
 type Pharmacy = {
   _id: string
   name: string
   city: string
+  state?: string
   phone: string
   email: string
   address: string
@@ -48,6 +52,29 @@ type Pharmacy = {
   bonusScheme?: { buyQty?: number; getQty?: number }
   imageUrl?: string | null
   isActive: boolean
+  latitude?: number | null
+  longitude?: number | null
+}
+
+const mapsUrl = (lat: number, lng: number) => `https://www.google.com/maps?q=${lat},${lng}`
+
+const formatCoords = (lat?: number | null, lng?: number | null) => {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null
+  return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+}
+
+const parseCoordField = (value: string): number | null => {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const n = Number(trimmed)
+  return Number.isFinite(n) ? n : null
+}
+
+const coordsFromForm = (lat: string, lng: string) => {
+  const latitude = parseCoordField(lat)
+  const longitude = parseCoordField(lng)
+  if (latitude == null && longitude == null) return { latitude: null, longitude: null }
+  return { latitude, longitude }
 }
 
 const columnHelper = createColumnHelper<Pharmacy>()
@@ -68,7 +95,9 @@ const PharmacyListPage = () => {
     phone: '',
     email: '',
     discountOnTP: 0,
-    bonusScheme: { buyQty: 0, getQty: 0 }
+    bonusScheme: { buyQty: 0, getQty: 0 },
+    latitude: '',
+    longitude: ''
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -116,14 +145,16 @@ const PharmacyListPage = () => {
         name: item.name,
         address: item.address || '',
         city: item.city || '',
-        state: '',
+        state: item.state || '',
         phone: item.phone || '',
         email: item.email || '',
         discountOnTP: item.discountOnTP ?? 0,
         bonusScheme: {
           buyQty: item.bonusScheme?.buyQty ?? 0,
           getQty: item.bonusScheme?.getQty ?? 0
-        }
+        },
+        latitude: typeof item.latitude === 'number' ? String(item.latitude) : '',
+        longitude: typeof item.longitude === 'number' ? String(item.longitude) : ''
       })
     } else {
       setEditItem(null)
@@ -135,16 +166,28 @@ const PharmacyListPage = () => {
         phone: '',
         email: '',
         discountOnTP: 0,
-        bonusScheme: { buyQty: 0, getQty: 0 }
+        bonusScheme: { buyQty: 0, getQty: 0 },
+        latitude: '',
+        longitude: ''
       })
     }
     setOpen(true)
   }
 
   const handleSave = async () => {
+    const lat = parseCoordField(form.latitude)
+    const lng = parseCoordField(form.longitude)
+    if ((lat != null && lng == null) || (lat == null && lng != null)) {
+      showApiError(new Error('Provide both latitude and longitude, or leave both empty.'), 'Invalid location')
+      return
+    }
     setSaving(true)
     try {
-      const body: Record<string, unknown> = { ...form }
+      const { latitude: _lat, longitude: _lng, ...rest } = form
+      const body: Record<string, unknown> = {
+        ...rest,
+        ...coordsFromForm(form.latitude, form.longitude)
+      }
       if (assetId) body.assetId = assetId
       if (editItem) { await pharmaciesService.update(editItem._id, body); showSuccess('Pharmacy updated') }
       else { await pharmaciesService.create(body); showSuccess('Pharmacy created') }
@@ -240,6 +283,39 @@ const PharmacyListPage = () => {
               <Grid size={{ xs: 12 }}><Typography variant='body2' color='text.secondary'>Name</Typography><Typography fontWeight={500}>{viewItem.name}</Typography></Grid>
               <Grid size={{ xs: 12 }}><Typography variant='body2' color='text.secondary'>Address</Typography><Typography>{viewItem.address?.trim() ? viewItem.address : '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>City</Typography><Typography>{viewItem.city || '-'}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>State</Typography><Typography>{viewItem.state || '-'}</Typography></Grid>
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary'>GPS location</Typography>
+                {formatCoords(viewItem.latitude, viewItem.longitude) ? (
+                  <Stack spacing={0.5} className='mts-1'>
+                    <Typography>{formatCoords(viewItem.latitude, viewItem.longitude)}</Typography>
+                    <Button
+                      size='small'
+                      variant='text'
+                      component='a'
+                      href={mapsUrl(viewItem.latitude!, viewItem.longitude!)}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                    >
+                      Open in Google Maps
+                    </Button>
+                  </Stack>
+                ) : (
+                  <Typography>-</Typography>
+                )}
+              </Grid>
+              {typeof viewItem.latitude === 'number' && typeof viewItem.longitude === 'number' ? (
+                <Grid size={{ xs: 12 }}>
+                  <GeoFeatureGate feature='pharmacyMaps'>
+                    <DoctorMapScene
+                      lat={viewItem.latitude}
+                      lng={viewItem.longitude}
+                      name={viewItem.name}
+                      height={260}
+                    />
+                  </GeoFeatureGate>
+                </Grid>
+              ) : null}
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Phone</Typography><Typography>{viewItem.phone || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Email</Typography><Typography>{viewItem.email || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Discount on TP</Typography><Typography>{viewItem.discountOnTP ?? 0}%</Typography></Grid>
@@ -258,7 +334,7 @@ const PharmacyListPage = () => {
         <DialogActions><Button onClick={() => setViewItem(null)}>Close</Button></DialogActions>
       </Dialog>
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth='sm' fullWidth>
+      <Dialog open={open} onClose={() => setOpen(false)} maxWidth='md' fullWidth>
         <DialogTitle>{editItem ? 'Edit Pharmacy' : 'Add Pharmacy'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
@@ -272,9 +348,61 @@ const PharmacyListPage = () => {
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='City' value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='State' value={form.state} onChange={e => setForm(p => ({ ...p, state: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Address' value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Phone' value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Email' value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12 }}>
+              <Typography variant='overline' color='text.secondary'>
+                GPS location
+              </Typography>
+              <Typography variant='caption' color='text.secondary' display='block' className='mbe-2'>
+                Search for the pharmacy, click the map, or drag the pin. Optional — used for maps and routing.
+              </Typography>
+              <GeoFeatureGate feature='pharmacyMaps'>
+                <LocationPickerScene
+                  lat={parseCoordField(form.latitude)}
+                  lng={parseCoordField(form.longitude)}
+                  onChange={({ lat, lng }) =>
+                    setForm(p => ({ ...p, latitude: String(lat), longitude: String(lng) }))
+                  }
+                  height={260}
+                  searchEnabled
+                  expandedTitle='Set pharmacy location'
+                />
+              </GeoFeatureGate>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Latitude'
+                type='number'
+                value={form.latitude}
+                helperText='Optional — decimal between -90 and 90'
+                onChange={e => setForm(p => ({ ...p, latitude: e.target.value }))}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='Longitude'
+                type='number'
+                value={form.longitude}
+                helperText='Optional — decimal between -180 and 180'
+                onChange={e => setForm(p => ({ ...p, longitude: e.target.value }))}
+              />
+            </Grid>
+            {form.latitude.trim() || form.longitude.trim() ? (
+              <Grid size={{ xs: 12 }}>
+                <Button
+                  size='small'
+                  color='secondary'
+                  onClick={() => setForm(p => ({ ...p, latitude: '', longitude: '' }))}
+                >
+                  Clear GPS location
+                </Button>
+              </Grid>
+            ) : null}
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Discount on TP %' type='number' value={form.discountOnTP} onChange={e => setForm(p => ({ ...p, discountOnTP: +e.target.value }))} helperText='Default pharmacy discount applied on trade price for new orders' /></Grid>
             <Grid size={{ xs: 12 }}>
               <Typography variant='subtitle2' className='mbe-2'>

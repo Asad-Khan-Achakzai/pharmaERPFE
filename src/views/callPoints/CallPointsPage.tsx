@@ -40,6 +40,7 @@ import {
 import tableStyles from '@core/styles/table.module.css'
 import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
 import { LocationPickerScene } from '@/geo/scenes/LocationPickerScene'
+import { CallPointsMapScene } from '@/geo/scenes/CallPointsMapScene'
 
 const columnHelper = createColumnHelper<CallPoint>()
 
@@ -274,6 +275,15 @@ const CallPointsPage = () => {
           </Button>
         )}
       </div>
+
+      <GeoFeatureGate feature='callPointMaps'>
+        <div className='pli-6 pbe-4'>
+          <Typography variant='subtitle2' className='mbe-2'>
+            Coverage map
+          </Typography>
+          <CallPointsMapScene height={280} />
+        </div>
+      </GeoFeatureGate>
 
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>

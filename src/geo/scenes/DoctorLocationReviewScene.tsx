@@ -1,8 +1,10 @@
 'use client'
 
 import { useMemo } from 'react'
-import { AdvancedMarker, Pin, Polyline } from '@vis.gl/react-google-maps'
+import { AdvancedMarker, Polyline } from '@vis.gl/react-google-maps'
 import { GeoMapShell } from '@/geo/components/GeoMapShell'
+import { MapMarker } from '@/geo/components/markers/MapMarker'
+import { resolveDoctorMarker } from '@/geo/marker/MarkerStateResolver'
 import type { LatLng } from '@/geo/utils/mapBounds'
 
 type ReviewPin = {
@@ -46,7 +48,13 @@ export function DoctorLocationReviewScene({
       ) : null}
       {pins.map((pin) => (
         <AdvancedMarker key={pin.label} position={{ lat: pin.lat, lng: pin.lng }} title={`${doctorName || 'Doctor'} — ${pin.label}`}>
-          <Pin background={pin.color} borderColor='#fff' glyphColor='#fff' />
+          <MapMarker
+            visual={resolveDoctorMarker({
+              variant: pin.label === 'Suggested' ? 'suggested' : 'verified',
+              selected: pin.label === 'Verified'
+            })}
+            title={pin.label}
+          />
         </AdvancedMarker>
       ))}
     </GeoMapShell>

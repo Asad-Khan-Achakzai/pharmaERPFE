@@ -1,6 +1,7 @@
 import api from '@/services/api'
 import type { GeoPlatformConfig } from '@/geo/types'
 import { DEFAULT_GEO_PLATFORM } from '@/geo/types'
+import type { GeoMapContextPayload } from '@/geo/types/mapContext'
 
 export async function fetchGeoConfig(): Promise<GeoPlatformConfig> {
   const res = await api.get('/geo/config')
@@ -109,4 +110,19 @@ export async function optimizeGeoRoute(body: {
 }) {
   const res = await api.post('/geo/optimize-route', body)
   return res.data?.data
+}
+
+export async function fetchGeoMapContext(params: {
+  north: number
+  south: number
+  east: number
+  west: number
+  employeeId?: string
+  trackingContext?: string
+  radiusMeters?: number
+  layers?: string
+  date?: string
+}): Promise<GeoMapContextPayload> {
+  const res = await api.get('/geo/context', { params })
+  return res.data?.data as GeoMapContextPayload
 }

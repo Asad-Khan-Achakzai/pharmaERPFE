@@ -6,6 +6,7 @@ import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import { APIProvider, Map } from '@vis.gl/react-google-maps'
 import { useGeoMapApiKey, useGeoMapId } from '@/geo/hooks/useGeoMapApiKey'
+import { useGeoFeatures } from '@/geo/GeoPlatformProvider'
 import { fitBounds, type LatLng } from '@/geo/utils/mapBounds'
 import { EMBEDDED_GEO_MAP_UI } from '@/geo/constants/mapUi'
 import { GeoMapResizeSync } from '@/geo/components/GeoMapResizeSync'
@@ -15,6 +16,9 @@ type Props = {
   height?: number | string
   className?: string
   points?: LatLng[]
+  /** Stable key (e.g. user ids) — map refits only when this changes, not on live GPS ticks. */
+  fitKey?: string
+  autoFit?: 'once' | 'always' | 'never'
   children?: ReactNode
   defaultCenter?: LatLng
   defaultZoom?: number
@@ -27,6 +31,8 @@ export function GeoMapShell({
   height = 360,
   className,
   points = [],
+  fitKey,
+  autoFit = 'once',
   children,
   defaultCenter,
   defaultZoom = 12,
@@ -35,10 +41,18 @@ export function GeoMapShell({
 }: Props) {
   const apiKey = useGeoMapApiKey()
   const defaultMapId = useGeoMapId()
+  const { geoPlatform } = useGeoFeatures()
+  const tenantCenter = geoPlatform.defaults.mapCenter
+  const tenantZoom = geoPlatform.defaults.mapZoom ?? defaultZoom
+  const resolvedCenter = useMemo(() => {
+    if (defaultCenter) return defaultCenter
+    if (tenantCenter?.lat != null && tenantCenter?.lng != null) return tenantCenter
+    return { lat: 31.5204, lng: 74.3587 }
+  }, [defaultCenter, tenantCenter?.lat, tenantCenter?.lng])
   const view = useMemo(() => {
     if (points.length) return fitBounds(points)
-    return { center: defaultCenter || { lat: 31.5204, lng: 74.3587 }, zoom: defaultZoom }
-  }, [points, defaultCenter, defaultZoom])
+    return { center: resolvedCenter, zoom: tenantZoom }
+  }, [points, resolvedCenter, tenantZoom])
 
   if (!apiKey) {
     return (
@@ -62,7 +76,7 @@ export function GeoMapShell({
           {...EMBEDDED_GEO_MAP_UI}
         >
           <GeoMapResizeSync />
-          <GeoMapViewportSync points={points} />
+          <GeoMapViewportSync points={points} fitKey={fitKey} autoFit={autoFit} />
           {children}
         </Map>
       </APIProvider>

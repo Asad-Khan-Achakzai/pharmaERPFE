@@ -183,7 +183,7 @@ export default function LiveTrackingView() {
     <Card>
       <CardHeader
         title='Live tracking'
-        subheader='Adaptive GPS from field reps while checked in. Map updates via live stream when available, with polling fallback.'
+        subheader='Live rep GPS plus optional contextual layers (doctors, pharmacies, routes). Pan/zoom loads assets in view only.'
         action={
           <Stack direction='row' spacing={1} alignItems='center'>
             <Chip

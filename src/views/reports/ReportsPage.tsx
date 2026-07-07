@@ -22,6 +22,8 @@ import ProfitCostManagementSection from '@/views/reports/ProfitCostManagementSec
 import MonthlySummarySection from '@/views/reports/MonthlySummarySection'
 import GeoAnalyticsSection from '@/views/reports/GeoAnalyticsSection'
 import GeoHeatMapSection from '@/views/reports/GeoHeatMapSection'
+import GeoReplaySection from '@/views/reports/GeoReplaySection'
+import GeoTravelAnalyticsSection from '@/views/reports/GeoTravelAnalyticsSection'
 import PageSkeleton from '@/components/skeletons/PageSkeleton'
 import { FIN_LABELS } from '@/constants/financialLabels'
 
@@ -207,6 +209,14 @@ const ReportsPage = () => {
 
           <Grid size={{ xs: 12 }}>
             <GeoAnalyticsSection from={from} to={to} />
+          </Grid>
+
+          <Grid size={{ xs: 12 }}>
+            <GeoTravelAnalyticsSection />
+          </Grid>
+
+          <Grid size={{ xs: 12 }}>
+            <GeoReplaySection />
           </Grid>
 
           <Grid size={{ xs: 12 }}>

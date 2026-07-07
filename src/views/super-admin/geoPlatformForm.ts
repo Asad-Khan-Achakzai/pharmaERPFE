@@ -28,6 +28,7 @@ const FEATURE_LABELS: Record<GeoFeatureKey, string> = {
   liveTracking: 'Rep location sharing (GPS while checked in on mobile)',
   managerLiveMap: 'Manager live map (view reps on web & mobile)',
   doctorMaps: 'Doctor maps',
+  pharmacyMaps: 'Pharmacy maps',
   doctorLocationReviewMaps: 'Doctor location review maps',
   callPointMaps: 'Call point maps',
   attendanceMaps: 'Attendance zone maps',
@@ -55,6 +56,8 @@ const FEATURE_DESCRIPTIONS: Record<GeoFeatureKey, string> = {
     'When enabled, managers can view real-time rep locations on the live map (web Team Live page and mobile manager Live screen). Enabling this also requires rep location sharing. When disabled, live map screens and APIs are hidden.',
   doctorMaps:
     'When enabled, doctor list and detail screens show map pins for doctors with coordinates (web and mobile). When disabled, map views are hidden.',
+  pharmacyMaps:
+    'When enabled, pharmacy list and detail screens show map pins and location picker for pharmacies with coordinates (web). When disabled, pharmacy map views are hidden.',
   doctorLocationReviewMaps:
     'When enabled, admins and managers can review and correct doctor GPS coordinates on the location review map (web). When disabled, that page and API are unavailable.',
   callPointMaps:
@@ -97,6 +100,7 @@ const FEATURE_PLATFORMS: Record<GeoFeatureKey, GeoFeaturePlatform> = {
   liveTracking: 'mobile',
   managerLiveMap: 'both',
   doctorMaps: 'both',
+  pharmacyMaps: 'web',
   doctorLocationReviewMaps: 'web',
   callPointMaps: 'web',
   attendanceMaps: 'web',
@@ -139,7 +143,7 @@ export const GEO_FEATURE_SECTIONS: GeoFeatureSection[] = [
     id: 'entityMaps',
     title: 'Entity & location maps',
     description: 'Map views for doctors, call points, and attendance check-in zones.',
-    keys: ['doctorMaps', 'doctorLocationReviewMaps', 'callPointMaps', 'attendanceMaps']
+    keys: ['doctorMaps', 'pharmacyMaps', 'doctorLocationReviewMaps', 'callPointMaps', 'attendanceMaps']
   },
   {
     id: 'planVisitMaps',
@@ -204,6 +208,9 @@ export function geoPlatformFormFromCompany(company: {
   const gp = company.geoPlatform
   if (gp?.features) {
     base.features = { ...base.features, ...gp.features }
+    if (base.features.doctorMaps && !Object.prototype.hasOwnProperty.call(gp.features, 'pharmacyMaps')) {
+      base.features.pharmacyMaps = true
+    }
   }
   if (gp?.enabled != null) {
     base.enabled = gp.enabled === true

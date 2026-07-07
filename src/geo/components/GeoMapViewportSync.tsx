@@ -1,28 +1,42 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useMap } from '@vis.gl/react-google-maps'
 import type { LatLng } from '@/geo/utils/mapBounds'
+import { fitMapToPoints, shouldApplyViewportFit, type AutoFitMode } from '@/geo/viewport/ViewportPolicy'
 
-/** Re-centers the map when async marker data arrives (defaultCenter only applies on first mount). */
-export function GeoMapViewportSync({ points }: { points: LatLng[] }) {
+type Props = {
+  points: LatLng[]
+  autoFit?: AutoFitMode
+  fitKey?: string
+  maxZoomAfterFit?: number
+  singlePointZoom?: number
+}
+
+export function GeoMapViewportSync({
+  points,
+  autoFit = 'once',
+  fitKey,
+  maxZoomAfterFit = 14,
+  singlePointZoom = 14
+}: Props) {
   const map = useMap()
+  const lastAppliedKeyRef = useRef<string | null>(null)
+  const pointsRef = useRef(points)
+  pointsRef.current = points
 
   useEffect(() => {
-    if (!map || !points.length) return
+    if (!map) return
 
-    if (points.length === 1) {
-      map.setCenter(points[0])
-      map.setZoom(14)
-      return
-    }
+    const pts = pointsRef.current
+    if (!pts.length) return
 
-    const bounds = new google.maps.LatLngBounds()
-    for (const p of points) {
-      bounds.extend(p)
-    }
-    map.fitBounds(bounds, { top: 48, bottom: 48, left: 48, right: 48 })
-  }, [map, points])
+    const key = fitKey ?? String(pts.length)
+    if (!shouldApplyViewportFit(autoFit, key, lastAppliedKeyRef.current)) return
+
+    lastAppliedKeyRef.current = key
+    fitMapToPoints(map, pts, { maxZoomAfterFit, singlePointZoom })
+  }, [map, autoFit, fitKey, maxZoomAfterFit, singlePointZoom, points.length])
 
   return null
 }
