@@ -18,6 +18,7 @@ import { doctorsService } from '@/services/doctors.service'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import {
   type DoctorLookupOption,
+  doctorLookupOptionKey,
   doctorLookupOptionLabel,
   renderDoctorLookupOption
 } from '@/components/lookup/doctorLookupDisplay'
@@ -135,6 +136,7 @@ export default function CheckInPolicySection({ planId, disabled, initial, onSave
             options={doctor ? [doctor] : []}
             value={doctor}
             getOptionLabel={doctorLookupOptionLabel}
+            getOptionKey={doctorLookupOptionKey}
             renderOption={renderDoctorLookupOption}
             onChange={(_e, v) => setDoctor(v)}
             onInputChange={async (_e, q) => {

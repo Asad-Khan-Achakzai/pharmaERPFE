@@ -37,6 +37,9 @@ import { planItemsService } from '@/services/planItems.service'
 import { visitsService } from '@/services/visits.service'
 import { productsService } from '@/services/products.service'
 import { DoctorLookupAutocomplete, type DoctorLookupOption } from '@/components/lookup/DoctorLookupAutocomplete'
+import { coVisitChipLabel, isCoVisitItem, planItemMatchesVisitTab } from '@/utils/coVisitDisplay'
+import { activeVisitsClient, type ActiveVisitRecord } from '@/utils/activeVisitsClient'
+import { getLocalDateISO } from '@/utils/dateLocal'
 import {
   getNextPlanItemId,
   parseTodayExecutionResponse,
@@ -45,6 +48,26 @@ import {
 } from '@/utils/planExecutionPayload'
 
 type ProductOption = { _id: string; name?: string }
+
+type VisitTabKey = 'active' | 'pending' | 'visited' | 'missed'
+
+function formatDuration(startedAt: string): string {
+  const start = new Date(startedAt)
+  if (Number.isNaN(start.getTime())) return '—'
+  const secs = Math.max(0, Math.floor((Date.now() - start.getTime()) / 1000))
+  const mm = String(Math.floor(secs / 60) % 60).padStart(2, '0')
+  const ss = String(secs % 60).padStart(2, '0')
+  const h = Math.floor(secs / 3600)
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+function doctorIdFromItem(it: { doctorId?: { _id?: string } | string } | null | undefined): string {
+  if (!it) return ''
+  const d = it.doctorId
+  if (!d) return ''
+  if (typeof d === 'string') return d
+  return d._id ? String(d._id) : ''
+}
 
 const UNPLANNED_REASONS = [
   { id: 'EMERGENCY', label: 'Emergency' },
@@ -70,7 +93,7 @@ const TodayVisitsPage = () => {
   const canMark = hasPermission('weeklyPlans.markVisit')
   const [execution, setExecution] = useState<TodayExecutionPayload | null>(null)
   const [loading, setLoading] = useState(true)
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => getLocalDateISO())
   const [markOpen, setMarkOpen] = useState(false)
   const [unplannedOpen, setUnplannedOpen] = useState(false)
   const [activeItem, setActiveItem] = useState<any | null>(null)
@@ -92,6 +115,20 @@ const TodayVisitsPage = () => {
   const [unplannedPrimary, setUnplannedPrimary] = useState('')
   const [unplannedSamplesQty, setUnplannedSamplesQty] = useState(0)
   const [unplannedFollowUp, setUnplannedFollowUp] = useState('')
+  const [visitTab, setVisitTab] = useState<VisitTabKey>('pending')
+  const [activeDrafts, setActiveDrafts] = useState<ActiveVisitRecord[]>([])
+  const [visitStarted, setVisitStarted] = useState(false)
+  const [clientUuid, setClientUuid] = useState('')
+  const [startedAt, setStartedAt] = useState('')
+
+  const refreshActiveDrafts = useCallback(async () => {
+    try {
+      const items = await activeVisitsClient.list()
+      setActiveDrafts(items)
+    } catch {
+      setActiveDrafts(activeVisitsClient.readCache())
+    }
+  }, [])
 
   const items = execution?.items ?? []
   const summary: TodayExecutionSummary | null = execution?.summary ?? null
@@ -115,19 +152,37 @@ const TodayVisitsPage = () => {
 
   useEffect(() => {
     void load()
-  }, [load])
+    void refreshActiveDrafts()
+  }, [load, refreshActiveDrafts])
 
-  const loadProducts = useCallback(async () => {
-    try {
-      const r = await productsService.lookup({ limit: 40, isActive: 'true' })
-      setProductOptions(((r.data as { data?: ProductOption[] })?.data || []) as ProductOption[])
-    } catch {
-      setProductOptions([])
+  useEffect(() => {
+    if (visitTab === 'active') void refreshActiveDrafts()
+  }, [visitTab, refreshActiveDrafts])
+
+  const visitCounts = useMemo(
+    () => ({
+      active: activeDrafts.length,
+      pending: items.filter(it => planItemMatchesVisitTab(it as any, 'pending')).length,
+      visited: items.filter(it => planItemMatchesVisitTab(it as any, 'visited')).length,
+      missed: items.filter(it => planItemMatchesVisitTab(it as any, 'missed')).length
+    }),
+    [items, activeDrafts.length]
+  )
+
+  const filteredItems = useMemo(
+    () => (visitTab === 'active' ? [] : items.filter(it => planItemMatchesVisitTab(it as any, visitTab))),
+    [items, visitTab]
+  )
+
+  const draftByPlanItemId = useMemo(() => {
+    const m = new Map<string, ActiveVisitRecord>()
+    for (const d of activeDrafts) {
+      if (d.planItemId) m.set(d.planItemId, d)
     }
-  }, [])
+    return m
+  }, [activeDrafts])
 
-  const openMark = (i: any) => {
-    setActiveItem(i)
+  const resetMarkForm = useCallback(() => {
     setNotes('')
     setOrderTaken(false)
     setPrimaryProductId('')
@@ -135,8 +190,152 @@ const TodayVisitsPage = () => {
     setFollowUpDate('')
     setOutOfOrderReason('')
     setMarkProducts([])
-    void loadProducts()
+    setVisitStarted(false)
+    setClientUuid('')
+    setStartedAt('')
+  }, [])
+
+  const applyDraftForm = useCallback((draft: ActiveVisitRecord, options: ProductOption[]) => {
+    const form = draft.payload || {}
+    setNotes(form.notes ?? '')
+    setOrderTaken(form.orderTaken ?? false)
+    setPrimaryProductId(form.primaryProductId ?? '')
+    setSamplesQty(form.samplesQty ?? 0)
+    setFollowUpDate(form.followUpDate ?? '')
+    setOutOfOrderReason(form.outOfOrderReason ?? '')
+    const prods = (form.productIds ?? [])
+      .map(id => options.find(p => String(p._id) === id))
+      .filter(Boolean) as ProductOption[]
+    setMarkProducts(prods)
+    setClientUuid(draft.clientUuid)
+    setStartedAt(draft.startedAt)
+    setVisitStarted(true)
+  }, [])
+
+  const persistMarkDraft = useCallback(async () => {
+    if (!visitStarted || !activeItem || !clientUuid) return
+    const doctorId = doctorIdFromItem(activeItem)
+    if (!doctorId) return
+    const saved = await activeVisitsClient.upsert(
+      {
+        clientUuid,
+        planItemId: String(activeItem._id),
+        doctorId,
+        startedAt: startedAt || new Date().toISOString(),
+        visitStarted: true,
+        payload: {
+          notes,
+          orderTaken,
+          productIds: markProducts.map(p => String(p._id)),
+          primaryProductId,
+          samplesQty,
+          followUpDate,
+          outOfOrderReason,
+          visitStarted: true
+        }
+      },
+      { doctorName: activeItem.doctorId?.name }
+    )
+    setActiveDrafts(prev => {
+      const rest = prev.filter(r => r.planItemId !== saved.planItemId)
+      return [saved, ...rest]
+    })
+  }, [
+    visitStarted,
+    activeItem,
+    clientUuid,
+    startedAt,
+    notes,
+    orderTaken,
+    markProducts,
+    primaryProductId,
+    samplesQty,
+    followUpDate,
+    outOfOrderReason,
+    refreshActiveDrafts
+  ])
+
+  useEffect(() => {
+    if (!markOpen || !visitStarted) return
+    void persistMarkDraft()
+  }, [markOpen, visitStarted, persistMarkDraft])
+
+  const loadProducts = useCallback(async (): Promise<ProductOption[]> => {
+    try {
+      const r = await productsService.lookup({ limit: 40, isActive: 'true' })
+      const opts = (((r.data as { data?: ProductOption[] })?.data || []) as ProductOption[])
+      setProductOptions(opts)
+      return opts
+    } catch {
+      setProductOptions([])
+      return []
+    }
+  }, [])
+
+  const openMark = async (i: any) => {
+    setActiveItem(i)
+    const options = await loadProducts()
+    const existing =
+      activeVisitsClient.findByPlanItemId(activeDrafts, String(i._id)) ??
+      (await activeVisitsClient.list()).find(r => r.planItemId === String(i._id)) ??
+      null
+    if (existing?.visitStarted) {
+      applyDraftForm(existing, options)
+    } else {
+      resetMarkForm()
+      setClientUuid(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()))
+    }
     setMarkOpen(true)
+  }
+
+  const handleStartVisit = async () => {
+    if (!activeItem) return
+    const doctorId = doctorIdFromItem(activeItem)
+    if (!doctorId) {
+      showApiError(null, 'This visit has no doctor — cannot start.')
+      return
+    }
+    const at = new Date().toISOString()
+    const uuid =
+      clientUuid ||
+      (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()))
+    if (!clientUuid) setClientUuid(uuid)
+    setStartedAt(at)
+    setVisitStarted(true)
+    try {
+      const saved = await activeVisitsClient.upsert(
+        {
+          clientUuid: uuid,
+          planItemId: String(activeItem._id),
+          doctorId,
+          startedAt: at,
+          visitStarted: true,
+          payload: {
+            visitStarted: true,
+            notes: '',
+            orderTaken: false,
+            productIds: [],
+            primaryProductId: '',
+            samplesQty: 0,
+            followUpDate: '',
+            outOfOrderReason: ''
+          }
+        },
+        { doctorName: activeItem.doctorId?.name }
+      )
+      setActiveDrafts(prev => {
+        const rest = prev.filter(r => r.planItemId !== saved.planItemId)
+        return [saved, ...rest]
+      })
+    } catch (e) {
+      showApiError(e, 'Could not start visit')
+    }
+  }
+
+  const closeMarkDialog = () => {
+    if (visitStarted) void persistMarkDraft()
+    setMarkOpen(false)
+    void refreshActiveDrafts()
   }
 
   const submitMark = async () => {
@@ -162,7 +361,10 @@ const TodayVisitsPage = () => {
         outOfOrderReason: isOutOfSequence ? outOfOrderReason.trim() : undefined
       })
       showSuccess('Visit recorded')
+      if (clientUuid) await activeVisitsClient.clear(clientUuid)
       setMarkOpen(false)
+      resetMarkForm()
+      await refreshActiveDrafts()
       await load()
     } catch (e) {
       showApiError(e, 'Could not record visit')
@@ -264,6 +466,20 @@ const TodayVisitsPage = () => {
               fullWidth
             />
 
+            <ToggleButtonGroup
+              exclusive
+              value={visitTab}
+              onChange={(_e, v) => v && setVisitTab(v as VisitTabKey)}
+              size='small'
+              className='mbe-4'
+              fullWidth
+            >
+              <ToggleButton value='active'>Active ({visitCounts.active})</ToggleButton>
+              <ToggleButton value='pending'>Planned ({visitCounts.pending})</ToggleButton>
+              <ToggleButton value='visited'>Done ({visitCounts.visited})</ToggleButton>
+              <ToggleButton value='missed'>Missed ({visitCounts.missed})</ToggleButton>
+            </ToggleButtonGroup>
+
             {preview && dayState === 'COMPLETED' && (
               <Paper variant='outlined' className='mbe-4' sx={{ p: 2, borderRadius: 2 }}>
                 <Typography variant='subtitle2' fontWeight={700} className='mbe-2'>
@@ -294,7 +510,7 @@ const TodayVisitsPage = () => {
               </Box>
             )}
 
-            {canMark && nextItem && nextItem.status === 'PENDING' && (
+            {canMark && visitTab === 'pending' && nextItem && nextItem.status === 'PENDING' && !draftByPlanItemId.has(String(nextItem._id)) && (
               <Button
                 fullWidth
                 variant='contained'
@@ -302,25 +518,80 @@ const TodayVisitsPage = () => {
                 size='large'
                 className='mbe-4'
                 sx={{ minHeight: 56, fontSize: '1.05rem' }}
-                onClick={() => openMark(nextItem)}
+                onClick={() => void openMark(nextItem)}
               >
                 Start visit · #{nextItem.sequenceOrder}{' '}
                 {nextItem.type === 'DOCTOR_VISIT' ? nextItem.doctorId?.name || 'Doctor' : nextItem.title}
               </Button>
             )}
 
-            {loading ? (
+            {loading && visitTab !== 'active' ? (
               <div className='flex justify-center p-8'>
                 <CircularProgress />
               </div>
-            ) : items.length === 0 ? (
+            ) : visitTab === 'active' ? (
+              activeDrafts.length === 0 ? (
+                <Typography color='text.secondary' className='p-6 text-center'>
+                  No active visits. Start a planned visit and you can leave and resume it here.
+                </Typography>
+              ) : (
+                <Stack spacing={2}>
+                  {activeDrafts.map(draft => {
+                    const linked = draft.planItemId
+                      ? items.find(it => String(it._id) === draft.planItemId)
+                      : null
+                    const label =
+                      draft.doctorName ||
+                      linked?.doctorId?.name ||
+                      (linked?.type === 'DOCTOR_VISIT' ? 'Doctor visit' : linked?.title) ||
+                      'Visit in progress'
+                    return (
+                      <Paper key={draft.clientUuid} variant='outlined' sx={{ p: 2, borderRadius: 2 }}>
+                        <Stack direction='row' justifyContent='space-between' alignItems='center' flexWrap='wrap' gap={1}>
+                          <Box>
+                            <Typography variant='subtitle1' fontWeight={700}>
+                              {label}
+                            </Typography>
+                            <Typography variant='body2' color='text.secondary'>
+                              In progress · {formatDuration(draft.startedAt)}
+                            </Typography>
+                          </Box>
+                          <Chip size='small' color='primary' label='IN PROGRESS' />
+                        </Stack>
+                        {linked && canMark ? (
+                          <Button
+                            fullWidth
+                            variant='contained'
+                            className='mts-3'
+                            sx={{ minHeight: 48 }}
+                            onClick={() => void openMark(linked)}
+                          >
+                            Resume visit
+                          </Button>
+                        ) : null}
+                      </Paper>
+                    )
+                  })}
+                </Stack>
+              )
+            ) : filteredItems.length === 0 ? (
               <Typography color='text.secondary' className='p-6 text-center'>
-                No planned activities for this date.
+                {visitTab === 'pending'
+                  ? 'No planned activities for this date.'
+                  : visitTab === 'visited'
+                    ? 'No completed visits for this date.'
+                    : 'No missed visits for this date.'}
               </Typography>
             ) : (
               <Stack spacing={2}>
-                {items.map((it: any) => {
-                  const isNext = nextPlanItemId != null && String(it._id) === nextPlanItemId && it.status === 'PENDING'
+                {filteredItems.map((it: any) => {
+                  const isParticipant = it.coVisitRole === 'PARTICIPANT'
+                  const canExecuteItem =
+                    isParticipant
+                      ? it.myLifecycleStatus !== 'COMPLETED' && it.myLifecycleStatus !== 'MISSED' && it.myLifecycleStatus !== 'DECLINED'
+                      : it.status === 'PENDING'
+                  const isNext = !isParticipant && nextPlanItemId != null && String(it._id) === nextPlanItemId && it.status === 'PENDING'
+                  const activeDraft = draftByPlanItemId.get(String(it._id))
                   return (
                     <Paper
                       key={it._id}
@@ -334,11 +605,29 @@ const TodayVisitsPage = () => {
                       <Stack spacing={1.5}>
                         <Stack direction='row' alignItems='center' justifyContent='space-between' flexWrap='wrap' gap={1}>
                           <Stack direction='row' alignItems='center' gap={1} flexWrap='wrap'>
-                            <Typography variant='h5' component='span' fontWeight={800} color={isNext ? 'primary' : 'text.primary'}>
-                              #{it.sequenceOrder ?? '—'}
-                            </Typography>
-                            <Chip size='medium' label={it.status} color={statusChip(it.status)} variant='tonal' />
+                            {!isParticipant ? (
+                              <Typography variant='h5' component='span' fontWeight={800} color={isNext ? 'primary' : 'text.primary'}>
+                                #{it.sequenceOrder ?? '—'}
+                              </Typography>
+                            ) : (
+                              <Chip size='small' color='info' variant='tonal' label='Co-visit' />
+                            )}
+                            {!isParticipant && isCoVisitItem(it) ? (
+                              <Chip
+                                size='small'
+                                color='info'
+                                variant='tonal'
+                                label={coVisitChipLabel(it)}
+                              />
+                            ) : null}
+                            <Chip
+                              size='medium'
+                              label={isParticipant ? it.myLifecycleStatus || 'PARTICIPANT' : it.status}
+                              color={statusChip(isParticipant ? (it.myLifecycleStatus === 'COMPLETED' ? 'VISITED' : it.status) : it.status)}
+                              variant='tonal'
+                            />
                             {isNext ? <Chip size='small' label='NEXT' color='primary' /> : null}
+                            {activeDraft ? <Chip size='small' label='IN PROGRESS' color='primary' variant='tonal' /> : null}
                           </Stack>
                           {it.plannedTime ? (
                             <Typography variant='caption' color='text.secondary'>
@@ -349,17 +638,22 @@ const TodayVisitsPage = () => {
                         <Typography variant='h6' component='p' className='text-lg'>
                           {it.type === 'DOCTOR_VISIT' ? it.doctorId?.name || 'Doctor visit' : it.title || 'Other task'}
                         </Typography>
+                        {isCoVisitItem(it) ? (
+                          <Typography variant='body2' color='info.main' fontWeight={600}>
+                            {coVisitChipLabel(it)}
+                          </Typography>
+                        ) : null}
                         {it.isUnplanned ? <Chip size='small' label='Unplanned' variant='outlined' /> : null}
-                        {canMark && it.status === 'PENDING' ? (
+                        {canMark && canExecuteItem ? (
                           <Button
                             fullWidth
                             variant='contained'
-                            color='success'
+                            color={activeDraft ? 'primary' : 'success'}
                             size='large'
                             sx={{ minHeight: 52 }}
-                            onClick={() => openMark(it)}
+                            onClick={() => void openMark(it)}
                           >
-                            Mark visit
+                            {activeDraft ? 'Resume visit' : isParticipant ? 'Join visit' : 'Start visit'}
                           </Button>
                         ) : null}
                       </Stack>
@@ -376,16 +670,33 @@ const TodayVisitsPage = () => {
         </Card>
       </Grid>
 
-      <Dialog open={markOpen} onClose={() => setMarkOpen(false)} fullWidth fullScreen>
+      <Dialog open={markOpen} onClose={closeMarkDialog} fullWidth fullScreen>
         <DialogTitle className='flex items-center justify-between gap-2'>
-          <span>Mark visit</span>
-          <IconButton aria-label='Close' onClick={() => setMarkOpen(false)} size='small'>
+          <span>{visitStarted ? 'Visit in progress' : 'Start visit'}</span>
+          <IconButton aria-label='Close' onClick={closeMarkDialog} size='small'>
             <i className='tabler-x' />
           </IconButton>
         </DialogTitle>
         <DialogContent className='flex flex-col gap-3 pbs-4'>
+          {!visitStarted ? (
+            <>
+              <Typography variant='body1' fontWeight={600}>
+                {activeItem?.type === 'DOCTOR_VISIT'
+                  ? activeItem?.doctorId?.name || 'Doctor visit'
+                  : activeItem?.title || 'Visit'}
+              </Typography>
+              <Typography variant='body2' color='text.secondary'>
+                Tap Start visit when you are with the doctor. You can close this screen and resume later from the Active
+                tab.
+              </Typography>
+              <Button variant='contained' size='large' sx={{ minHeight: 52 }} onClick={() => void handleStartVisit()}>
+                Start visit
+              </Button>
+            </>
+          ) : (
+            <>
           <Typography variant='body2' color='text.secondary'>
-            Tap products, set primary, adjust samples — optional notes and follow-up.
+            In progress · {startedAt ? formatDuration(startedAt) : '00:00'} — changes save automatically.
           </Typography>
           <Box>
             <Typography variant='caption' color='text.secondary' display='block' className='mbe-1'>
@@ -507,15 +818,19 @@ const TodayVisitsPage = () => {
               />
             </>
           ) : null}
+            </>
+          )}
         </DialogContent>
+        {visitStarted ? (
         <DialogActions className='pbs-4 p-4'>
-          <Button onClick={() => setMarkOpen(false)} sx={{ minHeight: 48 }} fullWidth variant='outlined'>
-            Cancel
+          <Button onClick={closeMarkDialog} sx={{ minHeight: 48 }} fullWidth variant='outlined'>
+            Save &amp; continue later
           </Button>
           <Button variant='contained' onClick={() => void submitMark()} disabled={submitting} sx={{ minHeight: 48 }} fullWidth>
-            {submitting ? 'Saving…' : 'Save visit'}
+            {submitting ? 'Saving…' : 'Complete visit'}
           </Button>
         </DialogActions>
+        ) : null}
       </Dialog>
 
       <Dialog open={unplannedOpen} onClose={() => setUnplannedOpen(false)} fullWidth fullScreen>

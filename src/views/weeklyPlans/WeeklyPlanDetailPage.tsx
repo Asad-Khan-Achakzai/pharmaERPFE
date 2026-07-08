@@ -33,8 +33,10 @@ import { callPointsService, type CallPoint } from '@/services/callPoints.service
 import { cpByDayToIds, dayKeyForDate, type CpByDay } from '@/views/weeklyPlans/planCpDays'
 import tableStyles from '@core/styles/table.module.css'
 import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
+import { coVisitChipLabel, isCoVisitItem } from '@/utils/coVisitDisplay'
 import {
   type DoctorLookupOption,
+  doctorLookupOptionKey,
   doctorLookupOptionLabel,
   renderDoctorLookupOption
 } from '@/components/lookup/doctorLookupDisplay'
@@ -42,6 +44,7 @@ import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
 import { WeeklyRouteScene } from '@/geo/scenes/WeeklyRouteScene'
 import { VisitContextScene } from '@/geo/scenes/VisitContextScene'
 import { optimizeGeoRoute } from '@/geo/services/geo.service'
+import CoVisitParticipantsField, { type CoVisitParticipantOption } from '@/views/weeklyPlans/CoVisitParticipantsField'
 
 type DayPlan = {
   date: string
@@ -50,6 +53,8 @@ type DayPlan = {
   doctorNotes: string
   plannedTime: string
   otherTasks: { title: string; notes: string }[]
+  /** Co-visit partners keyed by doctor id — each visit can have its own partners. */
+  coVisitByDoctor: Record<string, CoVisitParticipantOption[]>
 }
 
 const emptyDayPlan = (): DayPlan => ({
@@ -58,11 +63,13 @@ const emptyDayPlan = (): DayPlan => ({
   selectedDoctors: [],
   doctorNotes: '',
   plannedTime: '',
-  otherTasks: []
+  otherTasks: [],
+  coVisitByDoctor: {}
 })
 
 /** Normalize plan item date to YYYY-MM-DD for grouping with date inputs */
-function planItemToYmd(raw: unknown): string {
+function planItemToYmd(raw: unknown, dateYmd?: string): string {
+  if (dateYmd && /^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) return dateYmd
   if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) return raw.trim()
   const d = raw instanceof Date ? raw : new Date(String(raw))
   if (Number.isNaN(d.getTime())) return ''
@@ -174,6 +181,7 @@ function DoctorMultiSelectField({
       loading={loading}
       filterOptions={x => x}
       getOptionLabel={doctorLookupOptionLabel}
+      getOptionKey={doctorLookupOptionKey}
       renderOption={renderDoctorLookupOption}
       isOptionEqualToValue={(a, b) => String(a?._id) === String(b?._id)}
       onChange={(_e, next) => onChange(dedupeDoctors(next))}
@@ -223,6 +231,20 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
   const [cps, setCps] = useState<CallPoint[]>([])
   const [routeMapDate, setRouteMapDate] = useState('')
   const [routeOptimizing, setRouteOptimizing] = useState(false)
+  const [partnersDialog, setPartnersDialog] = useState<{
+    planItemId: string
+    dateYmd: string
+    doctorId: string
+    doctorName: string
+    plannedTime?: string
+    participants: CoVisitParticipantOption[]
+  } | null>(null)
+  const [partnersSaving, setPartnersSaving] = useState(false)
+
+  const planOwnerUserId = useMemo(() => {
+    if (!plan) return user?._id
+    return plan.medicalRepId?._id ? String(plan.medicalRepId._id) : plan.medicalRepId ? String(plan.medicalRepId) : user?._id
+  }, [plan, user?._id])
 
   useEffect(() => {
     let active = true
@@ -282,7 +304,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
     const items: any[] = plan?.planItems || []
     const map = new Map<string, any[]>()
     for (const it of items) {
-      const ymd = planItemToYmd(it.date)
+      const ymd = planItemToYmd(it.date, it.dateYmd)
       if (!ymd) continue
       const list = map.get(ymd) || []
       list.push(it)
@@ -338,6 +360,36 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
   const updateDay = useCallback((index: number, patch: Partial<DayPlan>) => {
     setDayPlans(prev => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)))
   }, [])
+
+  const updateDayDoctors = useCallback((dayIndex: number, nextDoctors: DoctorLookupOption[]) => {
+    setDayPlans(prev =>
+      prev.map((d, i) => {
+        if (i !== dayIndex) return d
+        const doctors = dedupeDoctors(nextDoctors)
+        const nextIds = new Set(doctors.map(doc => String(doc._id)))
+        const coVisitByDoctor: Record<string, CoVisitParticipantOption[]> = {}
+        for (const id of nextIds) {
+          if (d.coVisitByDoctor[id]?.length) coVisitByDoctor[id] = d.coVisitByDoctor[id]
+        }
+        return { ...d, selectedDoctors: doctors, coVisitByDoctor }
+      })
+    )
+  }, [])
+
+  const updateCoVisitForDoctor = useCallback(
+    (dayIndex: number, doctorId: string, participants: CoVisitParticipantOption[]) => {
+      setDayPlans(prev =>
+        prev.map((d, i) => {
+          if (i !== dayIndex) return d
+          return {
+            ...d,
+            coVisitByDoctor: { ...d.coVisitByDoctor, [doctorId]: participants }
+          }
+        })
+      )
+    },
+    []
+  )
 
   const updateDayTask = useCallback((dayIndex: number, taskIndex: number, patch: Partial<{ title: string; notes: string }>) => {
     setDayPlans(prev =>
@@ -432,6 +484,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       title?: string
       notes?: string
       plannedTime?: string
+      participantUserIds?: string[]
     }> = []
 
     for (const day of filledDays) {
@@ -440,12 +493,15 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       const pt = day.plannedTime?.trim() || undefined
 
       for (const doc of doctors) {
+        const docId = String(doc._id)
+        const partners = day.coVisitByDoctor[docId] || []
         items.push({
           date: day.date,
           type: 'DOCTOR_VISIT',
-          doctorId: String(doc._id),
+          doctorId: docId,
           notes: notesCommon,
-          plannedTime: pt
+          plannedTime: pt,
+          ...(partners.length ? { participantUserIds: partners.map(p => String(p._id)) } : {})
         })
       }
 
@@ -553,6 +609,42 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       showApiError(e, 'Failed to update status')
     } finally {
       setStatusSavingId(null)
+    }
+  }
+
+  const openPartnersDialog = (it: any, dateYmd: string) => {
+    const doctorId = it.doctorId?._id ? String(it.doctorId._id) : it.doctorId ? String(it.doctorId) : ''
+    if (!doctorId) return
+    const participants: CoVisitParticipantOption[] = (it.participants || []).map((p: any) => ({
+      _id: String(p.employeeId?._id ?? p.employeeId ?? p._id),
+      name: p.name || p.employeeId?.name || 'Team member',
+      email: p.email || p.employeeId?.email
+    }))
+    setPartnersDialog({
+      planItemId: String(it._id),
+      dateYmd,
+      doctorId,
+      doctorName: it.doctorId?.name || 'Doctor',
+      plannedTime: it.plannedTime || undefined,
+      participants
+    })
+  }
+
+  const handleSavePartners = async () => {
+    if (!partnersDialog) return
+    setPartnersSaving(true)
+    try {
+      await planItemsService.update(partnersDialog.planItemId, {
+        participantUserIds: partnersDialog.participants.map(p => String(p._id))
+      })
+      showSuccess('Co-Visit partners updated')
+      setPartnersDialog(null)
+      const planRes = await weeklyPlansService.getById(params.id)
+      setPlan(planRes.data.data)
+    } catch (e) {
+      showApiError(e, 'Failed to update co-visit partners')
+    } finally {
+      setPartnersSaving(false)
     }
   }
 
@@ -895,6 +987,15 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                                   <td>{it.type === 'DOCTOR_VISIT' ? 'Doctor visit' : 'Other task'}</td>
                                   <td>
                                     {it.type === 'DOCTOR_VISIT' ? it.doctorId?.name || '—' : it.title || '—'}
+                                    {(it.coVisit || (it.participants && it.participants.length > 0)) ? (
+                                      <Chip
+                                        size='small'
+                                        color='info'
+                                        variant='tonal'
+                                        label={coVisitChipLabel(it)}
+                                        className='mis-1'
+                                      />
+                                    ) : null}
                                     {it.notes ? (
                                       <Typography variant='caption' display='block' color='text.secondary'>
                                         {it.notes}
@@ -902,22 +1003,33 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                                     ) : null}
                                   </td>
                                   <td>
-                                    {canEdit ? (
-                                      <CustomTextField
-                                        select
-                                        size='small'
-                                        value={it.status}
-                                        onChange={e => handleStatusChange(it._id, e.target.value)}
-                                        disabled={statusSavingId === it._id}
-                                        sx={{ minWidth: 140 }}
-                                      >
-                                        <MenuItem value='PENDING'>Pending</MenuItem>
-                                        <MenuItem value='VISITED'>Visited</MenuItem>
-                                        <MenuItem value='MISSED'>Missed</MenuItem>
-                                      </CustomTextField>
-                                    ) : (
-                                      <Chip size='small' label={it.status} variant='tonal' />
-                                    )}
+                                    <Stack direction='row' spacing={1} alignItems='center' flexWrap='wrap'>
+                                      {canEdit ? (
+                                        <CustomTextField
+                                          select
+                                          size='small'
+                                          value={it.status}
+                                          onChange={e => handleStatusChange(it._id, e.target.value)}
+                                          disabled={statusSavingId === it._id}
+                                          sx={{ minWidth: 140 }}
+                                        >
+                                          <MenuItem value='PENDING'>Pending</MenuItem>
+                                          <MenuItem value='VISITED'>Visited</MenuItem>
+                                          <MenuItem value='MISSED'>Missed</MenuItem>
+                                        </CustomTextField>
+                                      ) : (
+                                        <Chip size='small' label={it.status} variant='tonal' />
+                                      )}
+                                      {canEdit && it.type === 'DOCTOR_VISIT' ? (
+                                        <Button
+                                          size='small'
+                                          variant='tonal'
+                                          onClick={() => openPartnersDialog(it, date)}
+                                        >
+                                          Partners
+                                        </Button>
+                                      ) : null}
+                                    </Stack>
                                   </td>
                                 </tr>
                                 {it.status === 'IN_PROGRESS' ? (
@@ -1074,10 +1186,36 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                           <Grid size={{ xs: 12 }}>
                             <DoctorMultiSelectField
                               value={day.selectedDoctors}
-                              onChange={next => updateDay(dayIndex, { selectedDoctors: next })}
-                              helperText='Applied to each selected doctor for this day'
+                              onChange={next => updateDayDoctors(dayIndex, next)}
+                              helperText='Select doctors for this day — add co-visit partners per doctor below'
                             />
                           </Grid>
+                          {doctors.length > 0 ? (
+                            <Grid size={{ xs: 12 }}>
+                              <Typography variant='subtitle2' color='text.secondary' className='mbe-2'>
+                                Co-Visit partners (per doctor)
+                              </Typography>
+                              <Stack spacing={2}>
+                                {doctors.map(doc => {
+                                  const docId = String(doc._id)
+                                  return (
+                                    <Paper key={docId} variant='outlined' className='p-3'>
+                                      <CoVisitParticipantsField
+                                        value={day.coVisitByDoctor[docId] || []}
+                                        onChange={next => updateCoVisitForDoctor(dayIndex, docId, next)}
+                                        date={day.date}
+                                        doctorId={docId}
+                                        doctorName={doc.name || 'Doctor'}
+                                        plannedTime={day.plannedTime}
+                                        ownerUserId={planOwnerUserId}
+                                        disabled={!canEdit}
+                                      />
+                                    </Paper>
+                                  )
+                                })}
+                              </Stack>
+                            </Grid>
+                          ) : null}
                           <Grid size={{ xs: 12 }}>
                             <CustomTextField
                               fullWidth
@@ -1199,6 +1337,34 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
             onClick={() => void handleReject()}
           >
             {approvalSaving === 'reject' ? 'Rejecting…' : 'Reject plan'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(partnersDialog)} onClose={() => !partnersSaving && setPartnersDialog(null)} fullWidth maxWidth='sm'>
+        <DialogTitle>Co-Visit partners</DialogTitle>
+        <DialogContent>
+          {partnersDialog ? (
+            <CoVisitParticipantsField
+              value={partnersDialog.participants}
+              onChange={next =>
+                setPartnersDialog(prev => (prev ? { ...prev, participants: next } : prev))
+              }
+              date={partnersDialog.dateYmd}
+              doctorId={partnersDialog.doctorId}
+              doctorName={partnersDialog.doctorName}
+              plannedTime={partnersDialog.plannedTime}
+              ownerUserId={planOwnerUserId}
+              excludePlanItemId={partnersDialog.planItemId}
+            />
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPartnersDialog(null)} disabled={partnersSaving}>
+            Cancel
+          </Button>
+          <Button variant='contained' onClick={() => void handleSavePartners()} disabled={partnersSaving}>
+            {partnersSaving ? 'Saving…' : 'Save partners'}
           </Button>
         </DialogActions>
       </Dialog>

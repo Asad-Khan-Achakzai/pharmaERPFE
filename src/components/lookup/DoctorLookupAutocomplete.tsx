@@ -4,6 +4,7 @@ import { LookupAutocomplete, type LookupAutocompleteProps } from '@/components/l
 import { doctorsService } from '@/services/doctors.service'
 import {
   type DoctorLookupOption,
+  doctorLookupOptionKey,
   doctorLookupOptionLabel,
   renderDoctorLookupOption
 } from '@/components/lookup/doctorLookupDisplay'
@@ -42,6 +43,7 @@ export function DoctorLookupAutocomplete({
       {...rest}
       placeholder={placeholder}
       getOptionLabel={doctorLookupOptionLabel}
+      getOptionKey={doctorLookupOptionKey}
       renderOption={renderDoctorLookupOption}
       fetchOptions={search =>
         doctorsService

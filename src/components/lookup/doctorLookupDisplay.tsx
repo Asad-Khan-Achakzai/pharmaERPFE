@@ -39,15 +39,20 @@ export function doctorLookupOptionLabel(d: DoctorLookupOption): string {
   return `${name} — ${meta.join(' · ')}`
 }
 
+/** Stable Autocomplete key — labels can repeat when doctors share name + brick. */
+export function doctorLookupOptionKey(d: DoctorLookupOption): string {
+  return String(d._id)
+}
+
 export function renderDoctorLookupOption(
   props: HTMLAttributes<HTMLLIElement> & { key?: Key },
   option: DoctorLookupOption,
   _state: AutocompleteRenderOptionState
 ) {
-  const { key, ...liProps } = props
+  const { key: _muiKey, ...liProps } = props
   const secondary = doctorLookupSecondaryParts(option)
   return (
-    <li key={key ?? option._id} {...liProps}>
+    <li key={doctorLookupOptionKey(option)} {...liProps}>
       <Box sx={{ py: 0.5, width: '100%', overflow: 'hidden' }}>
         <Typography variant='body2' fontWeight={600} noWrap={false}>
           {option.name?.trim() || '—'}
