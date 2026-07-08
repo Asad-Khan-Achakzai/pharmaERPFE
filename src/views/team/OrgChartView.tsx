@@ -16,6 +16,9 @@ import { usersService } from '@/services/users.service'
 import { reportsService } from '@/services/reports.service'
 import { showApiError } from '@/utils/apiErrors'
 import { parseOverviewPayload } from '@/utils/mrepOverviewUtils'
+import { formatTerritoryCoverageLabel } from '@/utils/formatTerritoryCoverageLabel'
+
+type TerritoryRef = { _id: string; name: string; code?: string | null; kind: string }
 
 type TeamUser = {
   _id: string
@@ -25,7 +28,8 @@ type TeamUser = {
   employeeCode?: string | null
   roleId?: { name?: string; code?: string } | null
   managerId?: { _id: string; name: string; email?: string } | string | null
-  territoryId?: { _id: string; name: string; code?: string | null; kind: string } | string | null
+  territoryId?: TerritoryRef | string | null
+  coverageTerritoryIds?: Array<TerritoryRef | string> | null
 }
 
 type TreeNode = TeamUser & { children: TreeNode[] }
@@ -69,9 +73,13 @@ function OrgNode({
   kpiByRep: Map<string, { coverage: number | null; teamSize: number | null; isManager: boolean }>
 }) {
   const kpi = kpiByRep.get(node._id)
+  const roleCode = node.roleId?.code || ''
+  const kindHint = roleCode === 'DEFAULT_ASM' ? 'AREA' : roleCode === 'DEFAULT_RM' ? 'ZONE' : undefined
   const ter =
     node.territoryId && typeof node.territoryId === 'object'
-      ? `${node.territoryId.name}${node.territoryId.code ? ` (${node.territoryId.code})` : ''}`
+      ? formatTerritoryCoverageLabel(node.territoryId, node.coverageTerritoryIds, {
+          kind: kindHint as 'AREA' | 'ZONE' | undefined
+        })
       : '—'
 
   return (

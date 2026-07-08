@@ -23,7 +23,10 @@ import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { TableListSearchField, useDebouncedSearch } from '@/components/standard-list-toolbar'
 import { usersService } from '@/services/users.service'
 import { territoriesService, type Territory } from '@/services/territories.service'
+import { formatTerritoryCoverageLabel } from '@/utils/formatTerritoryCoverageLabel'
 import tableStyles from '@core/styles/table.module.css'
+
+type TerritoryRef = { _id: string; name: string; code?: string | null; kind: string }
 
 type TeamUser = {
   _id: string
@@ -33,7 +36,8 @@ type TeamUser = {
   employeeCode?: string | null
   roleId?: { _id: string; name: string; code: string } | null
   managerId?: { _id: string; name: string; email: string } | string | null
-  territoryId?: { _id: string; name: string; code?: string | null; kind: string } | string | null
+  territoryId?: TerritoryRef | string | null
+  coverageTerritoryIds?: Array<TerritoryRef | string> | null
 }
 
 type AssignableUser = { _id: string; name: string; email: string; role?: string }
@@ -187,6 +191,14 @@ const TeamPage = () => {
                 data.map(u => {
                   const mgr = typeof u.managerId === 'object' && u.managerId ? u.managerId : null
                   const ter = typeof u.territoryId === 'object' && u.territoryId ? u.territoryId : null
+                  const roleCode = u.roleId?.code || ''
+                  const kindHint =
+                    roleCode === 'DEFAULT_ASM' ? 'AREA' : roleCode === 'DEFAULT_RM' ? 'ZONE' : undefined
+                  const terLabel = ter
+                    ? formatTerritoryCoverageLabel(ter, u.coverageTerritoryIds, {
+                        kind: kindHint as 'AREA' | 'ZONE' | undefined
+                      })
+                    : null
                   return (
                     <tr key={u._id}>
                       <td>
@@ -203,12 +215,8 @@ const TeamPage = () => {
                       </td>
                       <td>{mgr ? mgr.name : <Typography color='text.disabled'>—</Typography>}</td>
                       <td>
-                        {ter ? (
-                          <Chip
-                            size='small'
-                            variant='outlined'
-                            label={`${ter.name}${ter.code ? ` (${ter.code})` : ''}`}
-                          />
+                        {terLabel ? (
+                          <Chip size='small' variant='outlined' label={terLabel} />
                         ) : (
                           <Typography color='text.disabled'>—</Typography>
                         )}

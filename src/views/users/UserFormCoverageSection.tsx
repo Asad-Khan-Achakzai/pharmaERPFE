@@ -23,6 +23,7 @@ import { territoriesService, type Territory, type TerritoryNode } from '@/servic
 import type { TerritoryCoveragePreview } from '@/components/territories/TerritoryTreePicker'
 import { BrickMultiPicker } from '@/components/territories/BrickMultiPicker'
 import { useTerritoryTreeIndex } from '@/hooks/useTerritoryTreeIndex'
+import { listAllAreas, unionSubtreePreview, unionZonePreview } from '@/utils/territoryTreeUtils'
 import { showApiError } from '@/utils/apiErrors'
 
 export type TerritoryAssignmentStrategy = 'single_brick' | 'multi_brick' | 'entire_area' | 'entire_zone'
@@ -43,12 +44,12 @@ const STRATEGY_COPY: Record<
   },
   entire_area: {
     label: 'Entire Area',
-    description: 'Cover every brick under one area automatically.',
+    description: 'Cover every brick under one or more areas (can span zones).',
     icon: 'tabler-map'
   },
   entire_zone: {
     label: 'Entire Zone',
-    description: 'Cover all areas and bricks under one zone.',
+    description: 'Cover all areas and bricks under one or more zones.',
     icon: 'tabler-world'
   }
 }
@@ -66,6 +67,8 @@ function nodeToTerritory(n: TerritoryNode): Territory {
 type SummaryProps = {
   strategy: TerritoryAssignmentStrategy
   formTerritory: Territory | null
+  selectedAreas: Territory[]
+  selectedZones: Territory[]
   multiBricks: Territory[]
   primaryBrickId: string | null
   hierarchyPreview: TerritoryCoveragePreview | null
@@ -76,6 +79,8 @@ type SummaryProps = {
 function CoverageSummaryInner({
   strategy,
   formTerritory,
+  selectedAreas,
+  selectedZones,
   multiBricks,
   primaryBrickId,
   hierarchyPreview,
@@ -102,18 +107,32 @@ function CoverageSummaryInner({
   } else if (strategy === 'entire_zone') {
     const bc = hierarchyPreview?.brickCount ?? 0
     const ac = zoneAreaCount ?? 0
-    primaryLine = formTerritory?.name ?? '—'
-    countHint = formTerritory
-      ? `${ac} area${ac === 1 ? '' : 's'} · ${bc} brick${bc === 1 ? '' : 's'} (hierarchy)`
-      : 'Select a zone'
+    const n = selectedZones.length
+    primaryLine =
+      n === 0
+        ? '—'
+        : n === 1
+          ? selectedZones[0].name
+          : `${n} zones (${selectedZones.map(z => z.name).slice(0, 3).join(', ')}${n > 3 ? '…' : ''})`
+    countHint =
+      n > 0
+        ? `${n} zone${n === 1 ? '' : 's'} · ${ac} area${ac === 1 ? '' : 's'} · ${bc} brick${bc === 1 ? '' : 's'} (union)`
+        : 'Select one or more zones'
     sampleNames.push(...(hierarchyPreview?.sampleBrickNames ?? []))
   } else {
     const bc = hierarchyPreview?.brickCount ?? 0
     const extra = multiBricks.length
-    primaryLine = formTerritory?.name ?? '—'
-    countHint = formTerritory
-      ? `${bc} brick${bc === 1 ? '' : 's'} under area${extra ? ` + ${extra} added (merged on save)` : ''}`
-      : 'Select an area'
+    const n = selectedAreas.length
+    primaryLine =
+      n === 0
+        ? '—'
+        : n === 1
+          ? selectedAreas[0].name
+          : `${n} areas (${selectedAreas.map(a => a.name).slice(0, 3).join(', ')}${n > 3 ? '…' : ''})`
+    countHint =
+      n > 0
+        ? `${n} area${n === 1 ? '' : 's'} · ${bc} brick${bc === 1 ? '' : 's'} (union)${extra ? ` + ${extra} extra brick${extra === 1 ? '' : 's'}` : ''}`
+        : 'Select one or more areas'
     sampleNames.push(...(hierarchyPreview?.sampleBrickNames ?? []), ...multiBricks.map(b => b.name))
   }
 
@@ -155,13 +174,21 @@ function CoverageSummaryInner({
           {primaryLine}
         </Typography>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-          {formTerritory ? `${formTerritory.kind} · ${countHint}` : countHint}
+          {countHint}
         </Typography>
       </Box>
       {uniqSamples.length > 0 && (
         <Box>
           <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" className="mbe-1">
-            {strategy === 'multi_brick' ? 'Selected bricks' : 'Included bricks (sample)'}
+            {strategy === 'multi_brick'
+              ? 'Selected bricks'
+              : strategy === 'entire_area'
+                ? selectedAreas.length > 1
+                  ? 'Selected areas'
+                  : 'Included bricks (sample)'
+                : strategy === 'entire_zone' && selectedZones.length > 1
+                  ? 'Selected zones'
+                  : 'Included bricks (sample)'}
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
             {strategy === 'multi_brick'
@@ -177,7 +204,15 @@ function CoverageSummaryInner({
                     />
                   )
                 })
-              : uniqSamples.map(name => <Chip key={name} size="small" variant="outlined" label={name} />)}
+              : strategy === 'entire_area' && selectedAreas.length > 1
+                ? selectedAreas.map(a => (
+                    <Chip key={String(a._id)} size="small" variant="outlined" label={a.name} />
+                  ))
+                : strategy === 'entire_zone' && selectedZones.length > 1
+                  ? selectedZones.map(z => (
+                      <Chip key={String(z._id)} size="small" variant="outlined" label={z.name} />
+                    ))
+                  : uniqSamples.map(name => <Chip key={name} size="small" variant="outlined" label={name} />)}
           </Box>
         </Box>
       )}
@@ -232,13 +267,16 @@ export type UserFormCoverageSectionProps = {
   onStrategyChange: (next: TerritoryAssignmentStrategy) => void
   formTerritory: Territory | null
   onFormTerritoryChange: (t: Territory | null) => void
+  selectedAreas: Territory[]
+  onSelectedAreasChange: (areas: Territory[]) => void
+  selectedZones: Territory[]
+  onSelectedZonesChange: (zones: Territory[]) => void
   multiBricks: Territory[]
   primaryBrickId: string | null
   onMultiBricksCommit: (next: { bricks: Territory[]; primaryId: string | null }) => void
   onExtrasBricksChange: (bricks: Territory[]) => void
   hierarchyPreview: TerritoryCoveragePreview | null
   onHierarchyPreviewChange: (p: TerritoryCoveragePreview | null) => void
-  legacyNonBrickWarning: boolean
 }
 
 export function UserFormCoverageSection({
@@ -249,26 +287,27 @@ export function UserFormCoverageSection({
   onStrategyChange,
   formTerritory,
   onFormTerritoryChange,
+  selectedAreas,
+  onSelectedAreasChange,
+  selectedZones,
+  onSelectedZonesChange,
   multiBricks,
   primaryBrickId,
   onMultiBricksCommit,
   onExtrasBricksChange,
   hierarchyPreview,
-  onHierarchyPreviewChange,
-  legacyNonBrickWarning
+  onHierarchyPreviewChange
 }: UserFormCoverageSectionProps) {
   const theme = useTheme()
   const index = useTerritoryTreeIndex(dialogOpen)
   const {
     loading: treeLoading,
-    subtreePreview,
-    zonePreview,
+    roots,
     breadcrumbLabel,
     zones,
     areasForZone,
     brickSetUnder,
-    pathToNode,
-    findNode
+    pathToNode
   } = index
 
   const zoneList = useMemo(() => zones(), [zones])
@@ -292,10 +331,23 @@ export function UserFormCoverageSection({
     lastHydrateKey.current = ''
   }, [strategy])
 
-  const hydrateComposite = `${hydrationKey}|${strategy}|${formTerritory?._id ?? ''}|${treeLoading}`
+  const hydrateComposite = `${hydrationKey}|${strategy}|${selectedAreas.map(a => a._id).join(',')}|${selectedZones.map(z => z._id).join(',')}|${treeLoading}`
 
   useEffect(() => {
     if (!dialogOpen || treeLoading) return
+    if (strategy === 'entire_area' && selectedAreas.length > 0) {
+      if (lastHydrateKey.current === hydrateComposite) return
+      const first = selectedAreas[0]
+      const path = pathToNode(String(first._id))
+      const zone = path?.find(n => n.kind === 'ZONE')
+      if (zone) setDraftZoneId(String(zone._id))
+      lastHydrateKey.current = hydrateComposite
+      return
+    }
+    if (strategy === 'entire_zone' && selectedZones.length > 0) {
+      lastHydrateKey.current = hydrateComposite
+      return
+    }
     if (!formTerritory?._id) {
       lastHydrateKey.current = hydrateComposite
       return
@@ -313,14 +365,9 @@ export function UserFormCoverageSection({
       if (area) setDraftAreaId(String(area._id))
       const label = formTerritory.code ? `${formTerritory.name} (${formTerritory.code})` : formTerritory.name
       setBrickSearch(label)
-    } else if (strategy === 'entire_area' && formTerritory.kind === 'AREA') {
-      if (zone) setDraftZoneId(String(zone._id))
-      setDraftAreaId(String(formTerritory._id))
-    } else if (strategy === 'entire_zone' && formTerritory.kind === 'ZONE') {
-      setDraftZoneId(String(formTerritory._id))
     }
     lastHydrateKey.current = hydrateComposite
-  }, [dialogOpen, treeLoading, formTerritory, strategy, pathToNode, hydrateComposite])
+  }, [dialogOpen, treeLoading, formTerritory, strategy, pathToNode, hydrateComposite, selectedAreas, selectedZones])
 
   useEffect(() => {
     if (!dialogOpen || strategy !== 'single_brick' || !draftAreaId) {
@@ -355,16 +402,38 @@ export function UserFormCoverageSection({
   }, [brickSearch, draftAreaId, dialogOpen, strategy])
 
   useEffect(() => {
+    if (strategy === 'entire_area') {
+      if (!selectedAreas.length) {
+        onHierarchyPreviewChange(null)
+        return
+      }
+      onHierarchyPreviewChange(
+        unionSubtreePreview(
+          roots,
+          selectedAreas.map(a => String(a._id))
+        )
+      )
+      return
+    }
+    if (strategy === 'entire_zone') {
+      if (!selectedZones.length) {
+        onHierarchyPreviewChange(null)
+        return
+      }
+      const zp = unionZonePreview(
+        roots,
+        selectedZones.map(z => String(z._id))
+      )
+      onHierarchyPreviewChange({
+        brickCount: zp.brickCount,
+        sampleBrickNames: zp.sampleBrickNames
+      })
+      return
+    }
     if (strategy !== 'entire_area' && strategy !== 'entire_zone') {
       onHierarchyPreviewChange(null)
-      return
     }
-    if (!formTerritory?._id || (formTerritory.kind !== 'AREA' && formTerritory.kind !== 'ZONE')) {
-      onHierarchyPreviewChange(null)
-      return
-    }
-    onHierarchyPreviewChange(subtreePreview(String(formTerritory._id)))
-  }, [strategy, formTerritory, subtreePreview, onHierarchyPreviewChange])
+  }, [strategy, selectedAreas, selectedZones, roots, onHierarchyPreviewChange])
 
   const areaRows = useMemo(
     () => (draftZoneId ? areasForZone(draftZoneId) : []),
@@ -382,10 +451,26 @@ export function UserFormCoverageSection({
     return null
   }, [multiFilterAreaId, multiFilterZoneId, brickSetUnder])
 
+  const areaPickerOptions = useMemo(() => {
+    const pool = draftZoneId ? areasForZone(draftZoneId) : listAllAreas(roots)
+    const selectedIds = new Set(selectedAreas.map(a => String(a._id)))
+    return pool
+      .filter(a => !selectedIds.has(String(a._id)))
+      .map(nodeToTerritory)
+  }, [areasForZone, draftZoneId, roots, selectedAreas])
+
+  const zonePickerOptions = useMemo(() => {
+    const selectedIds = new Set(selectedZones.map(z => String(z._id)))
+    return zoneList.filter(z => !selectedIds.has(String(z._id))).map(nodeToTerritory)
+  }, [zoneList, selectedZones])
+
   const zoneStats = useMemo(() => {
-    if (strategy !== 'entire_zone' || !formTerritory?._id || formTerritory.kind !== 'ZONE') return null
-    return zonePreview(String(formTerritory._id))
-  }, [strategy, formTerritory, zonePreview])
+    if (strategy !== 'entire_zone' || !selectedZones.length) return null
+    return unionZonePreview(
+      roots,
+      selectedZones.map(z => String(z._id))
+    )
+  }, [strategy, selectedZones, roots])
 
   const breadcrumb = useMemo(() => {
     if (!formTerritory?._id) return null
@@ -410,32 +495,17 @@ export function UserFormCoverageSection({
   }
 
   const onEntireAreaZone = (id: string) => {
-    const next = id || null
-    setDraftZoneId(next)
-    setDraftAreaId(null)
-    onFormTerritoryChange(null)
+    setDraftZoneId(id || null)
   }
 
-  const onEntireAreaPick = (areaId: string) => {
-    const next = areaId || null
-    setDraftAreaId(next)
-    if (!next) {
-      onFormTerritoryChange(null)
-      return
-    }
-    const a = findNode(next)
-    if (a?.kind === 'AREA') onFormTerritoryChange(nodeToTerritory(a))
+  const onAreasChange = (areas: Territory[]) => {
+    onSelectedAreasChange(areas)
+    onFormTerritoryChange(areas[0] ?? null)
   }
 
-  const onEntireZonePick = (zoneId: string) => {
-    const next = zoneId || null
-    setDraftZoneId(next)
-    if (!next) {
-      onFormTerritoryChange(null)
-      return
-    }
-    const z = findNode(next)
-    if (z?.kind === 'ZONE') onFormTerritoryChange(nodeToTerritory(z))
+  const onZonesChange = (zonesNext: Territory[]) => {
+    onSelectedZonesChange(zonesNext)
+    onFormTerritoryChange(zonesNext[0] ?? null)
   }
 
   const strategyTiles = (
@@ -590,19 +660,23 @@ export function UserFormCoverageSection({
       {strategy === 'entire_area' ? (
         <>
           <Typography variant="subtitle2" fontWeight={700}>
-            Choose zone and area
+            Choose areas (one or more)
           </Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <Typography variant="caption" color="text.secondary" display="block">
+            Filter by zone to narrow the list, or leave zone cleared to pick areas across the full network.
+          </Typography>
+          <Stack spacing={2}>
             <CustomTextField
               select
               fullWidth
-              label="Zone"
+              label="Filter by zone (optional)"
               value={draftZoneId ?? ''}
               onChange={e => onEntireAreaZone(e.target.value)}
               disabled={treeBusy || !zoneList.length}
+              sx={{ maxWidth: { sm: 360 } }}
             >
               <MenuItem value="">
-                <em>Select zone</em>
+                <em>All zones</em>
               </MenuItem>
               {zoneList.map(z => (
                 <MenuItem key={String(z._id)} value={String(z._id)}>
@@ -611,32 +685,58 @@ export function UserFormCoverageSection({
                 </MenuItem>
               ))}
             </CustomTextField>
-            <CustomTextField
-              select
+            <Autocomplete
+              multiple
               fullWidth
-              label="Area (coverage anchor)"
-              value={draftAreaId ?? ''}
-              onChange={e => onEntireAreaPick(e.target.value)}
-              disabled={treeBusy || !draftZoneId}
-            >
-              <MenuItem value="">
-                <em>Select area</em>
-              </MenuItem>
-              {areaRows.map(a => (
-                <MenuItem key={String(a._id)} value={String(a._id)}>
-                  {a.name}
-                  {a.code ? ` (${a.code})` : ''}
-                </MenuItem>
-              ))}
-            </CustomTextField>
+              disableCloseOnSelect
+              options={areaPickerOptions}
+              value={selectedAreas}
+              onChange={(_, v) => onAreasChange(v)}
+              getOptionLabel={o => (o.code ? `${o.name} (${o.code})` : o.name)}
+              isOptionEqualToValue={(a, b) => String(a._id) === String(b._id)}
+              filterSelectedOptions
+              disabled={treeBusy}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => {
+                  const { key, ...tagProps } = getTagProps({ index })
+                  return (
+                    <Chip
+                      key={key}
+                      {...tagProps}
+                      size="small"
+                      label={index === 0 ? `PRIMARY · ${option.name}` : option.name}
+                      color={index === 0 ? 'primary' : 'default'}
+                      variant={index === 0 ? 'filled' : 'outlined'}
+                    />
+                  )
+                })
+              }
+              renderInput={params => (
+                <CustomTextField
+                  {...params}
+                  fullWidth
+                  label="Areas"
+                  placeholder={selectedAreas.length ? 'Add another area…' : 'Select areas…'}
+                  helperText="First area is the primary anchor; all roll up into one footprint."
+                />
+              )}
+              slotProps={{
+                popper: {
+                  placement: 'bottom-start',
+                  sx: { minWidth: 320 }
+                }
+              }}
+            />
           </Stack>
-          {hierarchyPreview && formTerritory?.kind === 'AREA' ? (
+          {hierarchyPreview && selectedAreas.length > 0 ? (
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: alpha(theme.palette.info.main, 0.04) }}>
               <Typography variant="subtitle2" fontWeight={700} className="mbe-1">
-                Hierarchy footprint
+                Combined footprint
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                <strong>{hierarchyPreview.brickCount}</strong> bricks roll up under this area
+                <strong>{selectedAreas.length}</strong> area{selectedAreas.length === 1 ? '' : 's'} ·{' '}
+                <strong>{hierarchyPreview.brickCount}</strong> brick{hierarchyPreview.brickCount === 1 ? '' : 's'}{' '}
+                (union, overlaps deduplicated)
                 {hierarchyPreview.sampleBrickNames?.length
                   ? ` — e.g. ${hierarchyPreview.sampleBrickNames.slice(0, 5).join(', ')}`
                   : ''}
@@ -650,33 +750,59 @@ export function UserFormCoverageSection({
       {strategy === 'entire_zone' ? (
         <>
           <Typography variant="subtitle2" fontWeight={700}>
-            Choose zone (anchor)
+            Choose zones (one or more)
           </Typography>
-          <CustomTextField
-            select
+          <Autocomplete
+            multiple
             fullWidth
-            label="Zone"
-            value={formTerritory?.kind === 'ZONE' ? String(formTerritory._id) : draftZoneId ?? ''}
-            onChange={e => onEntireZonePick(e.target.value)}
+            disableCloseOnSelect
+            options={zonePickerOptions}
+            value={selectedZones}
+            onChange={(_, v) => onZonesChange(v)}
+            getOptionLabel={o => (o.code ? `${o.name} (${o.code})` : o.name)}
+            isOptionEqualToValue={(a, b) => String(a._id) === String(b._id)}
+            filterSelectedOptions
             disabled={treeBusy || !zoneList.length}
-          >
-            <MenuItem value="">
-              <em>Select zone</em>
-            </MenuItem>
-            {zoneList.map(z => (
-              <MenuItem key={String(z._id)} value={String(z._id)}>
-                {z.name}
-                {z.code ? ` (${z.code})` : ''}
-              </MenuItem>
-            ))}
-          </CustomTextField>
-          {zoneStats && formTerritory?.kind === 'ZONE' ? (
+            renderTags={(value, getTagProps) =>
+              value.map((option, index) => {
+                const { key, ...tagProps } = getTagProps({ index })
+                return (
+                  <Chip
+                    key={key}
+                    {...tagProps}
+                    size="small"
+                    label={index === 0 ? `PRIMARY · ${option.name}` : option.name}
+                    color={index === 0 ? 'primary' : 'default'}
+                    variant={index === 0 ? 'filled' : 'outlined'}
+                  />
+                )
+              })
+            }
+            renderInput={params => (
+              <CustomTextField
+                {...params}
+                fullWidth
+                label="Zones"
+                placeholder={selectedZones.length ? 'Add another zone…' : 'Select zones…'}
+                helperText="First zone is the primary anchor; all areas and bricks union into one footprint."
+              />
+            )}
+            slotProps={{
+              popper: {
+                placement: 'bottom-start',
+                sx: { minWidth: 320 }
+              }
+            }}
+          />
+          {zoneStats && selectedZones.length > 0 ? (
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: alpha(theme.palette.success.main, 0.04) }}>
               <Typography variant="subtitle2" fontWeight={700} className="mbe-1">
-                Zone footprint
+                Combined zone footprint
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                <strong>{zoneStats.areaCount}</strong> areas · <strong>{zoneStats.brickCount}</strong> bricks
+                <strong>{selectedZones.length}</strong> zone{selectedZones.length === 1 ? '' : 's'} ·{' '}
+                <strong>{zoneStats.areaCount}</strong> area{zoneStats.areaCount === 1 ? '' : 's'} ·{' '}
+                <strong>{zoneStats.brickCount}</strong> brick{zoneStats.brickCount === 1 ? '' : 's'}
                 {zoneStats.sampleBrickNames?.length
                   ? ` — e.g. ${zoneStats.sampleBrickNames.slice(0, 5).join(', ')}`
                   : ''}
@@ -743,7 +869,9 @@ export function UserFormCoverageSection({
         </>
       ) : null}
 
-      {(strategy === 'entire_area' || strategy === 'entire_zone') && formTerritory && (formTerritory.kind === 'AREA' || formTerritory.kind === 'ZONE') ? (
+      {(strategy === 'entire_area' || strategy === 'entire_zone') &&
+      ((strategy === 'entire_area' && selectedAreas.length > 0) ||
+        (strategy === 'entire_zone' && selectedZones.length > 0)) ? (
         <Box>
           <Typography variant="subtitle2" fontWeight={700} className="mbe-1">
             Additional brick coverage (optional)
@@ -775,11 +903,6 @@ export function UserFormCoverageSection({
               coverage list).
             </Typography>
           </Box>
-          {legacyNonBrickWarning ? (
-            <Typography variant="caption" color="warning.main" display="block">
-              Legacy coverage includes non-brick territory nodes; they are preserved until removed in admin tools.
-            </Typography>
-          ) : null}
         </Stack>
 
         <Grid container spacing={3}>
@@ -801,6 +924,8 @@ export function UserFormCoverageSection({
             <CoverageSummaryInner
               strategy={strategy}
               formTerritory={formTerritory}
+              selectedAreas={selectedAreas}
+              selectedZones={selectedZones}
               multiBricks={multiBricks}
               primaryBrickId={primaryBrickId}
               hierarchyPreview={hierarchyPreview}

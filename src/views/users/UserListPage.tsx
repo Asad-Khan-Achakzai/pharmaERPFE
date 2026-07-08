@@ -35,6 +35,10 @@ import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import type { TerritoryCoveragePreview } from '@/components/territories/TerritoryTreePicker'
 import { UserFormCoverageSection } from '@/views/users/UserFormCoverageSection'
 import {
+  collectAssignedHierarchyNodes,
+  formatTerritoryCoverageLabel
+} from '@/utils/formatTerritoryCoverageLabel'
+import {
   allowedManagerRoleCodesForSubordinate,
   managerMatchesRmParent
 } from '@/utils/userManagerOptions'
@@ -149,7 +153,8 @@ const UserListPage = () => {
   const [territoryAssignmentType, setTerritoryAssignmentType] = useState<TerritoryAssignmentType>('single_brick')
   const [multiBricks, setMultiBricks] = useState<Territory[]>([])
   const [primaryBrickId, setPrimaryBrickId] = useState<string | null>(null)
-  const [legacyNonBrickCoverage, setLegacyNonBrickCoverage] = useState<Territory[]>([])
+  const [selectedAreas, setSelectedAreas] = useState<Territory[]>([])
+  const [selectedZones, setSelectedZones] = useState<Territory[]>([])
   const [territoryBulkPreview, setTerritoryBulkPreview] = useState<TerritoryCoveragePreview | null>(null)
   const [territorySaveConfirmOpen, setTerritorySaveConfirmOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -210,13 +215,12 @@ const UserListPage = () => {
       setFormTerritory(null)
       setMultiBricks([])
       setPrimaryBrickId(null)
-      setLegacyNonBrickCoverage([])
+      setSelectedAreas([])
+      setSelectedZones([])
     }
   }, [open, form.roleId, roleOptions])
 
   const territoryBulkConfirmText = useMemo(() => {
-    if (!formTerritory || (formTerritory.kind !== 'AREA' && formTerritory.kind !== 'ZONE')) return ''
-    const kindLabel = formTerritory.kind === 'AREA' ? 'Area' : 'Zone'
     const n = territoryBulkPreview?.brickCount ?? 0
     const samples =
       territoryBulkPreview?.sampleBrickNames?.filter(Boolean).slice(0, 5).join(', ') || '—'
@@ -228,8 +232,28 @@ const UserListPage = () => {
       extraBricks > 0
         ? ` You are also adding ${extraBricks} additional brick${extraBricks === 1 ? '' : 's'} (unioned with the hierarchy; overlaps count once).`
         : ''
-    return `${formTerritory.name} (${kindLabel}) — ${n} brick${n === 1 ? '' : 's'} from hierarchy under this anchor (examples: ${samples}).${extraPhrase} Doctor and order coverage will be recalculated from the expanded footprint.`
-  }, [formTerritory, territoryBulkPreview, territoryAssignmentType, multiBricks.length])
+
+    if (territoryAssignmentType === 'entire_area' && selectedAreas.length > 0) {
+      const names = selectedAreas.map(a => a.name).join(', ')
+      return `Assign ${selectedAreas.length} area${selectedAreas.length === 1 ? '' : 's'} (${names}) — ${n} brick${n === 1 ? '' : 's'} in the combined footprint (examples: ${samples}).${extraPhrase} Doctor and order coverage will be recalculated from the expanded footprint.`
+    }
+    if (territoryAssignmentType === 'entire_zone' && selectedZones.length > 0) {
+      const names = selectedZones.map(z => z.name).join(', ')
+      return `Assign ${selectedZones.length} zone${selectedZones.length === 1 ? '' : 's'} (${names}) — ${n} brick${n === 1 ? '' : 's'} in the combined footprint (examples: ${samples}).${extraPhrase} Doctor and order coverage will be recalculated from the expanded footprint.`
+    }
+
+    const t = formTerritory
+    if (!t || (t.kind !== 'AREA' && t.kind !== 'ZONE')) return ''
+    const kindLabel = t.kind === 'AREA' ? 'Area' : 'Zone'
+    return `${t.name} (${kindLabel}) — ${n} brick${n === 1 ? '' : 's'} from hierarchy under this anchor (examples: ${samples}).${extraPhrase} Doctor and order coverage will be recalculated from the expanded footprint.`
+  }, [
+    formTerritory,
+    territoryBulkPreview,
+    territoryAssignmentType,
+    multiBricks.length,
+    selectedAreas,
+    selectedZones
+  ])
 
   const onTerritoryCoveragePreview = useCallback((p: TerritoryCoveragePreview | null) => {
     setTerritoryBulkPreview(p)
@@ -240,7 +264,8 @@ const UserListPage = () => {
     setFormTerritory(null)
     setMultiBricks([])
     setPrimaryBrickId(null)
-    setLegacyNonBrickCoverage([])
+    setSelectedAreas([])
+    setSelectedZones([])
   }
 
   const loadRoles = useCallback(async () => {
@@ -327,24 +352,30 @@ const UserListPage = () => {
 
       const covRaw = Array.isArray(item.coverageTerritoryIds) ? item.coverageTerritoryIds : []
       const brickPick: Territory[] = []
-      const nonBrick: Territory[] = []
+      const areaPick: Territory[] = []
+      const zonePick: Territory[] = []
       for (const c of covRaw) {
         if (!c || typeof c !== 'object' || !('_id' in c) || !('kind' in c)) continue
         const ct = c as Territory
         if (ct.kind === 'BRICK') brickPick.push(toTerritory(ct))
-        else nonBrick.push(toTerritory(ct))
+        else if (ct.kind === 'AREA') areaPick.push(toTerritory(ct))
+        else if (ct.kind === 'ZONE') zonePick.push(toTerritory(ct))
       }
       if (ter?.kind === 'BRICK') {
         brickPick.unshift(toTerritory(ter))
       }
-      const seen = new Set<string>()
-      const uniqueBricks = brickPick.filter(b => {
-        const id = String(b._id)
-        if (seen.has(id)) return false
-        seen.add(id)
-        return true
-      })
-      setLegacyNonBrickCoverage(nonBrick)
+
+      const dedupeTerritories = (list: Territory[]) => {
+        const seen = new Set<string>()
+        return list.filter(t => {
+          const id = String(t._id)
+          if (seen.has(id)) return false
+          seen.add(id)
+          return true
+        })
+      }
+
+      const uniqueBricks = dedupeTerritories(brickPick)
 
       let inferred = inferAssignmentFromUser(item)
       if (!opts.includes(inferred)) inferred = opts[0] ?? 'single_brick'
@@ -361,35 +392,49 @@ const UserListPage = () => {
       if (inferred === 'multi_brick') {
         setMultiBricks(uniqueBricks)
         setFormTerritory(null)
+        setSelectedAreas([])
+        setSelectedZones([])
+      } else if (inferred === 'entire_area') {
+        const areas: Territory[] = []
+        if (ter?.kind === 'AREA') areas.push(toTerritory(ter))
+        areas.push(...areaPick)
+        const uniqueAreas = dedupeTerritories(areas)
+        setSelectedAreas(uniqueAreas)
+        setSelectedZones([])
+        setFormTerritory(uniqueAreas[0] ?? null)
+        setMultiBricks(uniqueBricks)
+      } else if (inferred === 'entire_zone') {
+        const zones: Territory[] = []
+        if (ter?.kind === 'ZONE') zones.push(toTerritory(ter))
+        zones.push(...zonePick)
+        const uniqueZones = dedupeTerritories(zones)
+        setSelectedZones(uniqueZones)
+        setSelectedAreas([])
+        setFormTerritory(uniqueZones[0] ?? null)
+        setMultiBricks(uniqueBricks)
       } else {
-        if (inferred === 'entire_area' || inferred === 'entire_zone') {
-          setMultiBricks(ter?.kind === 'BRICK' ? [] : uniqueBricks)
+        setMultiBricks([])
+        setSelectedAreas([])
+        setSelectedZones([])
+        if (inferred === 'single_brick' && ter?.kind === 'BRICK') {
+          setFormTerritory({
+            _id: ter._id,
+            name: ter.name,
+            code: ter.code,
+            kind: ter.kind,
+            isActive: true
+          } as Territory)
         } else {
-          setMultiBricks([])
+          setFormTerritory(null)
         }
-        const terOk =
-          ter &&
-          ((inferred === 'single_brick' && ter.kind === 'BRICK') ||
-            (inferred === 'entire_area' && ter.kind === 'AREA') ||
-            (inferred === 'entire_zone' && ter.kind === 'ZONE'))
-        setFormTerritory(
-          terOk
-            ? ({
-                _id: ter._id,
-                name: ter.name,
-                code: ter.code,
-                kind: ter.kind,
-                isActive: true
-              } as Territory)
-            : null
-        )
       }
     } else {
       setEditItem(null)
       setForm({ name: '', email: '', password: '', phone: '', roleId: defaultRepRoleId, employeeCode: '' })
       setFormManager(null)
       setFormTerritory(null)
-      setLegacyNonBrickCoverage([])
+      setSelectedAreas([])
+      setSelectedZones([])
       setMultiBricks([])
       setPrimaryBrickId(null)
       const rc = roleOptions.find(r => String(r._id) === String(defaultRepRoleId))?.code || ''
@@ -462,6 +507,16 @@ const UserListPage = () => {
     }
   }, [viewItem])
 
+  const dedupeCoverageIds = (ids: string[], primary: string | null) => {
+    const seen = new Set<string>()
+    return ids.filter(id => {
+      if (primary && id === primary) return false
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+  }
+
   const runSave = async () => {
     if (!assignmentOptions.includes(territoryAssignmentType)) {
       showApiError(new Error('This territory assignment type is not allowed for this role.'), 'Territory')
@@ -470,7 +525,10 @@ const UserListPage = () => {
 
     const isCompanyAdminRole = selectedRoleCode === 'DEFAULT_ADMIN'
     const hasCoverageSelection =
-      Boolean(formTerritory?._id) || multiBricks.length > 0 || legacyNonBrickCoverage.length > 0
+      Boolean(formTerritory?._id) ||
+      selectedAreas.length > 0 ||
+      selectedZones.length > 0 ||
+      multiBricks.length > 0
 
     let territoryId: string | null = null
     let coverageTerritoryIds: string[] = []
@@ -489,46 +547,36 @@ const UserListPage = () => {
           : String(multiBricks[0]._id)
       territoryId = pid
       const extraBricks = multiBricks.map(b => String(b._id)).filter(id => id !== pid)
-      const legacyIds = legacyNonBrickCoverage.map(t => String(t._id))
-      const merged = [...extraBricks, ...legacyIds]
-      const seen = new Set<string>()
-      coverageTerritoryIds = merged.filter(id => {
-        if (id === pid) return false
-        if (seen.has(id)) return false
-        seen.add(id)
-        return true
-      })
+      coverageTerritoryIds = dedupeCoverageIds(extraBricks, pid)
+    } else if (territoryAssignmentType === 'entire_area') {
+      if (selectedAreas.length === 0) {
+        showApiError(new Error('Select at least one area for entire-area assignment.'), 'Territory')
+        return
+      }
+      territoryId = String(selectedAreas[0]._id)
+      const areaExtras = selectedAreas.slice(1).map(a => String(a._id))
+      const brickExtras = multiBricks.map(b => String(b._id))
+      coverageTerritoryIds = dedupeCoverageIds([...areaExtras, ...brickExtras], territoryId)
+    } else if (territoryAssignmentType === 'entire_zone') {
+      if (selectedZones.length === 0) {
+        showApiError(new Error('Select at least one zone for entire-zone assignment.'), 'Territory')
+        return
+      }
+      territoryId = String(selectedZones[0]._id)
+      const zoneExtras = selectedZones.slice(1).map(z => String(z._id))
+      const brickExtras = multiBricks.map(b => String(b._id))
+      coverageTerritoryIds = dedupeCoverageIds([...zoneExtras, ...brickExtras], territoryId)
     } else {
       territoryId = formTerritory?._id ? String(formTerritory._id) : null
       const brickExtras =
         territoryAssignmentType === 'single_brick' ? [] : multiBricks.map(b => String(b._id))
-      const legacyIds = legacyNonBrickCoverage.map(t => String(t._id))
-      const merged = [...brickExtras, ...legacyIds]
-      const seen = new Set<string>()
-      coverageTerritoryIds = merged.filter(id => {
-        if (territoryId && id === territoryId) return false
-        if (seen.has(id)) return false
-        seen.add(id)
-        return true
-      })
+      coverageTerritoryIds = dedupeCoverageIds(brickExtras, territoryId)
     }
 
     if (!isCompanyAdminRole || hasCoverageSelection) {
       if (territoryAssignmentType === 'single_brick') {
         if (!formTerritory || formTerritory.kind !== 'BRICK') {
           showApiError(new Error('Select a brick for single-brick assignment.'), 'Territory')
-          return
-        }
-      }
-      if (territoryAssignmentType === 'entire_area') {
-        if (!formTerritory || formTerritory.kind !== 'AREA') {
-          showApiError(new Error('Select an area for entire-area assignment.'), 'Territory')
-          return
-        }
-      }
-      if (territoryAssignmentType === 'entire_zone') {
-        if (!formTerritory || formTerritory.kind !== 'ZONE') {
-          showApiError(new Error('Select a zone for entire-zone assignment.'), 'Territory')
           return
         }
       }
@@ -568,12 +616,12 @@ const UserListPage = () => {
   }
 
   const handleSave = () => {
-    const t = formTerritory
-    if (
+    const needsConfirm =
       territoryAssignmentType !== 'multi_brick' &&
-      t &&
-      (t.kind === 'AREA' || t.kind === 'ZONE')
-    ) {
+      territoryAssignmentType !== 'single_brick' &&
+      ((territoryAssignmentType === 'entire_area' && selectedAreas.length > 0) ||
+        (territoryAssignmentType === 'entire_zone' && selectedZones.length > 0))
+    if (needsConfirm) {
       setTerritorySaveConfirmOpen(true)
       return
     }
@@ -651,17 +699,20 @@ const UserListPage = () => {
       id: 'territory',
       header: 'Territory',
       cell: ({ row }) => {
-        const ter = row.original.territoryId
-        if (ter && typeof ter === 'object') {
-          return (
-            <Chip
-              size='small'
-              variant='outlined'
-              label={`${ter.name}${ter.code ? ` (${ter.code})` : ''}`}
-            />
-          )
+        const u = row.original
+        const ter = typeof u.territoryId === 'object' && u.territoryId ? u.territoryId : null
+        if (!ter) {
+          return <Typography variant='body2' color='text.disabled'>—</Typography>
         }
-        return <Typography variant='body2' color='text.disabled'>—</Typography>
+        const roleCode = u.roleId?.code || ''
+        const kindHint =
+          roleCode === 'DEFAULT_ASM' ? 'AREA' : roleCode === 'DEFAULT_RM' ? 'ZONE' : undefined
+        const label = formatTerritoryCoverageLabel(ter, u.coverageTerritoryIds, {
+          kind: kindHint as 'AREA' | 'ZONE' | undefined
+        })
+        return (
+          <Chip size='small' variant='outlined' label={label} />
+        )
       }
     }),
     columnHelper.display({ id: 'status', header: 'Status', cell: ({ row }) => <Chip label={row.original.isActive ? 'Active' : 'Inactive'} color={row.original.isActive ? 'success' : 'error'} size='small' variant='tonal' /> }),
@@ -901,6 +952,10 @@ const UserListPage = () => {
                 onStrategyChange={handleAssignmentTypeChange}
                 formTerritory={formTerritory}
                 onFormTerritoryChange={setFormTerritory}
+                selectedAreas={selectedAreas}
+                onSelectedAreasChange={setSelectedAreas}
+                selectedZones={selectedZones}
+                onSelectedZonesChange={setSelectedZones}
                 multiBricks={multiBricks}
                 primaryBrickId={primaryBrickId}
                 onMultiBricksCommit={({ bricks, primaryId }) => {
@@ -913,7 +968,6 @@ const UserListPage = () => {
                 }}
                 hierarchyPreview={territoryBulkPreview}
                 onHierarchyPreviewChange={onTerritoryCoveragePreview}
-                legacyNonBrickWarning={legacyNonBrickCoverage.length > 0}
               />
             </Grid>
           </Grid>
@@ -950,11 +1004,52 @@ const UserListPage = () => {
                       {viewDetail?.territoryCoverageSummary?.assignmentType || '—'}
                     </Typography>
                     <Typography variant='caption' color='text.secondary' display='block' className='mte-1'>
-                      Primary anchor:{' '}
-                      {typeof viewItem.territoryId === 'object' && viewItem.territoryId
-                        ? `${viewItem.territoryId.name} (${viewItem.territoryId.kind})`
-                        : '—'}
+                      Assigned areas / zones
                     </Typography>
+                    <div className='flex flex-wrap gap-1 mbe-2'>
+                      {(() => {
+                        const roleCode = viewItem.roleId?.code || ''
+                        const kind =
+                          roleCode === 'DEFAULT_ASM'
+                            ? 'AREA'
+                            : roleCode === 'DEFAULT_RM'
+                              ? 'ZONE'
+                              : null
+                        const nodes = kind
+                          ? collectAssignedHierarchyNodes(
+                              viewItem.territoryId,
+                              viewItem.coverageTerritoryIds,
+                              kind
+                            )
+                          : []
+                        if (nodes.length) {
+                          return nodes.map((t, i) => (
+                            <Chip
+                              key={String(t._id ?? i)}
+                              size='small'
+                              variant={i === 0 ? 'filled' : 'outlined'}
+                              color={i === 0 ? 'primary' : 'default'}
+                              label={`${i === 0 ? 'PRIMARY · ' : ''}${t.name}${t.code ? ` (${t.code})` : ''}`}
+                            />
+                          ))
+                        }
+                        const ter =
+                          typeof viewItem.territoryId === 'object' && viewItem.territoryId
+                            ? viewItem.territoryId
+                            : null
+                        if (ter) {
+                          return (
+                            <Chip
+                              size='small'
+                              variant='filled'
+                              color='primary'
+                              label={`PRIMARY · ${ter.name} (${ter.kind})`}
+                            />
+                          )
+                        }
+                        return <Typography variant='body2'>—</Typography>
+                      })()}
+                    </div>
                     <Typography variant='caption' color='text.secondary' display='block'>
                       Effective brick count:{' '}
                       <strong>{viewDetail?.territoryCoverageSummary?.brickCount ?? '—'}</strong>
@@ -981,10 +1076,10 @@ const UserListPage = () => {
               </Grid>
               <Grid size={{ xs: 12 }}>
                 <Typography variant='body2' color='text.secondary' className='mbe-1'>
-                  Stored coverage territories
+                  Additional coverage (bricks & extras)
                 </Typography>
                 <Typography variant='caption' color='text.secondary' display='block' className='mbe-1'>
-                  Unioned with primary expansion for effective footprint (may include legacy nodes).
+                  Unioned with primary expansion for effective footprint.
                 </Typography>
                 {Array.isArray(viewItem.coverageTerritoryIds) && viewItem.coverageTerritoryIds.length ? (
                   <div className='flex flex-wrap gap-1'>

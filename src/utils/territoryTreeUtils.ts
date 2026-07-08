@@ -72,6 +72,58 @@ export function listAreasUnderZone(roots: TerritoryNode[], zoneId: string): Terr
   return z.children.filter(c => c.kind === 'AREA').sort((a, b) => a.name.localeCompare(b.name))
 }
 
+/** All AREA nodes in the tree (cross-zone), sorted by name. */
+export function listAllAreas(roots: TerritoryNode[]): TerritoryNode[] {
+  const acc: TerritoryNode[] = []
+  const walk = (n: TerritoryNode) => {
+    if (n.kind === 'AREA') acc.push(n)
+    for (const ch of n.children || []) walk(ch)
+  }
+  roots.forEach(walk)
+  return acc.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** Union brick count and sample names across multiple territory node ids. */
+export function unionSubtreePreview(
+  roots: TerritoryNode[],
+  nodeIds: string[],
+  sampleLimit = 8
+): { brickCount: number; sampleBrickNames: string[] } {
+  const brickIds = new Set<string>()
+  const samples: string[] = []
+  for (const id of nodeIds) {
+    const n = findNodeById(roots, id)
+    if (!n) continue
+    for (const bid of brickIdsInSubtree(n)) brickIds.add(bid)
+    for (const name of collectBrickNameSamples(n, sampleLimit)) {
+      if (samples.length < sampleLimit && !samples.includes(name)) samples.push(name)
+    }
+  }
+  return { brickCount: brickIds.size, sampleBrickNames: samples.slice(0, sampleLimit) }
+}
+
+/** Combined zone stats for multiple zone node ids. */
+export function unionZonePreview(
+  roots: TerritoryNode[],
+  zoneIds: string[],
+  sampleLimit = 8
+): { areaCount: number; brickCount: number; sampleBrickNames: string[] } {
+  let areaCount = 0
+  const brickPreview = unionSubtreePreview(roots, zoneIds, sampleLimit)
+  const seenAreas = new Set<string>()
+  for (const id of zoneIds) {
+    const n = findNodeById(roots, id)
+    if (!n) continue
+    const walk = (node: TerritoryNode) => {
+      if (node.kind === 'AREA') seenAreas.add(String(node._id))
+      for (const ch of node.children || []) walk(ch)
+    }
+    walk(n)
+  }
+  areaCount = seenAreas.size
+  return { areaCount, brickCount: brickPreview.brickCount, sampleBrickNames: brickPreview.sampleBrickNames }
+}
+
 export function brickIdsInSubtree(node: TerritoryNode): Set<string> {
   const ids = new Set<string>()
   const walk = (n: TerritoryNode) => {
