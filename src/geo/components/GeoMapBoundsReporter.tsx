@@ -32,7 +32,7 @@ export function GeoMapBoundsReporter({ onBoundsChange }: Props) {
     report()
     const idleListener = map.addListener('idle', report)
     return () => {
-      google.maps.event.removeListener(idleListener)
+      idleListener.remove()
     }
   }, [map])
 
