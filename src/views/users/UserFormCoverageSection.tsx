@@ -430,9 +430,7 @@ export function UserFormCoverageSection({
       })
       return
     }
-    if (strategy !== 'entire_area' && strategy !== 'entire_zone') {
-      onHierarchyPreviewChange(null)
-    }
+    onHierarchyPreviewChange(null)
   }, [strategy, selectedAreas, selectedZones, roots, onHierarchyPreviewChange])
 
   const areaRows = useMemo(

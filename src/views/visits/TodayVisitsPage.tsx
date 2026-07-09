@@ -538,7 +538,13 @@ const TodayVisitsPage = () => {
                 <Stack spacing={2}>
                   {activeDrafts.map(draft => {
                     const linked = draft.planItemId
-                      ? items.find(it => String(it._id) === draft.planItemId)
+                      ? (items.find(it => String((it as { _id?: string })._id) === draft.planItemId) as
+                          | {
+                              doctorId?: { name?: string }
+                              type?: string
+                              title?: string
+                            }
+                          | undefined)
                       : null
                     const label =
                       draft.doctorName ||
