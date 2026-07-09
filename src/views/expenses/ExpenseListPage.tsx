@@ -14,7 +14,9 @@ import Grid from '@mui/material/Grid'
 import Stack from '@mui/material/Stack'
 import CircularProgress from '@mui/material/CircularProgress'
 import Chip from '@mui/material/Chip'
+import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
+import Tooltip from '@mui/material/Tooltip'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import {
@@ -34,6 +36,7 @@ import { accountService } from '@/services/account.service'
 import { ExpenseAccountSelect } from '@/components/finance/ExpenseAccountSelect'
 import { MoneyAccountSelect } from '@/components/finance/MoneyAccountSelect'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
+import EntityImageCell from '@/components/media/EntityImageCell'
 import { ACCOUNTING_UX, friendlyAccountLabel } from '@/constants/accountingUx'
 import type { Account } from '@/types/accounting'
 import tableStyles from '@core/styles/table.module.css'
@@ -51,14 +54,22 @@ import {
 
 const LAST_MONEY_ACCOUNT_KEY = 'pharmaerp:expense:lastMoneyAccountId'
 
+type ExpenseStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
 type ExpenseRow = {
   _id: string
   amount: number
   description?: string
   date: string
+  status?: ExpenseStatus
+  rejectionReason?: string | null
+  receiptUrl?: string | null
+  receiptMime?: string | null
   expenseAccountId?: { _id: string; code: string; name: string } | string
   moneyAccountId?: { _id: string; code: string; name: string } | string
   voucherId?: { _id: string; voucherNumber: string } | string
+  employeeId?: { _id: string; name?: string } | string | null
+  approvedBy?: { _id: string; name?: string } | string | null
 }
 
 type ExpenseForm = {
@@ -103,6 +114,30 @@ const accountLabel = (acc?: { code: string; name: string } | string | null) => {
   return friendlyAccountLabel(acc.code, acc.name, false)
 }
 
+const personLabel = (person?: { name?: string } | string | null) => {
+  if (!person || typeof person === 'string') return '—'
+  return person.name?.trim() || '—'
+}
+
+const moneyAccountIdOf = (acc?: { _id: string } | string | null) => {
+  if (!acc) return ''
+  return typeof acc === 'string' ? acc : acc._id
+}
+
+const statusChipColor = (status?: ExpenseStatus): 'warning' | 'success' | 'error' | 'default' => {
+  if (status === 'PENDING') return 'warning'
+  if (status === 'APPROVED') return 'success'
+  if (status === 'REJECTED') return 'error'
+  return 'default'
+}
+
+const statusLabel = (status?: ExpenseStatus) => {
+  if (status === 'PENDING') return 'Pending'
+  if (status === 'REJECTED') return 'Rejected'
+  if (status === 'APPROVED') return 'Approved'
+  return 'Approved'
+}
+
 const resolveShortcutAccount = (accounts: Account[], shortcut: ExpenseShortcut): Account | undefined =>
   accounts.find(
     a =>
@@ -118,6 +153,7 @@ const ExpenseListPage = () => {
   const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([])
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
   const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
+  const [statusFilter, setStatusFilter] = useState<'' | ExpenseStatus>('')
   const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
   const fetchSeq = useRef(0)
   const [open, setOpen] = useState(false)
@@ -127,6 +163,12 @@ const ExpenseListPage = () => {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [approveFor, setApproveFor] = useState<ExpenseRow | null>(null)
+  const [approveMoneyAccountId, setApproveMoneyAccountId] = useState('')
+  const [approving, setApproving] = useState(false)
+  const [rejectFor, setRejectFor] = useState<ExpenseRow | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejecting, setRejecting] = useState(false)
 
   const isFormValid = form.expenseAccountId !== '' && form.moneyAccountId !== '' && form.amount > 0
 
@@ -136,6 +178,9 @@ const ExpenseListPage = () => {
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('expenses.create')
   const canDelete = hasPermission('expenses.delete')
+  const canApprove = hasPermission('expenses.approve')
+  const canReject = hasPermission('expenses.reject')
+  const canReviewExpenses = canApprove || canReject
 
   useEffect(() => {
     void accountService
@@ -150,6 +195,7 @@ const ExpenseListPage = () => {
     try {
       const params: Record<string, string> = { limit: '100' }
       appendDateUserParams(params, appliedFilters, debouncedSearch)
+      if (statusFilter) params.status = statusFilter
       const { data: r } = await expensesService.list(params)
       if (seq !== fetchSeq.current) return
       setData(r.data || [])
@@ -158,7 +204,7 @@ const ExpenseListPage = () => {
     } finally {
       if (seq === fetchSeq.current) setLoading(false)
     }
-  }, [appliedFilters, debouncedSearch])
+  }, [appliedFilters, debouncedSearch, statusFilter])
 
   useEffect(() => {
     void fetchData()
@@ -211,6 +257,53 @@ const ExpenseListPage = () => {
     }
   }, [deleteId, fetchData])
 
+  const openApproveDialog = (row: ExpenseRow) => {
+    const existing = moneyAccountIdOf(row.moneyAccountId)
+    const last =
+      typeof window !== 'undefined' ? localStorage.getItem(LAST_MONEY_ACCOUNT_KEY) || '' : ''
+    setApproveMoneyAccountId(existing || last)
+    setApproveFor(row)
+  }
+
+  const handleApprove = async () => {
+    if (!approveFor || !approveMoneyAccountId) return
+    setApproving(true)
+    try {
+      await expensesService.approve(approveFor._id, { moneyAccountId: approveMoneyAccountId })
+      localStorage.setItem(LAST_MONEY_ACCOUNT_KEY, approveMoneyAccountId)
+      showSuccess('Expense approved')
+      setApproveFor(null)
+      setApproveMoneyAccountId('')
+      void fetchData()
+    } catch (err) {
+      showApiError(err, 'Failed to approve expense')
+    } finally {
+      setApproving(false)
+    }
+  }
+
+  const openRejectDialog = (row: ExpenseRow) => {
+    setRejectReason('')
+    setRejectFor(row)
+  }
+
+  const handleReject = async () => {
+    const reason = rejectReason.trim()
+    if (!rejectFor || reason.length < 3) return
+    setRejecting(true)
+    try {
+      await expensesService.reject(rejectFor._id, { reason })
+      showSuccess('Expense rejected')
+      setRejectFor(null)
+      setRejectReason('')
+      void fetchData()
+    } catch (err) {
+      showApiError(err, 'Failed to reject expense')
+    } finally {
+      setRejecting(false)
+    }
+  }
+
   const columns = useMemo<ColumnDef<ExpenseRow, any>[]>(
     () => [
       columnHelper.display({
@@ -221,9 +314,17 @@ const ExpenseListPage = () => {
         )
       }),
       columnHelper.display({
+        id: 'submittedBy',
+        header: 'Submitted by',
+        cell: ({ row }) => personLabel(row.original.employeeId)
+      }),
+      columnHelper.display({
         id: 'paidFrom',
         header: 'Paid from',
-        cell: ({ row }) => accountLabel(row.original.moneyAccountId as ExpenseRow['moneyAccountId'])
+        cell: ({ row }) =>
+          row.original.status === 'PENDING'
+            ? '—'
+            : accountLabel(row.original.moneyAccountId as ExpenseRow['moneyAccountId'])
       }),
       columnHelper.accessor('amount', {
         header: 'Amount',
@@ -232,6 +333,62 @@ const ExpenseListPage = () => {
       columnHelper.accessor('description', {
         header: 'Narration',
         cell: ({ row }) => row.original.description || '—'
+      }),
+      columnHelper.display({
+        id: 'receipt',
+        header: 'Receipt',
+        cell: ({ row }) => {
+          const url = row.original.receiptUrl
+          if (!url) {
+            return (
+              <Typography variant='body2' color='text.secondary'>
+                —
+              </Typography>
+            )
+          }
+          const mime = row.original.receiptMime || ''
+          const isPdf = mime.includes('pdf') || url.toLowerCase().includes('.pdf')
+          if (isPdf) {
+            return (
+              <Button
+                size='small'
+                variant='tonal'
+                startIcon={<i className='tabler-file-text' />}
+                href={url}
+                target='_blank'
+                rel='noopener noreferrer'
+              >
+                View
+              </Button>
+            )
+          }
+          return (
+            <EntityImageCell
+              url={url}
+              name={row.original.description || 'Expense receipt'}
+              rounded={false}
+              size={40}
+            />
+          )
+        }
+      }),
+      columnHelper.display({
+        id: 'status',
+        header: 'Status',
+        cell: ({ row }) => {
+          const status = row.original.status || 'APPROVED'
+          const chip = (
+            <Chip label={statusLabel(status)} color={statusChipColor(status)} size='small' variant='tonal' />
+          )
+          if (status === 'REJECTED' && row.original.rejectionReason) {
+            return (
+              <Tooltip title={row.original.rejectionReason}>
+                <span>{chip}</span>
+              </Tooltip>
+            )
+          }
+          return chip
+        }
       }),
       columnHelper.display({
         id: 'voucher',
@@ -250,15 +407,31 @@ const ExpenseListPage = () => {
       columnHelper.display({
         id: 'actions',
         header: '',
-        cell: ({ row }) =>
-          canDelete ? (
-            <IconButton size='small' onClick={() => openDeleteConfirm(row.original._id)}>
-              <i className='tabler-trash text-textSecondary' />
-            </IconButton>
-          ) : null
+        cell: ({ row }) => {
+          const isPending = (row.original.status || 'APPROVED') === 'PENDING'
+          return (
+            <Stack direction='row' spacing={0.5} alignItems='center' justifyContent='flex-end'>
+              {isPending && canReject && (
+                <Button size='small' color='error' variant='tonal' onClick={() => openRejectDialog(row.original)}>
+                  Reject
+                </Button>
+              )}
+              {isPending && canApprove && (
+                <Button size='small' color='success' variant='tonal' onClick={() => openApproveDialog(row.original)}>
+                  Approve
+                </Button>
+              )}
+              {canDelete && (
+                <IconButton size='small' onClick={() => openDeleteConfirm(row.original._id)}>
+                  <i className='tabler-trash text-textSecondary' />
+                </IconButton>
+              )}
+            </Stack>
+          )
+        }
       })
     ],
-    [canDelete]
+    [canApprove, canReject, canDelete]
   )
 
   const table = useReactTable({
@@ -282,7 +455,11 @@ const ExpenseListPage = () => {
     <Card>
       <CardHeader
         title={ACCOUNTING_UX.allExpenses}
-        subheader='Record what you spent, where the money came from — accounting entries are created automatically'
+        subheader={
+          canReviewExpenses
+            ? 'Review field expenses, approve or reject pending ones, and record company expenses'
+            : 'Record what you spent, where the money came from — accounting entries are created automatically'
+        }
       />
       <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
         <Stack direction='row' spacing={1.5} alignItems='center' flexWrap='wrap' useFlexGap sx={{ flex: 1, minWidth: 0 }}>
@@ -292,6 +469,19 @@ const ExpenseListPage = () => {
             onClear={clearSearch}
             placeholder='Search narration…'
           />
+          <CustomTextField
+            select
+            size='small'
+            label='Status'
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as '' | ExpenseStatus)}
+            sx={{ minWidth: 150 }}
+          >
+            <MenuItem value=''>All statuses</MenuItem>
+            <MenuItem value='PENDING'>Pending</MenuItem>
+            <MenuItem value='APPROVED'>Approved</MenuItem>
+            <MenuItem value='REJECTED'>Rejected</MenuItem>
+          </CustomTextField>
           <TableListFilterIconButton activeFilterCount={activeFilterCount} onClick={openFilterPopover} />
         </Stack>
         {canCreate && (
@@ -462,6 +652,113 @@ const ExpenseListPage = () => {
         confirmText='Yes, delete'
         loading={deleting}
       />
+
+      <Dialog
+        open={Boolean(approveFor)}
+        onClose={() => !approving && setApproveFor(null)}
+        maxWidth='sm'
+        fullWidth
+      >
+        <DialogTitle>Approve expense</DialogTitle>
+        <DialogContent>
+          <Typography variant='body2' color='text.secondary' className='mbe-4'>
+            {approveFor?.description || 'Field expense'} · ₨{' '}
+            {(approveFor?.amount ?? 0).toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+            {approveFor?.employeeId && typeof approveFor.employeeId !== 'string'
+              ? ` · ${approveFor.employeeId.name || 'Rep'}`
+              : ''}
+          </Typography>
+          {approveFor?.receiptUrl ? (
+            <Paper variant='outlined' className='mbe-4 p-3'>
+              <Stack direction='row' spacing={2} alignItems='center'>
+                <Typography variant='subtitle2' sx={{ flex: 1 }}>
+                  Attached receipt
+                </Typography>
+                {(approveFor.receiptMime || '').includes('pdf') ? (
+                  <Button
+                    size='small'
+                    variant='tonal'
+                    href={approveFor.receiptUrl}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    startIcon={<i className='tabler-external-link' />}
+                  >
+                    Open receipt
+                  </Button>
+                ) : (
+                  <EntityImageCell
+                    url={approveFor.receiptUrl}
+                    name='Expense receipt'
+                    rounded={false}
+                    size={56}
+                  />
+                )}
+              </Stack>
+            </Paper>
+          ) : null}
+          <MoneyAccountSelect
+            value={approveMoneyAccountId}
+            onChange={id => setApproveMoneyAccountId(id)}
+            label='Paid from'
+            helperText='Which cash or bank account was used for this payment?'
+            required
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setApproveFor(null)} disabled={approving}>
+            Cancel
+          </Button>
+          <Button
+            variant='contained'
+            color='success'
+            onClick={() => void handleApprove()}
+            disabled={approving || !approveMoneyAccountId}
+            startIcon={approving ? <CircularProgress size={20} color='inherit' /> : undefined}
+          >
+            {approving ? 'Approving…' : 'Approve'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(rejectFor)}
+        onClose={() => !rejecting && setRejectFor(null)}
+        maxWidth='sm'
+        fullWidth
+      >
+        <DialogTitle>Reject expense</DialogTitle>
+        <DialogContent>
+          <Typography variant='body2' color='text.secondary' className='mbe-4'>
+            {rejectFor?.description || 'Field expense'} · ₨{' '}
+            {(rejectFor?.amount ?? 0).toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+          </Typography>
+          <CustomTextField
+            required
+            fullWidth
+            label='Reason'
+            value={rejectReason}
+            onChange={e => setRejectReason(e.target.value)}
+            placeholder='Why is this expense rejected?'
+            helperText='At least 3 characters'
+            multiline
+            minRows={2}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRejectFor(null)} disabled={rejecting}>
+            Cancel
+          </Button>
+          <Button
+            variant='contained'
+            color='error'
+            onClick={() => void handleReject()}
+            disabled={rejecting || rejectReason.trim().length < 3}
+            startIcon={rejecting ? <CircularProgress size={20} color='inherit' /> : undefined}
+          >
+            {rejecting ? 'Rejecting…' : 'Reject'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   )
 }

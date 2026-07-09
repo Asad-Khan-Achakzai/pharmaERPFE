@@ -16,7 +16,8 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'callPoints.create': 'Create CPs',
   'callPoints.edit': 'Edit / activate / deactivate CPs',
   'callPoints.delete': 'Delete CPs (when not referenced by a weekly plan)',
-  'expenses.approve': 'Approve or reject field expenses submitted by the team',
+  'expenses.approve': 'Approve field expenses submitted by the team',
+  'expenses.reject': 'Reject field expenses submitted by the team',
   'procurement.return': 'Record purchase returns against posted receipts',
   'procurement.grnReverse': 'Reverse a posted goods receipt (emergency / admin)',
   'procurement.cancelPo': 'Cancel supplier orders that have no receipts',
@@ -72,7 +73,14 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
     'weeklyPlans.approve'
   ],
   callPoints: ['callPoints.view', 'callPoints.create', 'callPoints.edit', 'callPoints.delete'],
-  expenses: ['expenses.view', 'expenses.create', 'expenses.edit', 'expenses.delete', 'expenses.approve'],
+  expenses: [
+    'expenses.view',
+    'expenses.create',
+    'expenses.edit',
+    'expenses.delete',
+    'expenses.approve',
+    'expenses.reject'
+  ],
   payroll: ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.pay'],
   attendance: [
     'attendance.view',
