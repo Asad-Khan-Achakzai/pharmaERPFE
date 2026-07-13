@@ -77,7 +77,17 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
     label: 'Supply Chain',
     icon: 'tabler-package',
     children: [
-      { label: 'Products', href: '/products/list', icon: 'tabler-pill', permission: 'products.view' },
+      {
+        label: 'Product Catalog',
+        icon: 'tabler-books',
+        children: [
+          { label: 'Products', href: '/products/list', exactMatch: false, activeUrl: '/products', permission: 'products.view' },
+          { label: 'Brands', href: '/brands/list', permission: 'brands.view' },
+          { label: 'Taxonomy', href: '/product-taxonomy', permission: 'productTaxonomy.view' },
+          { label: 'Campaigns', href: '/catalog-campaigns/list', permission: 'campaigns.view' },
+          { label: 'Kits', href: '/product-kits/list', permission: 'kits.view' }
+        ]
+      },
       {
         label: 'Inventory',
         icon: 'tabler-packages',
