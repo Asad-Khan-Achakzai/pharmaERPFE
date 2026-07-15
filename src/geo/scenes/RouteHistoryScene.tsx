@@ -32,34 +32,75 @@ export type RouteHistoryLayerKey = 'planned' | 'visits' | 'stops' | 'gaps'
 
 type LayerVisibility = Record<RouteHistoryLayerKey, boolean>
 
+function toLatLng(lat: unknown, lng: unknown): LatLng | null {
+  if (
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng)
+  ) {
+    return { lat, lng }
+  }
+  return null
+}
+
+function gapStart(gap: RouteHistoryGap): LatLng | null {
+  return toLatLng(gap.startLat ?? gap.fromLat, gap.startLng ?? gap.fromLng)
+}
+
+function gapEnd(gap: RouteHistoryGap): LatLng | null {
+  return toLatLng(gap.endLat ?? gap.toLat, gap.endLng ?? gap.toLng)
+}
+
 function collectPoints(
   data: RouteHistoryPayload | null,
   playback?: { lat: number; lng: number } | null
 ): LatLng[] {
   const pts: LatLng[] = []
   for (const p of data?.path || []) {
-    if (typeof p.lat === 'number' && typeof p.lng === 'number') pts.push({ lat: p.lat, lng: p.lng })
+    const ll = toLatLng(p.lat, p.lng)
+    if (ll) pts.push(ll)
   }
   for (const p of data?.plannedRoute?.path || []) {
-    if (typeof p.lat === 'number' && typeof p.lng === 'number') pts.push({ lat: p.lat, lng: p.lng })
+    const ll = toLatLng(p.lat, p.lng)
+    if (ll) pts.push(ll)
   }
-  if (data?.checkIn) pts.push({ lat: data.checkIn.lat, lng: data.checkIn.lng })
-  if (data?.checkOut) pts.push({ lat: data.checkOut.lat, lng: data.checkOut.lng })
+  for (const s of data?.plannedRoute?.stops || []) {
+    const ll = toLatLng(s.lat, s.lng)
+    if (ll) pts.push(ll)
+  }
+  if (data?.checkIn) {
+    const ll = toLatLng(data.checkIn.lat, data.checkIn.lng)
+    if (ll) pts.push(ll)
+  }
+  if (data?.checkOut) {
+    const ll = toLatLng(data.checkOut.lat, data.checkOut.lng)
+    if (ll) pts.push(ll)
+  }
   for (const v of data?.visits || []) {
-    if (typeof v.lat === 'number' && typeof v.lng === 'number') pts.push({ lat: v.lat, lng: v.lng })
+    const ll = toLatLng(v.lat, v.lng)
+    if (ll) pts.push(ll)
   }
   for (const s of data?.stops || []) {
-    if (typeof s.lat === 'number' && typeof s.lng === 'number') pts.push({ lat: s.lat, lng: s.lng })
+    const ll = toLatLng(s.lat, s.lng)
+    if (ll) pts.push(ll)
   }
-  if (playback) pts.push(playback)
+  if (playback) {
+    const ll = toLatLng(playback.lat, playback.lng)
+    if (ll) pts.push(ll)
+  }
   return pts
 }
 
 function pathSegmentsWithoutGaps(
-  path: Array<{ lat: number; lng: number; capturedAt?: string }>,
+  path: Array<{ lat?: number | null; lng?: number | null; capturedAt?: string }>,
   gaps: RouteHistoryGap[]
 ): Array<Array<{ lat: number; lng: number }>> {
-  const valid = path.filter((p) => typeof p.lat === 'number' && typeof p.lng === 'number')
+  const valid: Array<{ lat: number; lng: number; capturedAt?: string }> = []
+  for (const p of path) {
+    const ll = toLatLng(p.lat, p.lng)
+    if (ll) valid.push({ ...ll, capturedAt: p.capturedAt })
+  }
   if (!valid.length) return []
   if (!gaps.length) {
     return [valid.map((p) => ({ lat: p.lat, lng: p.lng }))]
@@ -83,8 +124,7 @@ function pathSegmentsWithoutGaps(
 
   for (const p of valid) {
     const t = p.capturedAt ? new Date(p.capturedAt).getTime() : NaN
-    const inGap =
-      Number.isFinite(t) && gapWindows.some((g) => t >= g.from && t <= g.to)
+    const inGap = Number.isFinite(t) && gapWindows.some((g) => t >= g.from && t <= g.to)
     if (inGap) {
       if (current.length >= 2) segments.push(current)
       current = []
@@ -134,13 +174,20 @@ export function RouteHistoryScene({
     () => pathSegmentsWithoutGaps(data?.path || [], layers.gaps ? data?.gaps || [] : []),
     [data, layers.gaps]
   )
-  const plannedPath = useMemo(
-    () =>
-      (data?.plannedRoute?.path || []).filter(
-        (p) => typeof p.lat === 'number' && typeof p.lng === 'number'
-      ),
-    [data]
-  )
+  const plannedPath = useMemo(() => {
+    const fromPath: LatLng[] = []
+    for (const p of data?.plannedRoute?.path || []) {
+      const ll = toLatLng(p.lat, p.lng)
+      if (ll) fromPath.push(ll)
+    }
+    if (fromPath.length) return fromPath
+    const fromStops: LatLng[] = []
+    for (const s of data?.plannedRoute?.stops || []) {
+      const ll = toLatLng(s.lat, s.lng)
+      if (ll) fromStops.push(ll)
+    }
+    return fromStops
+  }, [data])
   const fitKey = useMemo(
     () =>
       [
@@ -156,6 +203,10 @@ export function RouteHistoryScene({
   const toggle = (key: RouteHistoryLayerKey) => {
     setLayers((prev) => ({ ...prev, [key]: !prev[key] }))
   }
+
+  const scrub = playbackPosition ? toLatLng(playbackPosition.lat, playbackPosition.lng) : null
+  const checkInPos = data?.checkIn ? toLatLng(data.checkIn.lat, data.checkIn.lng) : null
+  const checkOutPos = data?.checkOut ? toLatLng(data.checkOut.lat, data.checkOut.lng) : null
 
   return (
     <Box sx={{ position: 'relative', height, width: '100%' }}>
@@ -207,28 +258,25 @@ export function RouteHistoryScene({
         ) : null}
         {layers.gaps
           ? (data?.gaps || []).map((gap, idx) => {
-              const hasStart = typeof gap.startLat === 'number' && typeof gap.startLng === 'number'
-              const hasEnd = typeof gap.endLat === 'number' && typeof gap.endLng === 'number'
-              if (hasStart && hasEnd) {
+              const start = gapStart(gap)
+              const end = gapEnd(gap)
+              if (start && end) {
                 return (
                   <Polyline
                     key={`gap-line-${idx}`}
-                    path={[
-                      { lat: gap.startLat!, lng: gap.startLng! },
-                      { lat: gap.endLat!, lng: gap.endLng! }
-                    ]}
+                    path={[start, end]}
                     strokeColor={GAP_COLOR}
                     strokeWeight={3}
                     strokeOpacity={0.45}
                   />
                 )
               }
-              if (hasStart) {
+              if (start) {
                 return (
                   <AdvancedMarker
                     key={`gap-start-${idx}`}
-                    position={{ lat: gap.startLat!, lng: gap.startLng! }}
-                    title={gap.reason || 'GPS gap'}
+                    position={start}
+                    title={gap.reason || gap.type || 'GPS gap'}
                   >
                     <Box
                       sx={{
@@ -245,29 +293,24 @@ export function RouteHistoryScene({
               return null
             })
           : null}
-        {data?.checkIn ? (
-          <AdvancedMarker
-            position={{ lat: data.checkIn.lat, lng: data.checkIn.lng }}
-            title='Check-in'
-          >
+        {checkInPos ? (
+          <AdvancedMarker position={checkInPos} title='Check-in'>
             <DoctorMapPin variant='verified' />
           </AdvancedMarker>
         ) : null}
-        {data?.checkOut ? (
-          <AdvancedMarker
-            position={{ lat: data.checkOut.lat, lng: data.checkOut.lng }}
-            title='Check-out'
-          >
+        {checkOutPos ? (
+          <AdvancedMarker position={checkOutPos} title='Check-out'>
             <DoctorMapPin variant='default' />
           </AdvancedMarker>
         ) : null}
         {layers.visits
           ? (data?.visits || []).map((visit, idx) => {
-              if (typeof visit.lat !== 'number' || typeof visit.lng !== 'number') return null
+              const pos = toLatLng(visit.lat, visit.lng)
+              if (!pos) return null
               return (
                 <AdvancedMarker
                   key={`visit-${visit.doctorId || idx}-${visit.at || idx}`}
-                  position={{ lat: visit.lat, lng: visit.lng }}
+                  position={pos}
                   title={visit.doctorName || 'Visit'}
                 >
                   <VisitPin visit={visit} />
@@ -277,12 +320,13 @@ export function RouteHistoryScene({
           : null}
         {layers.stops
           ? (data?.stops || []).map((stop, idx) => {
-              if (typeof stop.lat !== 'number' || typeof stop.lng !== 'number') return null
+              const pos = toLatLng(stop.lat, stop.lng)
+              if (!pos) return null
               const color = stopMarkerColor(stop)
               return (
                 <AdvancedMarker
                   key={`stop-${idx}-${stop.startedAt || idx}`}
-                  position={{ lat: stop.lat, lng: stop.lng }}
+                  position={pos}
                   title={stop.label || stop.class || 'Stop'}
                 >
                   <Box
@@ -299,8 +343,8 @@ export function RouteHistoryScene({
               )
             })
           : null}
-        {playbackPosition ? (
-          <AdvancedMarker position={playbackPosition} title='Playback position'>
+        {scrub ? (
+          <AdvancedMarker position={scrub} title='Playback position'>
             <ScrubPin />
           </AdvancedMarker>
         ) : null}

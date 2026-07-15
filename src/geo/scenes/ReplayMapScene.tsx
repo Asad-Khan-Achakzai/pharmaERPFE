@@ -34,8 +34,20 @@ function replayPoints(data: ReplayPayload | null): LatLng[] {
   for (const p of data?.path || []) {
     if (typeof p.lat === 'number' && typeof p.lng === 'number') pts.push({ lat: p.lat, lng: p.lng })
   }
-  if (data?.checkIn) pts.push({ lat: data.checkIn.lat, lng: data.checkIn.lng })
-  if (data?.checkOut) pts.push({ lat: data.checkOut.lat, lng: data.checkOut.lng })
+  if (
+    data?.checkIn &&
+    typeof data.checkIn.lat === 'number' &&
+    typeof data.checkIn.lng === 'number'
+  ) {
+    pts.push({ lat: data.checkIn.lat, lng: data.checkIn.lng })
+  }
+  if (
+    data?.checkOut &&
+    typeof data.checkOut.lat === 'number' &&
+    typeof data.checkOut.lng === 'number'
+  ) {
+    pts.push({ lat: data.checkOut.lat, lng: data.checkOut.lng })
+  }
   for (const v of data?.visits || []) {
     if (typeof v.lat === 'number' && typeof v.lng === 'number') pts.push({ lat: v.lat, lng: v.lng })
   }
@@ -61,13 +73,20 @@ export function ReplayMapScene({
   return (
     <GeoMapShell height={height} points={points}>
       {path.length >= 2 ? <Polyline path={path} strokeColor='#455a64' strokeWeight={3} /> : null}
-      {data?.checkIn ? (
+      {data?.checkIn &&
+      typeof data.checkIn.lat === 'number' &&
+      typeof data.checkIn.lng === 'number' ? (
         <AdvancedMarker position={{ lat: data.checkIn.lat, lng: data.checkIn.lng }} title='Check-in'>
           <DoctorMapPin variant='verified' />
         </AdvancedMarker>
       ) : null}
-      {data?.checkOut ? (
-        <AdvancedMarker position={{ lat: data.checkOut.lat, lng: data.checkOut.lng }} title='Check-out'>
+      {data?.checkOut &&
+      typeof data.checkOut.lat === 'number' &&
+      typeof data.checkOut.lng === 'number' ? (
+        <AdvancedMarker
+          position={{ lat: data.checkOut.lat, lng: data.checkOut.lng }}
+          title='Check-out'
+        >
           <DoctorMapPin variant='default' />
         </AdvancedMarker>
       ) : null}

@@ -54,8 +54,8 @@ export type RouteHistoryPathPoint = {
 }
 
 export type RouteHistoryCheckPoint = {
-  lat: number
-  lng: number
+  lat?: number | null
+  lng?: number | null
   at?: string
 } | null
 
@@ -72,8 +72,8 @@ export type RouteHistoryVisit = {
 }
 
 export type RouteHistoryStop = {
-  lat: number
-  lng: number
+  lat?: number | null
+  lng?: number | null
   startedAt?: string
   endedAt?: string
   durationMs?: number | null
@@ -83,6 +83,7 @@ export type RouteHistoryStop = {
 }
 
 export type RouteHistoryGap = {
+  type?: string
   from?: string
   to?: string
   durationMs?: number | null
@@ -91,6 +92,10 @@ export type RouteHistoryGap = {
   startLng?: number | null
   endLat?: number | null
   endLng?: number | null
+  fromLat?: number | null
+  fromLng?: number | null
+  toLat?: number | null
+  toLng?: number | null
 }
 
 export type RouteHistoryEvent = {
@@ -213,16 +218,63 @@ function normalizeQuality(raw: RouteHistoryQuality | null | undefined): RouteHis
   }
 }
 
+function normalizePlannedRoute(
+  raw: RouteHistoryPlannedRoute | (Record<string, unknown> & { items?: unknown[] }) | null | undefined
+): RouteHistoryPlannedRoute {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as RouteHistoryPlannedRoute & {
+    items?: Array<{
+      doctor?: { id?: string; name?: string; lat?: number | null; lng?: number | null }
+      status?: string
+    }>
+  }
+  const path = Array.isArray(r.path)
+    ? r.path.filter((p) => typeof p.lat === 'number' && typeof p.lng === 'number')
+    : []
+  let stops = Array.isArray(r.stops) ? r.stops : []
+  if (!stops.length && Array.isArray(r.items)) {
+    stops = r.items
+      .map((item) => ({
+        lat: item.doctor?.lat ?? null,
+        lng: item.doctor?.lng ?? null,
+        doctorId: item.doctor?.id,
+        doctorName: item.doctor?.name,
+        status: item.status
+      }))
+      .filter((s) => typeof s.lat === 'number' && typeof s.lng === 'number')
+  }
+  return { path, stops }
+}
+
+function normalizeGaps(gaps: RouteHistoryGap[] | undefined): RouteHistoryGap[] {
+  if (!Array.isArray(gaps)) return []
+  return gaps.map((g) => ({
+    ...g,
+    startLat: g.startLat ?? g.fromLat ?? null,
+    startLng: g.startLng ?? g.fromLng ?? null,
+    endLat: g.endLat ?? g.toLat ?? null,
+    endLng: g.endLng ?? g.toLng ?? null,
+    reason: g.reason || g.type
+  }))
+}
+
 function normalizeRouteHistoryPayload(raw: unknown): RouteHistoryPayload {
-  const d = (raw || {}) as Partial<RouteHistoryPayload> & { path?: RouteHistoryPathPoint[] }
+  const d = (raw || {}) as Partial<RouteHistoryPayload> & {
+    path?: RouteHistoryPathPoint[]
+    plannedRoute?: RouteHistoryPlannedRoute
+  }
   return {
     date: d.date || '',
-    path: Array.isArray(d.path) ? d.path : [],
+    path: Array.isArray(d.path)
+      ? d.path.filter((p) => typeof p?.lat === 'number' && typeof p?.lng === 'number')
+      : [],
     events: Array.isArray(d.events) ? d.events : [],
-    stops: Array.isArray(d.stops) ? d.stops : [],
-    gaps: Array.isArray(d.gaps) ? d.gaps : [],
+    stops: Array.isArray(d.stops)
+      ? d.stops.filter((s) => typeof s?.lat === 'number' && typeof s?.lng === 'number')
+      : [],
+    gaps: normalizeGaps(d.gaps),
     visits: Array.isArray(d.visits) ? d.visits : [],
-    plannedRoute: d.plannedRoute ?? null,
+    plannedRoute: normalizePlannedRoute(d.plannedRoute),
     summary: normalizeSummary(d.summary ?? null),
     quality: normalizeQuality(d.quality ?? null),
     checkIn: d.checkIn ?? null,
