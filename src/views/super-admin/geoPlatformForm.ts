@@ -198,6 +198,8 @@ export function geoPlatformFormFromCompany(company: {
       schedulerMaxIntervalMs: number
       staleDisplayMs: number
       retentionDays: number
+      sampleIntervalMs: number
+      uploadBatchIntervalMs: number
     }>
   }
   liveTrackingEnabled?: boolean
@@ -240,7 +242,13 @@ export function geoPlatformFormFromCompany(company: {
       schedulerMaxIntervalMs:
         lt.schedulerMaxIntervalMs != null ? String(lt.schedulerMaxIntervalMs) : base.liveTracking.schedulerMaxIntervalMs,
       staleDisplayMs: lt.staleDisplayMs != null ? String(lt.staleDisplayMs) : base.liveTracking.staleDisplayMs,
-      retentionDays: lt.retentionDays != null ? String(lt.retentionDays) : base.liveTracking.retentionDays
+      retentionDays: lt.retentionDays != null ? String(lt.retentionDays) : base.liveTracking.retentionDays,
+      sampleIntervalMs:
+        lt.sampleIntervalMs != null ? String(lt.sampleIntervalMs) : base.liveTracking.sampleIntervalMs,
+      uploadBatchIntervalMs:
+        lt.uploadBatchIntervalMs != null
+          ? String(lt.uploadBatchIntervalMs)
+          : base.liveTracking.uploadBatchIntervalMs
     }
   }
   return base
@@ -304,6 +312,8 @@ export function buildGeoPlatformPayload(form: GeoPlatformFormState) {
       schedulerMaxIntervalMs: Number(lt.schedulerMaxIntervalMs) || 600000,
       staleDisplayMs: Number(lt.staleDisplayMs) || 1800000,
       retentionDays: Number(lt.retentionDays) || 90,
+      sampleIntervalMs: Number(lt.sampleIntervalMs) || 60000,
+      uploadBatchIntervalMs: Number(lt.uploadBatchIntervalMs) || 90000,
       geofenceContextEnabled: true,
       snapshotQualityGateEnabled: true,
       lowBatteryModeEnabled: true

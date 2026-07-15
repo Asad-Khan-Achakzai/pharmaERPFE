@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
@@ -52,12 +53,32 @@ export default function GeoReplaySection() {
 
   if (!enabled) return null
 
+  const fullHistoryHref =
+    userId && date
+      ? `/team/route-history?userId=${encodeURIComponent(userId)}&date=${encodeURIComponent(date)}`
+      : '/team/route-history'
+
   return (
     <Card variant='outlined' className='mbe-4'>
       <CardContent>
-        <Typography variant='subtitle2' className='mbe-2'>
-          Route replay
-        </Typography>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1}
+          alignItems={{ sm: 'center' }}
+          justifyContent='space-between'
+          className='mbe-2'
+        >
+          <Typography variant='subtitle2'>Route replay</Typography>
+          <Button
+            component={Link}
+            href={fullHistoryHref}
+            size='small'
+            variant='text'
+            startIcon={<i className='tabler-route' />}
+          >
+            Open full Route History
+          </Button>
+        </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} className='mbe-3'>
           <CustomTextField
             select

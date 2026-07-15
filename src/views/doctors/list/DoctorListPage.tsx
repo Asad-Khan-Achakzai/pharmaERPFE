@@ -472,18 +472,20 @@ const DoctorListPage = () => {
             })
           ]
         : []),
+      columnHelper.display({
+        id: 'picture',
+        header: 'Picture',
+        cell: ({ row }) => (
+          <EntityImageCell url={row.original.imageUrl} name={row.original.name} rounded size={40} />
+        )
+      }),
       columnHelper.accessor('doctorCode', {
         header: 'Code',
         cell: ({ getValue }) => getValue() || '—'
       }),
       columnHelper.accessor('name', {
         header: 'Doctor name',
-        cell: ({ row }) => (
-          <Stack direction='row' alignItems='center' spacing={1.5}>
-            <EntityImageCell url={row.original.imageUrl} name={row.original.name} rounded />
-            <Typography fontWeight={500}>{row.original.name}</Typography>
-          </Stack>
-        )
+        cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography>
       }),
       columnHelper.accessor('specialization', { header: 'Specialty', cell: ({ getValue }) => getValue() || '—' }),
       columnHelper.accessor('zone', { header: 'Zone', cell: ({ getValue }) => getValue() || '—' }),
@@ -551,6 +553,11 @@ const DoctorListPage = () => {
       {underTerritoryIdFromUrl && /^[a-f0-9]{24}$/i.test(underTerritoryIdFromUrl) ? (
         <Alert severity="info" sx={{ mx: 3, mb: 0 }}>
           Listing doctors whose brick assignment falls under this territory (including the territory itself when it is a brick). Remove the filter from the address bar to see the full directory.
+        </Alert>
+      ) : null}
+      {assignedRepIdFromUrl && /^[a-f0-9]{24}$/i.test(assignedRepIdFromUrl) ? (
+        <Alert severity="info" sx={{ mx: 3, mb: underTerritoryIdFromUrl ? 0 : 0, mt: underTerritoryIdFromUrl ? 1 : 0 }}>
+          Showing doctors owned by this person and their team: explicitly assigned, or on bricks in their territory footprint (MRep brick / ASM areas / RM zones). Remove <code>assignedRepId</code> from the address bar for the full directory.
         </Alert>
       ) : null}
       <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
@@ -1139,6 +1146,7 @@ const DoctorListPage = () => {
           void fetchData()
         }}
         doctor={assignTarget as any}
+        scopeRepId={assignedRepIdFromUrl}
       />
 
       <Dialog open={locationOpen} onClose={() => !locationSaving && setLocationOpen(false)} maxWidth='md' fullWidth>

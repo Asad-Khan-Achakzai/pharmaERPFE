@@ -23,8 +23,14 @@ export type TerritoryTreeResponse = { roots: TerritoryNode[]; total: number }
 
 export const territoriesService = {
   /** Tenant-scoped autocomplete (no `territories.view` required). */
-  lookup: (params?: { search?: string; kind?: TerritoryKind; parentId?: string; limit?: number }) =>
-    api.get('/territories/lookup', { params }),
+  lookup: (params?: {
+    search?: string
+    kind?: TerritoryKind
+    parentId?: string
+    /** Bricks in this user's reporting-subtree footprint (MRep brick / ASM areas / RM zones). */
+    underUserId?: string
+    limit?: number
+  }) => api.get('/territories/lookup', { params }),
 
   list: (params?: {
     page?: number

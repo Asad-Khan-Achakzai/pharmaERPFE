@@ -17,6 +17,8 @@ export type LiveTrackingTunables = {
   schedulerMaxIntervalMs: string
   staleDisplayMs: string
   retentionDays: string
+  sampleIntervalMs: string
+  uploadBatchIntervalMs: string
 }
 
 export const defaultLiveTrackingTunables = (): LiveTrackingTunables => ({
@@ -26,7 +28,9 @@ export const defaultLiveTrackingTunables = (): LiveTrackingTunables => ({
   schedulerMinIntervalMs: '30000',
   schedulerMaxIntervalMs: '600000',
   staleDisplayMs: '1800000',
-  retentionDays: '90'
+  retentionDays: '90',
+  sampleIntervalMs: '60000',
+  uploadBatchIntervalMs: '90000'
 })
 
 type Props = {
@@ -121,6 +125,28 @@ export function LiveTrackingTunablesSection({ value, onChange, disabled = false 
             disabled={disabled}
             value={value.retentionDays}
             onChange={e => set('retentionDays', e.target.value)}
+          />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+          <TextField
+            label='Sample interval (ms)'
+            size='small'
+            fullWidth
+            disabled={disabled}
+            value={value.sampleIntervalMs}
+            onChange={e => set('sampleIntervalMs', e.target.value)}
+            helperText='OS GPS callback cadence for route density'
+          />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+          <TextField
+            label='Upload batch interval (ms)'
+            size='small'
+            fullWidth
+            disabled={disabled}
+            value={value.uploadBatchIntervalMs}
+            onChange={e => set('uploadBatchIntervalMs', e.target.value)}
+            helperText='Background upload cadence (independent of live display)'
           />
         </Grid>
       </Grid>

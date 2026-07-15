@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
-import OrgChartView from '@/views/team/OrgChartView'
+import RouteHistoryView from '@/views/team/RouteHistoryView'
 
 export default function Page() {
   return (
@@ -12,7 +12,7 @@ export default function Page() {
         </Box>
       }
     >
-      <OrgChartView />
+      <RouteHistoryView />
     </Suspense>
   )
 }

@@ -13,6 +13,7 @@ import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
 import CustomTextField from '@core/components/mui/TextField'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
+import { useAuth } from '@/contexts/AuthContext'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { doctorsService } from '@/services/doctors.service'
 import { territoriesService, type Territory } from '@/services/territories.service'
@@ -30,18 +31,31 @@ type Props = {
     monthlyVisitTarget?: number | null
     tier?: string | null
   } | null
+  /**
+   * When set (e.g. from `/doctors/list?assignedRepId=`), brick + rep options are limited
+   * to that person's reporting-subtree footprint — same ownership model as the doctors list.
+   */
+  scopeRepId?: string | null
 }
 
-type RepLookup = { _id: string; name: string; email: string; role?: string }
+type RepLookup = { _id: string; name: string; email: string; role?: string; roleCode?: string | null }
 
 const TIER_OPTIONS = ['', 'A', 'B', 'C', 'D']
+const MREP_CODE = 'DEFAULT_MEDICAL_REP'
 
-const DoctorAssignDialog = ({ open, onClose, onSaved, doctor }: Props) => {
+const DoctorAssignDialog = ({ open, onClose, onSaved, doctor, scopeRepId }: Props) => {
+  const { user, hasPermission } = useAuth()
+  const isTenantWide = hasPermission('admin.access')
   const [territory, setTerritory] = useState<Territory | null>(null)
   const [rep, setRep] = useState<RepLookup | null>(null)
   const [target, setTarget] = useState<string>('')
   const [tier, setTier] = useState<string>('')
   const [saving, setSaving] = useState(false)
+
+  /** Prefer URL/org-chart scope; else managers use their own id; admins leave open unless scoped. */
+  const footprintUserId =
+    (scopeRepId && /^[a-f0-9]{24}$/i.test(scopeRepId) ? scopeRepId : null) ||
+    (!isTenantWide && user?._id ? String(user._id) : null)
 
   const ownershipLabel = !doctor
     ? ''
@@ -72,12 +86,41 @@ const DoctorAssignDialog = ({ open, onClose, onSaved, doctor }: Props) => {
   }, [open, doctor])
 
   const fetchTerritories = async (search: string) => {
-    const res = await territoriesService.lookup({ search, kind: 'BRICK', limit: 25 })
+    const res = await territoriesService.lookup({
+      search,
+      kind: 'BRICK',
+      limit: 25,
+      ...(footprintUserId ? { underUserId: footprintUserId } : {})
+    })
     return (res.data?.data || []) as Territory[]
   }
 
   const fetchReps = async (search: string) => {
-    const res = await usersService.assignable({ search, limit: 25 })
+    if (footprintUserId) {
+      // Team roster under the scoped manager (or caller): same subtree as doctors ownership.
+      const res = await usersService.team({
+        managerId: footprintUserId,
+        includeSelf: true,
+        search: search || undefined
+      })
+      const body = res.data?.data || res.data
+      const docs = ((body as { docs?: Array<Record<string, unknown>> })?.docs || []) as Array<{
+        _id: string
+        name: string
+        email: string
+        roleId?: { code?: string; name?: string } | null
+      }>
+      return docs
+        .filter(u => u.roleId?.code === MREP_CODE)
+        .map(u => ({
+          _id: u._id,
+          name: u.name,
+          email: u.email,
+          role: u.roleId?.name,
+          roleCode: u.roleId?.code ?? null
+        })) as RepLookup[]
+    }
+    const res = await usersService.assignable({ search, limit: 25, scope: 'team' })
     return (res.data?.data || []) as RepLookup[]
   }
 
@@ -120,7 +163,9 @@ const DoctorAssignDialog = ({ open, onClose, onSaved, doctor }: Props) => {
       <DialogContent>
         {doctor ? (
           <Typography variant='caption' color='text.secondary' display='block' className='pbs-1 pbe-2'>
-            Assigned rep overrides territory for coverage. Clear the rep to rely on brick inference only.
+            Brick options are limited to the team footprint
+            {footprintUserId ? ' (this person / your reporting tree)' : ''}. Assigned rep overrides territory for
+            coverage — clear the rep to rely on brick inference only.
           </Typography>
         ) : null}
         <Grid container spacing={4} className='pbs-4'>
@@ -131,7 +176,11 @@ const DoctorAssignDialog = ({ open, onClose, onSaved, doctor }: Props) => {
               fetchOptions={fetchTerritories}
               label='Brick (territory)'
               getOptionLabel={t => `${t.name}${t.code ? ` (${t.code})` : ''}`}
-              helperText='Optional. Used for coverage and manager rollups.'
+              helperText={
+                footprintUserId
+                  ? 'Bricks in this team’s territory footprint (MRep brick / ASM areas / RM zones).'
+                  : 'Optional. Used for coverage and manager rollups.'
+              }
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>
@@ -141,7 +190,11 @@ const DoctorAssignDialog = ({ open, onClose, onSaved, doctor }: Props) => {
               fetchOptions={fetchReps}
               label='Assigned rep'
               getOptionLabel={u => `${u.name} <${u.email}>`}
-              helperText='Optional override; otherwise inferred from territory.'
+              helperText={
+                footprintUserId
+                  ? 'MReps in this reporting subtree. Optional override; otherwise inferred from brick.'
+                  : 'Optional override; otherwise inferred from territory.'
+              }
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>

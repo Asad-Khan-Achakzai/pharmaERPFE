@@ -6,6 +6,7 @@ import type { GeoFeatureKey, GeoPlatformConfig } from '@/geo/types'
 
 const GEO_MENU_MAP: Record<string, GeoFeatureKey> = {
   '/team/live': 'managerLiveMap',
+  '/team/route-history': 'routeReplay',
   '/visits/today': 'dailyPlanMaps',
   '/call-points': 'callPointMaps',
   '/doctors/location-review': 'doctorLocationReviewMaps'

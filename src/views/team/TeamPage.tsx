@@ -23,22 +23,9 @@ import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { TableListSearchField, useDebouncedSearch } from '@/components/standard-list-toolbar'
 import { usersService } from '@/services/users.service'
 import { territoriesService, type Territory } from '@/services/territories.service'
+import type { TeamUser } from '@/types/team'
 import { formatTerritoryCoverageLabel } from '@/utils/formatTerritoryCoverageLabel'
 import tableStyles from '@core/styles/table.module.css'
-
-type TerritoryRef = { _id: string; name: string; code?: string | null; kind: string }
-
-type TeamUser = {
-  _id: string
-  name: string
-  email: string
-  isActive: boolean
-  employeeCode?: string | null
-  roleId?: { _id: string; name: string; code: string } | null
-  managerId?: { _id: string; name: string; email: string } | string | null
-  territoryId?: TerritoryRef | string | null
-  coverageTerritoryIds?: Array<TerritoryRef | string> | null
-}
 
 type AssignableUser = { _id: string; name: string; email: string; role?: string }
 
@@ -237,7 +224,7 @@ const TeamPage = () => {
                               onClick={() =>
                                 setManagerDialog({
                                   user: u,
-                                  mgr: mgr ? { _id: mgr._id, name: mgr.name, email: mgr.email } : null
+                                  mgr: mgr ? { _id: mgr._id, name: mgr.name, email: mgr.email || '' } : null
                                 })
                               }
                             >

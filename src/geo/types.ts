@@ -45,6 +45,8 @@ export interface GeoPlatformConfig {
     schedulerMaxIntervalMs?: number
     staleDisplayMs?: number
     retentionDays?: number
+    sampleIntervalMs?: number
+    uploadBatchIntervalMs?: number
   }
   maps: {
     webApiKey: string

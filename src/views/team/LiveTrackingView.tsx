@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -19,7 +20,9 @@ import { LiveTrackingScene } from '@/geo/scenes/LiveTrackingScene'
 import { GeoFeatureGate } from '@/geo/GeoPlatformProvider'
 import { useRealtimeChannel, useRealtimeStatus } from '@/realtime/RealtimeProvider'
 import { showApiError } from '@/utils/apiErrors'
+import { formatYyyyMmDd } from '@/utils/dateLocal'
 import { confidenceLabel, type LiveAttendanceStatus, type LiveRepLocation } from '@/types/liveTracking'
+import CustomTextField from '@core/components/mui/TextField'
 
 const POLL_MS = 60_000
 const POLL_VISIBLE_MS = 45_000
@@ -41,17 +44,45 @@ function hasLiveLocation(item: LiveRepLocation): boolean {
   return item.lat != null && item.lng != null && item.ageSeconds != null
 }
 
+function formatAgeAgo(ageSeconds: number): string {
+  if (ageSeconds < 60) return 'Just now'
+  if (ageSeconds < 3600) {
+    const m = Math.max(1, Math.round(ageSeconds / 60))
+    return `${m}m ago`
+  }
+  if (ageSeconds < 86400) {
+    const h = Math.floor(ageSeconds / 3600)
+    const m = Math.round((ageSeconds % 3600) / 60)
+    if (m <= 0) return h === 1 ? '1h ago' : `${h}h ago`
+    return `${h}h ${m}m ago`
+  }
+  const d = Math.floor(ageSeconds / 86400)
+  return d === 1 ? '1d ago' : `${d}d ago`
+}
+
 function freshnessChip(item: LiveRepLocation): { label: string; color: 'success' | 'warning' | 'default' | 'error' } {
   if (!hasLiveLocation(item)) return { label: 'No recent location', color: 'default' }
   const expectedMs = item.expectedNextPingMs ?? 180_000
-  const ageMs = (item.ageSeconds ?? 0) * 1000
+  const ageSeconds = item.ageSeconds ?? 0
+  const ageMs = ageSeconds * 1000
   const staleThreshold = Math.max(expectedMs * 2, 480_000)
 
   if (ageMs < expectedMs) return { label: 'Live', color: 'success' }
   if (ageMs < staleThreshold) {
-    return { label: `${Math.round(ageMs / 60_000)}m ago`, color: 'warning' }
+    return { label: formatAgeAgo(ageSeconds), color: 'warning' }
   }
-  return { label: 'Stale', color: 'error' }
+  if (ageSeconds >= 3600) {
+    return { label: `Stale · ${formatAgeAgo(ageSeconds)}`, color: 'error' }
+  }
+  return { label: `Stale · ${formatAgeAgo(ageSeconds)}`, color: 'error' }
+}
+
+function isHighlyStale(item: LiveRepLocation): boolean {
+  if (!hasLiveLocation(item)) return false
+  const expectedMs = item.expectedNextPingMs ?? 180_000
+  const ageSeconds = item.ageSeconds ?? 0
+  const staleThreshold = Math.max(expectedMs * 2, 480_000)
+  return ageSeconds * 1000 >= staleThreshold
 }
 
 function attendanceChip(status: LiveAttendanceStatus): {
@@ -116,6 +147,7 @@ export default function LiveTrackingView() {
   const [rows, setRows] = useState<LiveRepLocation[]>([])
   const [disabledMessage, setDisabledMessage] = useState<string | null>(null)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [nameFilter, setNameFilter] = useState('')
   const etagRef = useRef<string | null>(null)
 
   const load = useCallback(async (silent = false) => {
@@ -165,6 +197,14 @@ export default function LiveTrackingView() {
     canAccess
   )
 
+  const filteredRows = useMemo(() => {
+    const q = nameFilter.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter((r) => (r.name || '').toLowerCase().includes(q))
+  }, [rows, nameFilter])
+
+  const today = formatYyyyMmDd(new Date())
+
   if (!canAccess) {
     return (
       <Card>
@@ -209,7 +249,7 @@ export default function LiveTrackingView() {
           <Box sx={{ mb: 3 }}>
             <LiveTrackingScene
               height={420}
-              rows={rows}
+              rows={filteredRows}
               loading={loading}
               selectedUserId={selectedUserId}
               onSelectUser={(row) => setSelectedUserId(row?.userId ?? null)}
@@ -237,21 +277,42 @@ export default function LiveTrackingView() {
             </Typography>
           </Box>
         ) : (
-          <Grid container spacing={2}>
-            {rows.map(item => {
+          <>
+            <CustomTextField
+              size='small'
+              label='Search reps'
+              placeholder='Filter by name'
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+              sx={{ mb: 2, maxWidth: 320 }}
+            />
+            {filteredRows.length === 0 ? (
+              <Typography color='text.secondary' sx={{ mb: 2 }}>
+                No reps match “{nameFilter.trim()}”.
+              </Typography>
+            ) : null}
+            <Grid container spacing={2}>
+              {filteredRows.map(item => {
               const chip = freshnessChip(item)
               const attendance = attendanceChip(item.attendanceStatus ?? 'NOT_CHECKED_IN')
               const located = hasLiveLocation(item)
               const captured = item.capturedAt ? parseISO(item.capturedAt) : null
               const checkOutAt = item.checkOutTime ? parseISO(item.checkOutTime) : null
+              const highlyStale = isHighlyStale(item)
+              const historyHref = `/team/route-history?userId=${encodeURIComponent(item.userId)}&date=${today}`
               return (
                 <Grid size={{ xs: 12, md: 6 }} key={item.userId}>
                   <Card
                     variant='outlined'
                     sx={{
                       height: '100%',
-                      borderColor: selectedUserId === item.userId ? 'primary.main' : undefined,
-                      cursor: located ? 'pointer' : 'default'
+                      borderColor: selectedUserId === item.userId
+                        ? 'primary.main'
+                        : highlyStale
+                          ? 'error.light'
+                          : undefined,
+                      cursor: located ? 'pointer' : 'default',
+                      bgcolor: highlyStale ? 'action.hover' : undefined
                     }}
                     onClick={() => located && setSelectedUserId(item.userId)}
                   >
@@ -268,9 +329,15 @@ export default function LiveTrackingView() {
                             {locationSubtitle(item, located)}
                           </Typography>
                           {located && captured && isValid(captured) ? (
-                            <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.75 }}>
+                            <Typography
+                              variant='caption'
+                              color={highlyStale ? 'error.main' : 'text.secondary'}
+                              display='block'
+                              sx={{ mt: 0.75 }}
+                            >
                               Last ping {formatDistanceToNow(captured, { addSuffix: true })}
-                              {chip.color === 'error'
+                              {item.ageSeconds != null ? ` · age ${formatAgeAgo(item.ageSeconds)}` : ''}
+                              {highlyStale
                                 ? ' · GPS ping overdue — check rep mobile app is open or background location is active'
                                 : null}
                             </Typography>
@@ -279,6 +346,17 @@ export default function LiveTrackingView() {
                               Checked out {formatDistanceToNow(checkOutAt, { addSuffix: true })}
                             </Typography>
                           ) : null}
+                          <Button
+                            component={Link}
+                            href={historyHref}
+                            size='small'
+                            variant='text'
+                            sx={{ mt: 1, px: 0 }}
+                            onClick={(e) => e.stopPropagation()}
+                            startIcon={<i className='tabler-route' />}
+                          >
+                            Route history
+                          </Button>
                         </Box>
                         <Stack direction='row' spacing={1} alignItems='center'>
                           <Chip size='small' label={chip.label} color={chip.color} variant='tonal' />
@@ -302,7 +380,8 @@ export default function LiveTrackingView() {
                 </Grid>
               )
             })}
-          </Grid>
+            </Grid>
+          </>
         )}
       </CardContent>
     </Card>
