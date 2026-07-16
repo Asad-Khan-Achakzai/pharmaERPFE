@@ -193,6 +193,7 @@ export function geoPlatformFormFromCompany(company: {
     liveTracking?: Partial<{
       heartbeatIntervalMs: number
       maxAccuracyMeters: number
+      historyMaxAccuracyMeters: number
       trackingProfile: 'balanced' | 'fresh' | 'conservative'
       schedulerMinIntervalMs: number
       schedulerMaxIntervalMs: number
@@ -236,6 +237,10 @@ export function geoPlatformFormFromCompany(company: {
     base.liveTracking = {
       heartbeatIntervalMs: lt.heartbeatIntervalMs != null ? String(lt.heartbeatIntervalMs) : base.liveTracking.heartbeatIntervalMs,
       maxAccuracyMeters: lt.maxAccuracyMeters != null ? String(lt.maxAccuracyMeters) : base.liveTracking.maxAccuracyMeters,
+      historyMaxAccuracyMeters:
+        lt.historyMaxAccuracyMeters != null
+          ? String(lt.historyMaxAccuracyMeters)
+          : base.liveTracking.historyMaxAccuracyMeters,
       trackingProfile: lt.trackingProfile ?? base.liveTracking.trackingProfile,
       schedulerMinIntervalMs:
         lt.schedulerMinIntervalMs != null ? String(lt.schedulerMinIntervalMs) : base.liveTracking.schedulerMinIntervalMs,
@@ -307,6 +312,7 @@ export function buildGeoPlatformPayload(form: GeoPlatformFormState) {
     liveTracking: {
       heartbeatIntervalMs: Number(lt.heartbeatIntervalMs) || 300000,
       maxAccuracyMeters: Number(lt.maxAccuracyMeters) || 150,
+      historyMaxAccuracyMeters: Number(lt.historyMaxAccuracyMeters) || 500,
       trackingProfile: lt.trackingProfile,
       schedulerMinIntervalMs: Number(lt.schedulerMinIntervalMs) || 30000,
       schedulerMaxIntervalMs: Number(lt.schedulerMaxIntervalMs) || 600000,

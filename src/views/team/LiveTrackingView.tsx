@@ -106,7 +106,12 @@ function locationSubtitle(item: LiveRepLocation, located: boolean): string {
     const coords = `${item.lat!.toFixed(5)}, ${item.lng!.toFixed(5)}${
       item.accuracy != null ? ` · ±${Math.round(item.accuracy)}m` : ''
     }`
-    const conf = item.confidence != null ? ` · ${confidenceLabel(item.confidence)}` : ''
+    const conf =
+      item.qualityLevel === 'low_confidence'
+        ? ' · Last accurate fix (weak GPS ignored)'
+        : item.confidence != null
+          ? ` · ${confidenceLabel(item.confidence)}`
+          : ''
     if (item.locationSource === 'checkin') return `${coords} · check-in location${conf}`
     if (item.attendanceStatus === 'CHECKED_OUT') return `${coords} · last ping before check-out${conf}`
     return `${coords}${conf}`

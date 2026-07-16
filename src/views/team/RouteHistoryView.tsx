@@ -84,16 +84,21 @@ function formatCoverage(summary?: RouteHistorySummary): string {
 
 function qualityChip(
   quality?: RouteHistoryQuality | null
-): { label: string; color: 'success' | 'warning' | 'error' | 'default' } {
+): { label: string; color: 'success' | 'warning' | 'error' | 'default'; reason?: string } {
   const raw = (quality?.label || quality?.band || '').toString()
   const lower = raw.toLowerCase()
-  if (lower.includes('trust')) return { label: raw || 'Trusted', color: 'success' }
-  if (lower.includes('partial')) return { label: raw || 'Partial', color: 'warning' }
-  if (lower.includes('unreliab')) return { label: raw || 'Unreliable', color: 'error' }
+  const reason = Array.isArray(quality?.reasons) && quality.reasons.length ? quality.reasons[0] : undefined
+  const withScore = (band: string) =>
+    quality?.score != null ? `${band} (${quality.score})` : band
+
+  if (lower.includes('trust')) return { label: withScore(raw || 'Trusted'), color: 'success', reason }
+  if (lower.includes('partial')) return { label: withScore(raw || 'Partial'), color: 'warning', reason }
+  if (lower.includes('unreliab')) return { label: withScore(raw || 'Unreliable'), color: 'error', reason }
+  // Align with server bands: Trusted ≥70, Partial ≥40
   if (quality?.score != null) {
-    if (quality.score >= 75) return { label: `Trusted (${quality.score})`, color: 'success' }
-    if (quality.score >= 45) return { label: `Partial (${quality.score})`, color: 'warning' }
-    return { label: `Unreliable (${quality.score})`, color: 'error' }
+    if (quality.score >= 70) return { label: withScore('Trusted'), color: 'success', reason }
+    if (quality.score >= 40) return { label: withScore('Partial'), color: 'warning', reason }
+    return { label: withScore('Unreliable'), color: 'error', reason }
   }
   return { label: 'Unknown', color: 'default' }
 }
@@ -109,52 +114,79 @@ type TimelineItem = {
   id: string
   atMs: number
   label: string
-  kind: 'event' | 'gap' | 'visit' | 'checkin' | 'checkout'
+  kind: 'event' | 'gap' | 'visit' | 'checkin' | 'checkout' | 'diagnostic'
   secondary?: string
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  CHECK_IN: 'Check-in',
+  CHECK_OUT: 'Check-out',
+  VISIT: 'Visit',
+  ORDER: 'Order',
+  GAP: 'GPS gap',
+  SIGNAL_GAP: 'GPS gap',
+  DIAGNOSTIC: 'Device diagnostic',
+  TERRITORY_CONTEXT: 'Territory',
+  TRACKING_PAUSED_FOREGROUND: 'App backgrounded',
+  TRACKING_RESUMED: 'App resumed',
+  BACKGROUND_SERVICE_RESTARTED: 'Background tracking restarted',
+  BACKGROUND_SERVICE_FAILED: 'Background tracking failed',
+  GPS_DISABLED: 'GPS disabled',
+  GPS_UNAVAILABLE: 'GPS unavailable',
+  OFFLINE: 'Went offline',
+  ONLINE: 'Back online',
+  NETWORK_UNAVAILABLE: 'Network unavailable',
+  PERMISSION_CHANGED: 'Location permission changed',
+  LOW_BATTERY: 'Low battery',
+  GPS_LOW_ACCURACY: 'Low GPS accuracy',
+  GPS_SIGNAL_WEAK: 'GPS signal weak',
+  GPS_RECOVERED: 'GPS recovered',
+  LOCATION_CONFIDENCE_REDUCED: 'Location confidence reduced'
+}
+
+function friendlyEventLabel(ev: RouteHistoryEvent): string {
+  const diagnosticType =
+    (typeof ev.diagnosticType === 'string' && ev.diagnosticType) ||
+    (typeof ev.meta?.type === 'string' ? ev.meta.type : undefined)
+  if (ev.type === 'DIAGNOSTIC' && diagnosticType) {
+    return EVENT_LABELS[diagnosticType] || diagnosticType.replace(/_/g, ' ')
+  }
+  if (ev.label && !/^(CHECK_IN|CHECK_OUT|GAP|DIAGNOSTIC|VISIT|ORDER)$/i.test(ev.label)) {
+    return ev.label
+  }
+  return EVENT_LABELS[ev.type || ''] || ev.label || ev.type || 'Event'
 }
 
 function buildTimeline(data: RouteHistoryPayload | null): TimelineItem[] {
   if (!data) return []
   const items: TimelineItem[] = []
+  const seen = new Set<string>()
 
+  const pushUnique = (item: TimelineItem, dedupeKey: string) => {
+    if (seen.has(dedupeKey)) return
+    seen.add(dedupeKey)
+    items.push(item)
+  }
+
+  // Prefer structured check-in/out / visits / gaps; skip duplicate raw events of the same kind.
   if (data.checkIn?.at) {
     const t = new Date(data.checkIn.at).getTime()
     if (Number.isFinite(t)) {
-      items.push({ id: 'checkin', atMs: t, label: 'Check-in', kind: 'checkin' })
+      pushUnique(
+        { id: 'checkin', atMs: t, label: 'Check-in', kind: 'checkin' },
+        `checkin:${Math.floor(t / 1000)}`
+      )
     }
   }
   if (data.checkOut?.at) {
     const t = new Date(data.checkOut.at).getTime()
     if (Number.isFinite(t)) {
-      items.push({ id: 'checkout', atMs: t, label: 'Check-out', kind: 'checkout' })
+      pushUnique(
+        { id: 'checkout', atMs: t, label: 'Check-out', kind: 'checkout' },
+        `checkout:${Math.floor(t / 1000)}`
+      )
     }
   }
-
-  ;(data.events || []).forEach((ev: RouteHistoryEvent, idx) => {
-    if (!ev.at) return
-    const t = new Date(ev.at).getTime()
-    if (!Number.isFinite(t)) return
-    items.push({
-      id: `event-${idx}`,
-      atMs: t,
-      label: ev.label || ev.type || 'Event',
-      kind: 'event',
-      secondary: ev.type
-    })
-  })
-
-  ;(data.gaps || []).forEach((gap: RouteHistoryGap, idx) => {
-    if (!gap.from) return
-    const t = new Date(gap.from).getTime()
-    if (!Number.isFinite(t)) return
-    items.push({
-      id: `gap-${idx}`,
-      atMs: t,
-      label: gap.reason || 'GPS gap',
-      kind: 'gap',
-      secondary: formatDurationMs(gap.durationMs)
-    })
-  })
 
   ;(data.visits || []).forEach((v, idx) => {
     if (!v.at) return
@@ -166,13 +198,57 @@ function buildTimeline(data: RouteHistoryPayload | null): TimelineItem[] {
         : v.geoFenceResult === 'INSIDE_RADIUS'
           ? 'Inside fence'
           : undefined
-    items.push({
-      id: `visit-${idx}`,
-      atMs: t,
-      label: v.doctorName || 'Visit',
-      kind: 'visit',
-      secondary: fence
-    })
+    pushUnique(
+      {
+        id: `visit-${idx}`,
+        atMs: t,
+        label: v.doctorName || 'Visit',
+        kind: 'visit',
+        secondary: fence
+      },
+      `visit:${v.doctorId || idx}:${Math.floor(t / 1000)}`
+    )
+  })
+
+  ;(data.gaps || []).forEach((gap, idx) => {
+    if (!gap.from) return
+    const t = new Date(gap.from).getTime()
+    if (!Number.isFinite(t)) return
+    const label =
+      gap.type === 'SIGNAL_GAP' || !gap.type
+        ? 'GPS gap'
+        : EVENT_LABELS[gap.type] || gap.reason || gap.type
+    pushUnique(
+      {
+        id: `gap-${idx}`,
+        atMs: t,
+        label,
+        kind: 'gap',
+        secondary: formatDurationMs(gap.durationMs)
+      },
+      `gap:${Math.floor(t / 1000)}:${gap.durationMs || 0}`
+    )
+  })
+
+  ;(data.events || []).forEach((ev: RouteHistoryEvent, idx) => {
+    if (!ev.at) return
+    const t = new Date(ev.at).getTime()
+    if (!Number.isFinite(t)) return
+    const type = (ev.type || '').toUpperCase()
+    // Already represented above
+    if (type === 'CHECK_IN' || type === 'CHECK_OUT' || type === 'VISIT' || type === 'GAP') return
+
+    const kind = type === 'DIAGNOSTIC' ? 'diagnostic' : 'event'
+    pushUnique(
+      {
+        id: `event-${idx}`,
+        atMs: t,
+        label: friendlyEventLabel(ev),
+        kind,
+        secondary: type === 'DIAGNOSTIC' ? undefined : ev.type
+      },
+      `event:${type}:${Math.floor(t / 1000)}:${friendlyEventLabel(ev)}`
+    )
   })
 
   items.sort((a, b) => a.atMs - b.atMs)
@@ -273,6 +349,12 @@ function SummaryCards({
             {quality?.reasons?.length ? (
               <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 0.5 }}>
                 {quality.reasons[0]}
+              </Typography>
+            ) : null}
+            {quality?.gpsQualityBreakdown?.low_confidence != null &&
+            quality.gpsQualityBreakdown.low_confidence > 0 ? (
+              <Typography variant='caption' color='warning.main' display='block' sx={{ mt: 0.5 }}>
+                {Math.round(quality.gpsQualityBreakdown.low_confidence * 100)}% low-confidence GPS
               </Typography>
             ) : null}
           </CardContent>

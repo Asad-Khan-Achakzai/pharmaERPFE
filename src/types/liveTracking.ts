@@ -12,6 +12,8 @@ export interface LiveRepLocation {
   lng: number | null
   accuracy?: number | null
   confidence?: number | null
+  qualityLevel?: string | null
+  usableForLive?: boolean | null
   speed?: number | null
   heading?: number | null
   trackingContext?: string | null

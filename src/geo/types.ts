@@ -40,6 +40,7 @@ export interface GeoPlatformConfig {
   liveTracking: {
     heartbeatIntervalMs: number
     maxAccuracyMeters: number
+    historyMaxAccuracyMeters?: number
     trackingProfile?: 'balanced' | 'fresh' | 'conservative'
     schedulerMinIntervalMs?: number
     schedulerMaxIntervalMs?: number
@@ -82,6 +83,10 @@ export const DEFAULT_GEO_PLATFORM: GeoPlatformConfig = {
   defaults: { mapCenter: null, mapZoom: 12, countryCode: 'PK' },
   features: DEFAULT_GEO_FEATURES,
   limits: { maxGoogleCallsPerDay: null },
-  liveTracking: { heartbeatIntervalMs: 300000, maxAccuracyMeters: 150 },
+  liveTracking: {
+    heartbeatIntervalMs: 300000,
+    maxAccuracyMeters: 150,
+    historyMaxAccuracyMeters: 500
+  },
   maps: { webApiKey: '', androidApiKey: '', iosApiKey: '' }
 }

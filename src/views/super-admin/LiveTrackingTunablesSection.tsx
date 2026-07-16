@@ -12,6 +12,7 @@ import Grid from '@mui/material/Grid'
 export type LiveTrackingTunables = {
   heartbeatIntervalMs: string
   maxAccuracyMeters: string
+  historyMaxAccuracyMeters: string
   trackingProfile: 'balanced' | 'fresh' | 'conservative'
   schedulerMinIntervalMs: string
   schedulerMaxIntervalMs: string
@@ -24,6 +25,7 @@ export type LiveTrackingTunables = {
 export const defaultLiveTrackingTunables = (): LiveTrackingTunables => ({
   heartbeatIntervalMs: '300000',
   maxAccuracyMeters: '150',
+  historyMaxAccuracyMeters: '500',
   trackingProfile: 'balanced',
   schedulerMinIntervalMs: '30000',
   schedulerMaxIntervalMs: '600000',
@@ -49,8 +51,9 @@ export function LiveTrackingTunablesSection({ value, onChange, disabled = false 
         Live tracking engine
       </Typography>
       <Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
-        Adaptive scheduler profile and quality thresholds for field GPS. Intervals are computed
-        dynamically on mobile — these set bounds and presets.
+        Adaptive scheduler profile and GPS quality thresholds. Live pin accuracy is stricter than
+        Route History retention so weak GPS can still fill historical trails without moving the
+        live map pin.
       </Typography>
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 6, md: 4 }}>
@@ -79,12 +82,24 @@ export function LiveTrackingTunablesSection({ value, onChange, disabled = false 
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 4 }}>
           <TextField
-            label='Max accuracy (m)'
+            label='Live pin accuracy (m)'
             size='small'
             fullWidth
             disabled={disabled}
+            helperText='Max GPS error to update the live map pin'
             value={value.maxAccuracyMeters}
             onChange={e => set('maxAccuracyMeters', e.target.value)}
+          />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+          <TextField
+            label='History retention accuracy (m)'
+            size='small'
+            fullWidth
+            disabled={disabled}
+            helperText='Weaker fixes up to this value are kept for Route History only'
+            value={value.historyMaxAccuracyMeters}
+            onChange={e => set('historyMaxAccuracyMeters', e.target.value)}
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 4 }}>

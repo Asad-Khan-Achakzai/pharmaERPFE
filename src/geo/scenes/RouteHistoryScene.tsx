@@ -18,6 +18,7 @@ import type {
 } from '@/geo/services/geo.service'
 
 const ACTUAL_COLOR = MAP_ENTITY_COLORS.route.polyline
+const LOW_CONFIDENCE_COLOR = '#F9A825'
 const PLANNED_COLOR = '#7B1FA2'
 const GAP_COLOR = '#90A4AE'
 const STOP_COLORS: Record<string, string> = {
@@ -170,9 +171,58 @@ export function RouteHistoryScene({
   })
 
   const points = useMemo(() => collectPoints(data, playbackPosition), [data, playbackPosition])
+  const qualityPolylines = useMemo(() => {
+    const segs = data?.segments || []
+    if (segs.length) {
+      return segs
+        .map((seg, idx) => {
+          const path = (seg.coordinates || [])
+            .map((c) => toLatLng(c.lat, c.lng))
+            .filter(Boolean) as LatLng[]
+          if (path.length < 2) return null
+          const low =
+            seg.band === 'low_confidence' || seg.qualityLevel === 'low_confidence'
+          return {
+            key: `qseg-${idx}`,
+            path,
+            low,
+          }
+        })
+        .filter(Boolean) as Array<{ key: string; path: LatLng[]; low: boolean }>
+    }
+    // Fallback: split flat path by qualityLevel
+    const path = data?.path || []
+    const out: Array<{ key: string; path: LatLng[]; low: boolean }> = []
+    let cur: LatLng[] = []
+    let curLow = false
+    path.forEach((p, i) => {
+      const ll = toLatLng(p.lat, p.lng)
+      if (!ll) return
+      const low = p.qualityLevel === 'low_confidence'
+      if (!cur.length) {
+        cur = [ll]
+        curLow = low
+        return
+      }
+      if (low !== curLow) {
+        if (cur.length >= 2) out.push({ key: `fb-${out.length}`, path: cur, low: curLow })
+        cur = [cur[cur.length - 1], ll]
+        curLow = low
+      } else {
+        cur.push(ll)
+      }
+      if (i === path.length - 1 && cur.length >= 2) {
+        out.push({ key: `fb-${out.length}`, path: cur, low: curLow })
+      }
+    })
+    return out
+  }, [data])
   const actualSegments = useMemo(
-    () => pathSegmentsWithoutGaps(data?.path || [], layers.gaps ? data?.gaps || [] : []),
-    [data, layers.gaps]
+    () =>
+      qualityPolylines.length
+        ? []
+        : pathSegmentsWithoutGaps(data?.path || [], layers.gaps ? data?.gaps || [] : []),
+    [data, layers.gaps, qualityPolylines.length]
   )
   const plannedPath = useMemo(() => {
     const fromPath: LatLng[] = []
@@ -235,8 +285,33 @@ export function RouteHistoryScene({
             sx={{ bgcolor: layers[key] ? undefined : 'background.paper' }}
           />
         ))}
+        <Chip
+          size='small'
+          label='High confidence'
+          variant='outlined'
+          sx={{ bgcolor: 'background.paper', borderColor: ACTUAL_COLOR, color: ACTUAL_COLOR }}
+        />
+        <Chip
+          size='small'
+          label='Low confidence GPS'
+          variant='outlined'
+          sx={{
+            bgcolor: 'background.paper',
+            borderColor: LOW_CONFIDENCE_COLOR,
+            color: LOW_CONFIDENCE_COLOR
+          }}
+        />
       </Stack>
       <GeoMapShell height='100%' points={points} fitKey={fitKey} autoFit='once'>
+        {qualityPolylines.map((seg) => (
+          <Polyline
+            key={seg.key}
+            path={seg.path}
+            strokeColor={seg.low ? LOW_CONFIDENCE_COLOR : ACTUAL_COLOR}
+            strokeWeight={seg.low ? 3 : 4}
+            strokeOpacity={seg.low ? 0.55 : 0.9}
+          />
+        ))}
         {actualSegments.map((seg, idx) =>
           seg.length >= 2 ? (
             <Polyline

@@ -48,9 +48,28 @@ export type RouteHistoryPathPoint = {
   lat: number
   lng: number
   accuracy?: number | null
+  confidence?: number | null
+  qualityLevel?: string | null
+  usableForLive?: boolean | null
   capturedAt?: string
   type?: string
   source?: string
+}
+
+export type RouteHistorySegment = {
+  qualityLevel?: string | null
+  band?: 'high_confidence' | 'low_confidence' | string | null
+  pointCount?: number
+  distanceMeters?: number
+  fromCapturedAt?: string
+  toCapturedAt?: string
+  coordinates: Array<{
+    lat: number
+    lng: number
+    capturedAt?: string
+    accuracy?: number | null
+    qualityLevel?: string | null
+  }>
 }
 
 export type RouteHistoryCheckPoint = {
@@ -100,6 +119,7 @@ export type RouteHistoryGap = {
 
 export type RouteHistoryEvent = {
   type?: string
+  diagnosticType?: string
   at?: string
   label?: string
   lat?: number | null
@@ -153,12 +173,23 @@ export type RouteHistoryQuality = {
   completenessRatio?: number | null
   gapMinutes?: number | null
   medianAccuracy?: number | null
+  p90Accuracy?: number | null
   backgroundHealthHint?: string | null
+  gpsQualityBreakdown?: {
+    excellent?: number
+    good?: number
+    acceptable?: number
+    low_confidence?: number
+  } | null
+  lowConfidenceDistanceMeters?: number | null
+  lowConfidenceDurationMs?: number | null
 } | null
 
 export type RouteHistoryPayload = {
   date: string
   path: RouteHistoryPathPoint[]
+  segments?: RouteHistorySegment[]
+  gpsEvents?: RouteHistoryEvent[]
   events?: RouteHistoryEvent[]
   stops?: RouteHistoryStop[]
   gaps?: RouteHistoryGap[]
@@ -268,6 +299,8 @@ function normalizeRouteHistoryPayload(raw: unknown): RouteHistoryPayload {
     path: Array.isArray(d.path)
       ? d.path.filter((p) => typeof p?.lat === 'number' && typeof p?.lng === 'number')
       : [],
+    segments: Array.isArray(d.segments) ? d.segments : [],
+    gpsEvents: Array.isArray(d.gpsEvents) ? d.gpsEvents : [],
     events: Array.isArray(d.events) ? d.events : [],
     stops: Array.isArray(d.stops)
       ? d.stops.filter((s) => typeof s?.lat === 'number' && typeof s?.lng === 'number')
