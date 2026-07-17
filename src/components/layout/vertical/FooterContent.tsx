@@ -20,34 +20,15 @@ const FooterContent = () => {
     <div
       className={classnames(verticalLayoutClasses.footerContent, 'flex items-center justify-between flex-wrap gap-4')}
     >
-      {/* <p>
-        <span className='text-textSecondary'>{`© ${new Date().getFullYear()}, Made with `}</span>
-        <span>{`❤️`}</span>
-        <span className='text-textSecondary'>{` by `}</span>
-        <Link href='https://pixinvent.com' target='_blank' className='text-primary uppercase'>
-          Pixinvent
-        </Link>
+      <p className='text-sm text-textSecondary'>
+        {`© ${new Date().getFullYear()} PharmaERP`}
+        {!isBreakpointReached && <span>{` · Field-force & distribution platform`}</span>}
       </p>
-      {!isBreakpointReached && (
-        <div className='flex items-center gap-4'>
-          <Link href='https://themeforest.net/licenses/standard' target='_blank' className='text-primary'>
-            License
-          </Link>
-          <Link href='https://themeforest.net/user/pixinvent/portfolio' target='_blank' className='text-primary'>
-            More Themes
-          </Link>
-          <Link
-            href='https://demos.pixinvent.com/vuexy-nextjs-admin-template/documentation'
-            target='_blank'
-            className='text-primary'
-          >
-            Documentation
-          </Link>
-          <Link href='https://pixinvent.ticksy.com' target='_blank' className='text-primary'>
-            Support
-          </Link>
-        </div>
-      )} */}
+      <div className='flex items-center gap-4'>
+        <Link href='/privacy' className='text-sm text-primary'>
+          Privacy Policy
+        </Link>
+      </div>
     </div>
   )
 }

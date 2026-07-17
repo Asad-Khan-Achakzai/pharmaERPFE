@@ -114,6 +114,11 @@ const LoginV2 = ({ mode }: { mode: SystemMode }) => {
               <Typography component={Link} href='/register' color='primary.main'>Create an account</Typography>
             </div> */}
           </form>
+          <div className='flex justify-center mbs-2'>
+            <Typography component={Link} href='/privacy' variant='body2' color='primary.main'>
+              Privacy Policy
+            </Typography>
+          </div>
         </div>
       </div>
     </div>

@@ -123,7 +123,8 @@ a {
   text-decoration: none;
 }
 
-ul:not([class]) {
+ul:not([class]),
+ol:not([class]) {
   margin-block: 1rem;
   padding-inline-start: 40px;
 }
