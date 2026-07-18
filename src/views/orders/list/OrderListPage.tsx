@@ -47,6 +47,8 @@ import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { pharmaciesService } from '@/services/pharmacies.service'
 import { usersService } from '@/services/users.service'
 
+type PaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | null
+
 type Order = {
   _id: string
   orderNumber: string
@@ -56,7 +58,15 @@ type Order = {
   status: string
   totalOrderedAmount: number
   createdAt: string
+  /** Delivered invoice total (sum of pharmacyNetPayable). Null when not yet invoiced. */
+  invoiceAmount?: number | null
+  /** Remaining receivable after FIFO collections. Null when not yet invoiced. */
+  outstanding?: number | null
+  paymentStatus?: PaymentStatus
 }
+
+const formatPKR = (v: number | null | undefined) =>
+  `₨ ${(Number(v) || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'default'> = {
   PENDING: 'warning',
@@ -66,6 +76,28 @@ const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'd
   RETURNED: 'error',
   CANCELLED: 'default'
 }
+
+const paymentStatusMeta: Record<
+  Exclude<PaymentStatus, null>,
+  { label: string; color: 'success' | 'warning' | 'error' }
+> = {
+  PAID: { label: 'Paid', color: 'success' },
+  PARTIALLY_PAID: { label: 'Partially Paid', color: 'warning' },
+  UNPAID: { label: 'Unpaid', color: 'error' }
+}
+
+/** Sort rank so Unpaid → Partially Paid → Paid; not-invoiced last. */
+const paymentStatusSortRank: Record<string, number> = {
+  UNPAID: 0,
+  PARTIALLY_PAID: 1,
+  PAID: 2
+}
+
+const moneyHeader = (label: string) => (
+  <Typography component='span' variant='inherit' sx={{ display: 'block', textAlign: 'right', fontWeight: 600 }}>
+    {label}
+  </Typography>
+)
 
 const columnHelper = createColumnHelper<Order>()
 
@@ -310,10 +342,10 @@ const OrderListPage = () => {
         }
       ),
       columnHelper.accessor('status', {
-        header: 'Status',
+        header: 'Delivery Status',
         cell: ({ row }) => (
           <Chip
-            label={row.original.status}
+            label={row.original.status.replace(/_/g, ' ')}
             color={statusColors[row.original.status] || 'default'}
             size='small'
             variant='tonal'
@@ -321,8 +353,46 @@ const OrderListPage = () => {
         )
       }),
       columnHelper.accessor('totalOrderedAmount', {
-        header: 'Amount',
-        cell: ({ row }) => `₨ ${row.original.totalOrderedAmount?.toFixed(2)}`
+        header: () => moneyHeader('Order Amount'),
+        cell: ({ row }) => (
+          <Typography component='span' sx={{ display: 'block', textAlign: 'right' }}>
+            {formatPKR(row.original.totalOrderedAmount)}
+          </Typography>
+        )
+      }),
+      columnHelper.accessor(r => (r.invoiceAmount == null ? Number.POSITIVE_INFINITY : r.invoiceAmount), {
+        id: 'invoiceAmount',
+        header: () => moneyHeader('Invoice Amount'),
+        cell: ({ row }) => (
+          <Typography component='span' sx={{ display: 'block', textAlign: 'right' }}>
+            {row.original.paymentStatus == null ? '—' : formatPKR(row.original.invoiceAmount)}
+          </Typography>
+        )
+      }),
+      columnHelper.accessor(r => (r.outstanding == null ? Number.POSITIVE_INFINITY : r.outstanding), {
+        id: 'outstanding',
+        header: () => moneyHeader('Outstanding'),
+        cell: ({ row }) => (
+          <Typography component='span' sx={{ display: 'block', textAlign: 'right' }}>
+            {row.original.paymentStatus == null ? '—' : formatPKR(row.original.outstanding)}
+          </Typography>
+        )
+      }),
+      columnHelper.accessor(r => (r.paymentStatus ? paymentStatusSortRank[r.paymentStatus] ?? 99 : 99), {
+        id: 'paymentStatus',
+        header: 'Payment Status',
+        cell: ({ row }) => {
+          const status = row.original.paymentStatus
+          if (!status) {
+            return (
+              <Typography component='span' color='text.secondary'>
+                —
+              </Typography>
+            )
+          }
+          const meta = paymentStatusMeta[status]
+          return <Chip label={meta.label} color={meta.color} size='small' variant='tonal' />
+        }
       }),
       columnHelper.display({
         id: 'date',
