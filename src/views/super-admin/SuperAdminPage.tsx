@@ -28,6 +28,8 @@ import FormControlLabel from '@mui/material/FormControlLabel'
 import Switch from '@mui/material/Switch'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
+import Box from '@mui/material/Box'
+import IconButton from '@mui/material/IconButton'
 import { useAuth } from '@/contexts/AuthContext'
 import { superAdminService } from '@/services/superAdmin.service'
 import { showApiError } from '@/utils/apiErrors'
@@ -41,18 +43,39 @@ import {
   type GeoPlatformFormState
 } from '@/views/super-admin/geoPlatformForm'
 
+const API_ORIGIN = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1').replace(/\/api\/v1\/?$/, '')
+
+function companyLogoSrc(logo?: string | null): string | null {
+  if (!logo) return null
+  if (logo.startsWith('data:') || /^https?:\/\//i.test(logo)) return logo
+  if (logo.startsWith('/')) return `${API_ORIGIN}${logo}`
+  return logo
+}
+
+function phonesFromCompany(c: { phones?: string[]; phone?: string }): string[] {
+  if (Array.isArray(c.phones) && c.phones.length) {
+    return c.phones.map(p => String(p || '').trim()).filter(Boolean)
+  }
+  if (c.phone) return [String(c.phone).trim()].filter(Boolean)
+  return ['']
+}
+
 type Company = {
   _id: string
   name: string
   city?: string
   phone?: string
+  phones?: string[]
   email?: string
   country?: string
   state?: string
   address?: string
+  logo?: string | null
   /** Pakistan FBR National Tax Number — shown on printed invoices. */
   ntnNo?: string
   currency?: string
+  /** TRADE → TP. RATE on invoices; NET → NP. RATE. */
+  invoicePriceMode?: 'TRADE' | 'NET'
   timeZone?: string
   isActive?: boolean
   /** When true, new weekly plans inherit approvalRequired and must be submitted before execution. */
@@ -177,10 +200,15 @@ type CompanyFormState = {
   city: string
   state: string
   country: string
-  phone: string
+  phones: string[]
+  /** Existing public path, data URL for a new upload, or null to clear. */
+  logo: string | null
+  /** True when user explicitly removed the logo (send null on save). */
+  logoCleared: boolean
   ntnNo: string
   email: string
   currency: string
+  invoicePriceMode: 'TRADE' | 'NET'
   timeZone: string
   isActive: boolean
   weeklyPlanApprovalRequired: boolean
@@ -215,10 +243,13 @@ const emptyForm: CompanyFormState = {
   city: '',
   state: '',
   country: 'Pakistan',
-  phone: '',
+  phones: [''],
+  logo: null,
+  logoCleared: false,
   ntnNo: '',
   email: '',
   currency: 'PKR',
+  invoicePriceMode: 'TRADE',
   timeZone: '',
   isActive: true,
   weeklyPlanApprovalRequired: false,
@@ -244,6 +275,155 @@ const emptyForm: CompanyFormState = {
   checkinRetentionDays: '',
   visitRetentionDays: '',
   expenseReceiptRetentionDays: ''
+}
+
+/**
+ * Multi-phone + logo editor shared by create/edit company dialogs.
+ */
+const CompanyContactFields = ({
+  form,
+  setForm
+}: {
+  form: CompanyFormState
+  setForm: Dispatch<SetStateAction<CompanyFormState>>
+}) => {
+  const logoPreview = companyLogoSrc(form.logo)
+  const phones = form.phones.length ? form.phones : ['']
+
+  const setPhoneAt = (index: number, value: string) => {
+    setForm(f => {
+      const next = [...(f.phones.length ? f.phones : [''])]
+      next[index] = value
+      return { ...f, phones: next }
+    })
+  }
+
+  const addPhone = () => {
+    setForm(f => ({ ...f, phones: [...(f.phones.length ? f.phones : ['']), ''] }))
+  }
+
+  const removePhone = (index: number) => {
+    setForm(f => {
+      const next = [...(f.phones.length ? f.phones : [''])]
+      next.splice(index, 1)
+      return { ...f, phones: next.length ? next : [''] }
+    })
+  }
+
+  const onLogoFile = (file: File | null) => {
+    if (!file) return
+    if (!/^image\/(png|jpeg|jpg)$/i.test(file.type)) {
+      showApiError(new Error('Logo must be PNG or JPG'), 'Invalid logo')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      showApiError(new Error('Logo too large (max 2 MB)'), 'Invalid logo')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : null
+      if (result) setForm(f => ({ ...f, logo: result, logoCleared: false }))
+    }
+    reader.readAsDataURL(file)
+  }
+
+  return (
+    <>
+      <Typography variant='subtitle2' sx={{ mt: 1, mb: 0.5 }}>
+        Phone numbers
+      </Typography>
+      <Typography variant='caption' color='text.secondary' display='block' sx={{ mb: 1 }}>
+        Add one or more numbers — all are printed on delivery invoices.
+      </Typography>
+      <Stack spacing={1.5}>
+        {phones.map((phone, index) => (
+          <Stack key={`phone-${index}`} direction='row' spacing={1} alignItems='center'>
+            <TextField
+              label={phones.length > 1 ? `Phone ${index + 1}` : 'Phone'}
+              fullWidth
+              value={phone}
+              onChange={e => setPhoneAt(index, e.target.value)}
+              margin='none'
+            />
+            {phones.length > 1 ? (
+              <IconButton aria-label='Remove phone' onClick={() => removePhone(index)} size='small'>
+                <i className='tabler-trash' />
+              </IconButton>
+            ) : null}
+          </Stack>
+        ))}
+        {phones.length < 10 ? (
+          <Button
+            size='small'
+            variant='outlined'
+            startIcon={<i className='tabler-plus' />}
+            onClick={addPhone}
+            sx={{ alignSelf: 'flex-start' }}
+          >
+            Add phone number
+          </Button>
+        ) : null}
+      </Stack>
+
+      <Typography variant='subtitle2' sx={{ mt: 3, mb: 0.5 }}>
+        Company logo
+      </Typography>
+      <Typography variant='caption' color='text.secondary' display='block' sx={{ mb: 1 }}>
+        Shown on delivery invoices when set. PNG or JPG · max 2 MB.
+      </Typography>
+      <Stack direction='row' spacing={2} alignItems='center'>
+        <Box
+          sx={{
+            width: 72,
+            height: 72,
+            borderRadius: 1,
+            border: '1px dashed',
+            borderColor: 'divider',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            bgcolor: 'action.hover',
+            flexShrink: 0
+          }}
+        >
+          {logoPreview ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoPreview} alt='Company logo' style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+          ) : (
+            <Typography variant='caption' color='text.secondary'>
+              No logo
+            </Typography>
+          )}
+        </Box>
+        <Stack spacing={1}>
+          <Button variant='outlined' size='small' component='label' startIcon={<i className='tabler-upload' />}>
+            {logoPreview ? 'Replace logo' : 'Upload logo'}
+            <input
+              hidden
+              type='file'
+              accept='image/png,image/jpeg'
+              onChange={e => {
+                const f = e.target.files?.[0] || null
+                onLogoFile(f)
+                e.target.value = ''
+              }}
+            />
+          </Button>
+          {logoPreview ? (
+            <Button
+              size='small'
+              color='inherit'
+              onClick={() => setForm(f => ({ ...f, logo: null, logoCleared: true }))}
+            >
+              Remove logo
+            </Button>
+          ) : null}
+        </Stack>
+      </Stack>
+    </>
+  )
 }
 
 /**
@@ -342,10 +522,13 @@ const SuperAdminPage = () => {
       city: c.city || '',
       state: c.state || '',
       country: c.country || 'Pakistan',
-      phone: c.phone || '',
+      phones: phonesFromCompany(c),
+      logo: c.logo || null,
+      logoCleared: false,
       ntnNo: c.ntnNo || '',
       email: c.email || '',
       currency: c.currency || 'PKR',
+      invoicePriceMode: c.invoicePriceMode === 'NET' ? 'NET' : 'TRADE',
       timeZone: c.timeZone || '',
       isActive: c.isActive !== false,
       weeklyPlanApprovalRequired: c.weeklyPlanApprovalRequired === true,
@@ -388,16 +571,19 @@ const SuperAdminPage = () => {
     if (!form.name.trim()) return
     setSaving(true)
     try {
+      const phones = form.phones.map(p => p.trim()).filter(Boolean)
       await superAdminService.createCompany({
         name: form.name,
         address: form.address,
         city: form.city,
         state: form.state,
         country: form.country,
-        phone: form.phone,
+        phones,
+        logo: form.logo || undefined,
         ntnNo: form.ntnNo,
         email: form.email.trim() || undefined,
         currency: form.currency,
+        invoicePriceMode: form.invoicePriceMode,
         timeZone: form.timeZone.trim() || undefined,
         isActive: form.isActive,
         weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired,
@@ -432,16 +618,19 @@ const SuperAdminPage = () => {
     if (!editingId || !form.name.trim()) return
     setSaving(true)
     try {
+      const phones = form.phones.map(p => p.trim()).filter(Boolean)
       await superAdminService.updateCompany(editingId, {
         name: form.name,
         address: form.address,
         city: form.city,
         state: form.state,
         country: form.country,
-        phone: form.phone,
+        phones,
+        logo: form.logoCleared ? null : form.logo && form.logo.startsWith('data:') ? form.logo : undefined,
         ntnNo: form.ntnNo,
         email: form.email.trim() || undefined,
         currency: form.currency,
+        invoicePriceMode: form.invoicePriceMode,
         timeZone: form.timeZone.trim(),
         isActive: form.isActive,
         weeklyPlanApprovalRequired: form.weeklyPlanApprovalRequired,
@@ -586,7 +775,11 @@ const SuperAdminPage = () => {
                             </Stack>
                           </TableCell>
                           <TableCell>{row.city || '—'}</TableCell>
-                          <TableCell>{row.phone || '—'}</TableCell>
+                          <TableCell>
+                            {phonesFromCompany(row)
+                              .filter(Boolean)
+                              .join(', ') || '—'}
+                          </TableCell>
                           <TableCell>
                             <Chip
                               size='small'
@@ -683,13 +876,7 @@ const SuperAdminPage = () => {
               <TextField {...params} label='IANA timezone override' margin='normal' placeholder='Optional' />
             )}
           />
-          <TextField
-            label='Phone'
-            fullWidth
-            value={form.phone}
-            onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-            margin='normal'
-          />
+          <CompanyContactFields form={form} setForm={setForm} />
           <TextField
             label='Email'
             type='email'
@@ -717,6 +904,23 @@ const SuperAdminPage = () => {
             <MenuItem value='PKR'>PKR</MenuItem>
             <MenuItem value='USD'>USD</MenuItem>
             <MenuItem value='EUR'>EUR</MenuItem>
+          </TextField>
+          <TextField
+            select
+            label='Invoice price label'
+            fullWidth
+            value={form.invoicePriceMode}
+            onChange={e =>
+              setForm(f => ({
+                ...f,
+                invoicePriceMode: e.target.value === 'NET' ? 'NET' : 'TRADE'
+              }))
+            }
+            margin='normal'
+            helperText='Shown on delivery invoices as TP. RATE (trade) or NP. RATE (net)'
+          >
+            <MenuItem value='TRADE'>Trade price (TP. RATE)</MenuItem>
+            <MenuItem value='NET'>Net price (NP. RATE)</MenuItem>
           </TextField>
           <TextField
             select
@@ -1108,13 +1312,7 @@ const SuperAdminPage = () => {
               <TextField {...params} label='IANA timezone override' margin='normal' placeholder='Optional' />
             )}
           />
-          <TextField
-            label='Phone'
-            fullWidth
-            value={form.phone}
-            onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-            margin='normal'
-          />
+          <CompanyContactFields form={form} setForm={setForm} />
           <TextField
             label='Email'
             type='email'
@@ -1142,6 +1340,23 @@ const SuperAdminPage = () => {
             <MenuItem value='PKR'>PKR</MenuItem>
             <MenuItem value='USD'>USD</MenuItem>
             <MenuItem value='EUR'>EUR</MenuItem>
+          </TextField>
+          <TextField
+            select
+            label='Invoice price label'
+            fullWidth
+            value={form.invoicePriceMode}
+            onChange={e =>
+              setForm(f => ({
+                ...f,
+                invoicePriceMode: e.target.value === 'NET' ? 'NET' : 'TRADE'
+              }))
+            }
+            margin='normal'
+            helperText='Shown on delivery invoices as TP. RATE (trade) or NP. RATE (net)'
+          >
+            <MenuItem value='TRADE'>Trade price (TP. RATE)</MenuItem>
+            <MenuItem value='NET'>Net price (NP. RATE)</MenuItem>
           </TextField>
           <TextField
             select
