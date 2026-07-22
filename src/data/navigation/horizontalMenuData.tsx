@@ -183,6 +183,7 @@ const horizontalMenuData = (): HorizontalMenuItemWithPermission[] => [
     label: 'System',
     icon: 'tabler-settings',
     children: [
+      { label: 'Announcements', href: '/announcements', icon: 'tabler-speakerphone', permission: 'admin.access' },
       { label: 'Audit Log', href: '/audit-log', icon: 'tabler-history', permission: 'users.view' }
     ]
   }

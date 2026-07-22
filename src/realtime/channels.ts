@@ -6,4 +6,7 @@ export const REALTIME_CHANNELS = {
 
 export type RealtimeChannel = (typeof REALTIME_CHANNELS)[keyof typeof REALTIME_CHANNELS]
 
-export const DEFAULT_REALTIME_CHANNELS: RealtimeChannel[] = [REALTIME_CHANNELS.LIVE_MAP]
+export const DEFAULT_REALTIME_CHANNELS: RealtimeChannel[] = [
+  REALTIME_CHANNELS.LIVE_MAP,
+  REALTIME_CHANNELS.NOTIFICATIONS
+]

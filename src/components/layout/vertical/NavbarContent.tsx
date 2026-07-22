@@ -7,6 +7,7 @@ import classnames from 'classnames'
 import NavToggle from './NavToggle'
 import ModeDropdown from '@components/layout/shared/ModeDropdown'
 import UserDropdown from '@components/layout/shared/UserDropdown'
+import NotificationsBell from '@components/layout/shared/NotificationsBell'
 import SuperAdminModeBar from './SuperAdminModeBar'
 import SuperAdminCompanySwitcher from './SuperAdminCompanySwitcher'
 
@@ -23,7 +24,8 @@ const NavbarContent = () => {
           <ModeDropdown />
           <SuperAdminCompanySwitcher />
         </div>
-        <div className='flex items-center'>
+        <div className='flex items-center gap-1'>
+          <NotificationsBell />
           <UserDropdown />
         </div>
       </div>

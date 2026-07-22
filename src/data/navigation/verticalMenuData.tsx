@@ -200,6 +200,14 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
     label: 'System',
     icon: 'tabler-settings',
     children: [
+      { label: 'Notifications', href: '/notifications', icon: 'tabler-bell' },
+      {
+        label: 'Notification health',
+        href: '/notifications/health',
+        icon: 'tabler-chart-dots',
+        permission: 'admin.access'
+      },
+      { label: 'Announcements', href: '/announcements', icon: 'tabler-speakerphone', permission: 'admin.access' },
       { label: 'Onboarding', href: '/onboarding', icon: 'tabler-rocket', permission: 'onboarding.view' },
       { label: 'Device Control', href: '/device-control', icon: 'tabler-devices', permission: 'deviceControl.manage' },
       { label: 'Audit Log', href: '/audit-log', icon: 'tabler-history', permission: 'users.view' }

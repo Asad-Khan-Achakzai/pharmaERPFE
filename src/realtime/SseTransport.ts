@@ -30,8 +30,8 @@ export class SseTransport implements RealtimeTransport {
     this.closeSource()
     if (!this.token || this.stopped) return
 
-    const channel = this.channels[0] || 'live-map'
-    const url = `${apiBase()}/realtime/stream?channel=${encodeURIComponent(channel)}&token=${encodeURIComponent(this.token)}`
+    const channelParam = encodeURIComponent(this.channels.join(','))
+    const url = `${apiBase()}/realtime/stream?channel=${channelParam}&token=${encodeURIComponent(this.token)}`
     this.source = new EventSource(url)
 
     this.source.onopen = () => {
@@ -43,6 +43,10 @@ export class SseTransport implements RealtimeTransport {
     }
 
     this.source.addEventListener('rep.location.updated', (msg) => {
+      this.dispatch((msg as MessageEvent).data)
+    })
+
+    this.source.addEventListener('notification.created', (msg) => {
       this.dispatch((msg as MessageEvent).data)
     })
 
