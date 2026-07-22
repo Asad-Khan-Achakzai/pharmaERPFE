@@ -371,16 +371,30 @@ const WeeklyPlansPage = () => {
         </table>
       </div>
       <TablePaginationComponent table={table as any} />
+      {/* Host for datepicker popper so it is not clipped by the scrollable dialog. */}
+      <div id='weekly-plan-datepicker-portal' />
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
         maxWidth='sm'
         fullWidth
-        slotProps={{ paper: { sx: { overflow: 'visible' } } }}
+        scroll='paper'
+        slotProps={{
+          paper: {
+            sx: {
+              maxHeight: { xs: '100%', sm: 'calc(100% - 64px)' },
+              m: { xs: 0, sm: 4 },
+              width: { xs: '100%', sm: undefined },
+              height: { xs: '100%', sm: 'auto' },
+              maxWidth: { xs: '100%', sm: 600 },
+              borderRadius: { xs: 0, sm: 1 }
+            }
+          }
+        }}
       >
         <DialogTitle>Create Weekly Plan</DialogTitle>
-        <DialogContent sx={{ overflow: 'visible' }}>
-          <Grid container spacing={4} className='pbs-4'>
+        <DialogContent dividers sx={{ px: { xs: 3, sm: 6 }, py: 4 }}>
+          <Grid container spacing={4}>
             {reps.length > 0 ? (
               <Grid size={{ xs: 12 }}>
                 <CustomTextField
@@ -412,6 +426,7 @@ const WeeklyPlansPage = () => {
                 startDate={parseYyyyMmDd(form.weekStartDate) ?? null}
                 selected={parseYyyyMmDd(form.weekStartDate) ?? null}
                 id='weekly-plan-week-range'
+                portalId='weekly-plan-datepicker-portal'
                 onChange={dates => {
                   if (!dates) {
                     setForm(p => ({ ...p, weekStartDate: '', weekEndDate: '' }))
@@ -479,7 +494,7 @@ const WeeklyPlansPage = () => {
             )}
           </Grid>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: { xs: 3, sm: 6 }, py: 3, gap: 2, flexWrap: 'wrap' }}>
           <Button onClick={() => setOpen(false)} disabled={saving}>
             Cancel
           </Button>
