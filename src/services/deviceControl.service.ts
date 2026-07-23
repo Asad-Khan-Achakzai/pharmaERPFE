@@ -39,7 +39,7 @@ export type DeviceChangeRequestRow = {
     osVersion?: string | null
     appVersion?: string | null
   }
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'SUPERSEDED'
   reason?: string | null
   decidedBy?: { _id: string; name?: string; email?: string } | null
   decidedAt?: string | null

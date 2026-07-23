@@ -43,6 +43,23 @@ type InvoiceFinancialSummaryProps = {
 type InvoiceItemsTableProps = {
   columns: string[]
   rows: Array<Array<ReactNode>>
+  /** CSS grid track sizes — defaults to equal columns. */
+  columnWidths?: string[]
+  columnAlign?: Array<'left' | 'center' | 'right'>
+}
+
+type InvoicePartyBlockProps = {
+  party: {
+    name: string
+    logoUrl?: string | null
+    addressLines?: string[]
+    phones?: string[]
+    email?: string
+    ntnNo?: string
+    notes?: string
+  }
+  /** Logo above text (default) or aligned to the right without affecting text wrap. */
+  logoPosition?: 'top' | 'right'
 }
 
 type InvoiceTotalsProps = {
@@ -104,6 +121,76 @@ export const InvoiceParties = ({
   </Box>
 )
 
+export const InvoicePartyBlock = ({ party, logoPosition = 'top' }: InvoicePartyBlockProps) => {
+  const details = (
+    <Stack spacing={0.75} sx={{ flex: 1, minWidth: 0 }}>
+      <Typography variant='body1' fontWeight={700}>
+        {party.name}
+      </Typography>
+      {party.addressLines?.map(line => (
+        <Typography key={line} variant='body2' color='text.secondary' sx={{ wordBreak: 'break-word' }}>
+          {line}
+        </Typography>
+      ))}
+      {party.phones?.length ? (
+        <Typography variant='body2' color='text.secondary' sx={{ wordBreak: 'break-word' }}>
+          {party.phones.length > 1 ? 'Phones' : 'Phone'}: {party.phones.join(' · ')}
+        </Typography>
+      ) : null}
+      {party.email ? (
+        <Typography variant='body2' color='text.secondary' sx={{ wordBreak: 'break-word' }}>
+          {party.email}
+        </Typography>
+      ) : null}
+      {party.ntnNo ? (
+        <Typography variant='body2' color='text.secondary'>
+          NTN: {party.ntnNo}
+        </Typography>
+      ) : null}
+      {party.notes ? (
+        <Typography variant='body2' color='text.secondary' sx={{ mt: 0.5, fontStyle: 'italic', wordBreak: 'break-word' }}>
+          {party.notes}
+        </Typography>
+      ) : null}
+    </Stack>
+  )
+
+  if (party.logoUrl && logoPosition === 'right') {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
+        {details}
+        <Box
+          component='img'
+          src={party.logoUrl}
+          alt=''
+          sx={{
+            flexShrink: 0,
+            maxHeight: 64,
+            maxWidth: 120,
+            objectFit: 'contain',
+            display: 'block',
+            ml: 'auto'
+          }}
+        />
+      </Box>
+    )
+  }
+
+  return (
+    <Stack spacing={0.75}>
+      {party.logoUrl ? (
+        <Box
+          component='img'
+          src={party.logoUrl}
+          alt=''
+          sx={{ maxHeight: 56, maxWidth: 168, objectFit: 'contain', mb: 1, display: 'block' }}
+        />
+      ) : null}
+      {details}
+    </Stack>
+  )
+}
+
 export const InvoiceFinancialSummary = ({
   grossSalesTp,
   pharmacyDiscount,
@@ -142,9 +229,13 @@ export const InvoiceFinancialSummary = ({
   )
 }
 
-export const InvoiceItemsTable = ({ columns, rows }: InvoiceItemsTableProps) => {
+export const InvoiceItemsTable = ({ columns, rows, columnWidths, columnAlign }: InvoiceItemsTableProps) => {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
+  const gridTemplate = columnWidths?.length === columns.length
+    ? columnWidths.join(' ')
+    : `repeat(${columns.length}, minmax(0, 1fr))`
+  const alignFor = (i: number) => columnAlign?.[i] ?? (i >= columns.length - 2 ? 'right' : 'left')
 
   if (isMobile) {
     return (
@@ -157,7 +248,7 @@ export const InvoiceItemsTable = ({ columns, rows }: InvoiceItemsTableProps) => 
                   <Typography variant='caption' color='text.secondary'>
                     {col}
                   </Typography>
-                  <Typography variant='body2' sx={{ textAlign: 'right' }}>
+                  <Typography variant='body2' sx={{ textAlign: alignFor(i) }}>
                     {row[i]}
                   </Typography>
                 </Box>
@@ -174,14 +265,19 @@ export const InvoiceItemsTable = ({ columns, rows }: InvoiceItemsTableProps) => 
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`,
+          gridTemplateColumns: gridTemplate,
           px: 3,
           py: 1.5,
           bgcolor: t => alpha(t.palette.text.primary, 0.02)
         }}
       >
-        {columns.map(col => (
-          <Typography key={col} variant='caption' color='text.secondary'>
+        {columns.map((col, i) => (
+          <Typography
+            key={col}
+            variant='caption'
+            color='text.secondary'
+            sx={{ textAlign: alignFor(i), fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}
+          >
             {col}
           </Typography>
         ))}
@@ -189,9 +285,9 @@ export const InvoiceItemsTable = ({ columns, rows }: InvoiceItemsTableProps) => 
       <Divider />
       {rows.map((row, idx) => (
         <Box key={idx}>
-          <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`, px: 3, py: 1.75 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: gridTemplate, px: 3, py: 1.75, alignItems: 'center' }}>
             {row.map((cell, i) => (
-              <Typography key={`${idx}-${i}`} variant='body2' sx={{ textAlign: i >= columns.length - 2 ? 'right' : 'left' }}>
+              <Typography key={`${idx}-${i}`} variant='body2' sx={{ textAlign: alignFor(i) }}>
                 {cell}
               </Typography>
             ))}

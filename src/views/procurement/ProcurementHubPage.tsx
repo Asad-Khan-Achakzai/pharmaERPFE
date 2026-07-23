@@ -49,9 +49,9 @@ import { procurementService } from '@/services/procurement.service'
 import { supplierService } from '@/services/supplier.service'
 import { productsService } from '@/services/products.service'
 import { distributorsService } from '@/services/distributors.service'
-import { InvoiceFooter, InvoiceHeader, InvoiceItemsTable, InvoiceLayout, InvoiceTotals } from '@/components/invoice/InvoiceLayout'
+import { InvoiceFooter, InvoiceHeader, InvoiceItemsTable, InvoiceLayout, InvoiceParties, InvoicePartyBlock, InvoiceTotals } from '@/components/invoice/InvoiceLayout'
 
-import { apiPayload, formatDate, formatPKR } from './utils'
+import { apiPayload, buildPrintParty, formatDate, formatPKR, type PrintPartyInfo } from './utils'
 
 type PoRow = {
   _id: string
@@ -77,17 +77,135 @@ type HubPrintDoc =
   | {
       kind: 'supplierOrder'
       orderNumber: string
-      supplierName: string
+      orderDate: string
+      currency: string
+      notes?: string
+      orderedBy?: { name: string; email?: string; employeeCode?: string }
+      company: PrintPartyInfo
+      supplier: PrintPartyInfo
       lines: { name: string; qty: number; unitPrice: number }[]
     }
   | {
       kind: 'goodsReceipt'
       receiptNumber: string
-      supplierName: string
-      supplierOrderNumber: string
       receivedDate: string
+      supplierOrderNumber: string
+      currency: string
+      notes?: string
+      receivedBy?: { name: string; email?: string; employeeCode?: string }
+      company: PrintPartyInfo
+      supplier: PrintPartyInfo
       lines: { name: string; qty: number; unitCost: number }[]
     }
+
+const PO_PRINT_TABLE_COLUMNS = ['Product', 'Qty', 'Unit Price', 'Line Total']
+const PO_PRINT_TABLE_WIDTHS = ['minmax(0, 1fr)', '64px', '104px', '112px']
+const PO_PRINT_TABLE_ALIGN: Array<'left' | 'center' | 'right'> = ['left', 'center', 'right', 'right']
+
+const GRN_PRINT_TABLE_COLUMNS = ['Product', 'Qty', 'Unit Cost (Landed)', 'Line Total']
+const GRN_PRINT_TABLE_WIDTHS = PO_PRINT_TABLE_WIDTHS
+const GRN_PRINT_TABLE_ALIGN = PO_PRINT_TABLE_ALIGN
+
+type SupplierOrderPrintSource = {
+  orderNumber?: string
+  createdAt?: string
+  currency?: string
+  notes?: string
+  company?: {
+    name?: string
+    address?: string
+    city?: string
+    state?: string
+    country?: string
+    phone?: string
+    phones?: string[]
+    email?: string
+    logo?: string | null
+    logoDataUrl?: string | null
+    ntnNo?: string
+    currency?: string
+  } | null
+  supplierId?: {
+    name?: string
+    address?: string
+    phone?: string
+    email?: string
+    notes?: string
+  } | null
+  createdBy?: { name?: string; email?: string; employeeCode?: string; phone?: string } | null
+  lines?: { productId?: { name?: string }; orderedQty?: number; unitPrice?: number }[]
+}
+
+function buildSupplierOrderPrintDoc(po: SupplierOrderPrintSource, orderNumberFallback: string): Extract<HubPrintDoc, { kind: 'supplierOrder' }> {
+  const lines = (po.lines || []).map(pl => ({
+    name: pl.productId?.name ?? 'Product',
+    qty: Number(pl.orderedQty) || 0,
+    unitPrice: Number(pl.unitPrice) || 0
+  }))
+  const createdBy = po.createdBy
+  return {
+    kind: 'supplierOrder',
+    orderNumber: po.orderNumber || orderNumberFallback,
+    orderDate: formatDate(po.createdAt),
+    currency: po.currency || po.company?.currency || 'PKR',
+    notes: po.notes?.trim() || undefined,
+    orderedBy: createdBy?.name
+      ? {
+          name: createdBy.name,
+          email: createdBy.email || undefined,
+          employeeCode: createdBy.employeeCode || undefined
+        }
+      : undefined,
+    company: buildPrintParty(po.company, 'Company'),
+    supplier: buildPrintParty(po.supplierId, 'Supplier'),
+    lines
+  }
+}
+
+type GoodsReceiptPrintSource = {
+  receiptNumber?: string
+  receivedAt?: string
+  notes?: string
+  company?: SupplierOrderPrintSource['company']
+  supplierId?: SupplierOrderPrintSource['supplierId']
+  createdBy?: SupplierOrderPrintSource['createdBy']
+  purchaseOrderId?: { orderNumber?: string } | string | null
+  lines?: { productId?: { name?: string }; qtyReceived?: number; unitCost?: number }[]
+}
+
+function buildGoodsReceiptPrintDoc(
+  grn: GoodsReceiptPrintSource,
+  receiptNumberFallback: string
+): Extract<HubPrintDoc, { kind: 'goodsReceipt' }> {
+  const lines = (grn.lines || []).map(line => ({
+    name: line.productId?.name ?? 'Product',
+    qty: Number(line.qtyReceived) || 0,
+    unitCost: Number(line.unitCost) || 0
+  }))
+  const createdBy = grn.createdBy
+  const supplierOrderNumber =
+    typeof grn.purchaseOrderId === 'object' && grn.purchaseOrderId != null
+      ? String(grn.purchaseOrderId.orderNumber ?? '—')
+      : '—'
+  return {
+    kind: 'goodsReceipt',
+    receiptNumber: grn.receiptNumber || receiptNumberFallback,
+    receivedDate: formatDate(grn.receivedAt),
+    supplierOrderNumber,
+    currency: grn.company?.currency || 'PKR',
+    notes: grn.notes?.trim() || undefined,
+    receivedBy: createdBy?.name
+      ? {
+          name: createdBy.name,
+          email: createdBy.email || undefined,
+          employeeCode: createdBy.employeeCode || undefined
+        }
+      : undefined,
+    company: buildPrintParty(grn.company, 'Company'),
+    supplier: buildPrintParty(grn.supplierId, 'Supplier'),
+    lines
+  }
+}
 
 const statusChipSx = (status: string) => {
   const s = status?.toUpperCase?.() || ''
@@ -767,7 +885,37 @@ const ProcurementHubPage = () => {
     if (!hubPrintDoc) return
     const onAfterPrint = () => setHubPrintDoc(null)
     window.addEventListener('afterprint', onAfterPrint)
-    requestAnimationFrame(() => window.print())
+
+    const runPrint = () => window.print()
+
+    const waitForPrintImages = () => {
+      const root = document.getElementById('procurement-hub-print-root')
+      if (!root) {
+        requestAnimationFrame(runPrint)
+        return
+      }
+      const imgs = Array.from(root.querySelectorAll('img'))
+      if (!imgs.length) {
+        requestAnimationFrame(runPrint)
+        return
+      }
+      let pending = imgs.length
+      const tick = () => {
+        pending -= 1
+        if (pending <= 0) requestAnimationFrame(runPrint)
+      }
+      imgs.forEach(img => {
+        if (img.complete && img.naturalWidth > 0) tick()
+        else {
+          img.addEventListener('load', tick, { once: true })
+          img.addEventListener('error', tick, { once: true })
+        }
+      })
+    }
+
+    // Allow React to paint the hidden print root before measuring images.
+    requestAnimationFrame(() => requestAnimationFrame(waitForPrintImages))
+
     return () => window.removeEventListener('afterprint', onAfterPrint)
   }, [hubPrintDoc])
 
@@ -971,23 +1119,12 @@ const ProcurementHubPage = () => {
     setPrintingPoId(p._id)
     try {
       const r = await procurementService.getPurchaseOrder(p._id)
-      const d = apiPayload<{ supplierId?: { name?: string }; lines?: { productId?: { name?: string }; orderedQty?: number; unitPrice?: number }[] }>(
-        r
-      )
+      const d = apiPayload<SupplierOrderPrintSource>(r)
       if (!d?.lines?.length) {
         procurementShowError(null, 'This order has no lines to print.')
         return
       }
-      setHubPrintDoc({
-        kind: 'supplierOrder',
-        orderNumber: p.orderNumber,
-        supplierName: d.supplierId?.name ?? '—',
-        lines: (d.lines || []).map(pl => ({
-          name: pl.productId?.name ?? 'Product',
-          qty: Number(pl.orderedQty) || 0,
-          unitPrice: Number(pl.unitPrice) || 0
-        }))
-      })
+      setHubPrintDoc(buildSupplierOrderPrintDoc(d, p.orderNumber))
     } catch (e) {
       procurementShowError(e, 'Could not load order for print')
     } finally {
@@ -999,30 +1136,12 @@ const ProcurementHubPage = () => {
     setPrintingGrnId(g._id)
     try {
       const r = await procurementService.getGoodsReceiptNote(g._id)
-      const d = apiPayload<{
-        receiptNumber?: string
-        receivedAt?: string
-        supplierId?: { name?: string }
-        purchaseOrderId?: { orderNumber?: string }
-        lines?: { productId?: { name?: string }; qtyReceived?: number; unitCost?: number; factoryUnitCost?: number }[]
-      }>(r)
+      const d = apiPayload<GoodsReceiptPrintSource>(r)
       if (!d?.lines?.length) {
         procurementShowError(null, 'This receipt has no lines to print.')
         return
       }
-      setHubPrintDoc({
-        kind: 'goodsReceipt',
-        receiptNumber: d.receiptNumber || g.receiptNumber,
-        supplierName: d.supplierId?.name ?? '—',
-        supplierOrderNumber:
-          typeof d.purchaseOrderId === 'object' ? (d.purchaseOrderId?.orderNumber as string) ?? '—' : '—',
-        receivedDate: formatDate(d.receivedAt),
-        lines: (d.lines || []).map(line => ({
-          name: line.productId?.name ?? 'Product',
-          qty: Number(line.qtyReceived) || 0,
-          unitCost: Number(line.unitCost) || 0
-        }))
-      })
+      setHubPrintDoc(buildGoodsReceiptPrintDoc(d, g.receiptNumber))
     } catch (e) {
       procurementShowError(e, 'Could not load receipt for print')
     } finally {
@@ -1204,18 +1323,9 @@ const ProcurementHubPage = () => {
   }
 
   const printViewedSupplierOrder = () => {
-    const d = viewPoDetail as { supplierId?: { name?: string }; lines?: { productId?: { name?: string }; orderedQty?: number; unitPrice?: number }[] } | null
+    const d = viewPoDetail as SupplierOrderPrintSource | null
     if (!viewPo || !d?.lines?.length) return
-    setHubPrintDoc({
-      kind: 'supplierOrder',
-      orderNumber: viewPo.orderNumber,
-      supplierName: d.supplierId?.name ?? '—',
-      lines: (d.lines || []).map(pl => ({
-        name: pl.productId?.name ?? 'Product',
-        qty: Number(pl.orderedQty) || 0,
-        unitPrice: Number(pl.unitPrice) || 0
-      }))
-    })
+    setHubPrintDoc(buildSupplierOrderPrintDoc(d, viewPo.orderNumber))
   }
 
   return (
@@ -1224,11 +1334,23 @@ const ProcurementHubPage = () => {
         <GlobalStyles
           styles={theme => ({
             '@media screen': {
-              '#procurement-hub-print-root': { display: 'none !important' }
+              '#procurement-hub-print-root': {
+                position: 'fixed',
+                left: -10000,
+                top: 0,
+                width: '210mm',
+                visibility: 'hidden',
+                pointerEvents: 'none',
+                zIndex: -1
+              }
             },
             '@media print': {
               body: { visibility: 'hidden' },
               '#procurement-hub-print-root, #procurement-hub-print-root *': { visibility: 'visible' },
+              '#procurement-hub-print-root img': {
+                WebkitPrintColorAdjust: 'exact',
+                printColorAdjust: 'exact'
+              },
               '#procurement-hub-print-root': {
                 display: 'block !important',
                 visibility: 'visible',
@@ -2805,22 +2927,51 @@ const ProcurementHubPage = () => {
             {hubPrintDoc.kind === 'supplierOrder' ? (
               <>
                 <InvoiceHeader
-                  title='Supplier Order'
+                  title='Purchase Order'
                   documentId={hubPrintDoc.orderNumber}
-                  issuedDate={new Date().toLocaleDateString('en-GB')}
+                  issuedDate={hubPrintDoc.orderDate}
+                  dueDate='—'
                   left={
-                    <Box>
+                    <Stack spacing={0.5}>
+                      <Typography variant='h5' fontWeight={800}>
+                        Purchase Order
+                      </Typography>
                       <Typography variant='body2' color='text.secondary'>
-                        Supplier
+                        {hubPrintDoc.company.name}
                       </Typography>
-                      <Typography variant='body1' fontWeight={700}>
-                        {hubPrintDoc.supplierName}
+                    </Stack>
+                  }
+                  rightContent={
+                    <Stack spacing={1} sx={{ minWidth: { sm: 240 }, textAlign: { xs: 'left', sm: 'right' } }}>
+                      <Typography variant='body2' color='text.secondary'>
+                        #{hubPrintDoc.orderNumber}
                       </Typography>
-                    </Box>
+                      <Typography variant='body2'>Date: {hubPrintDoc.orderDate}</Typography>
+                      <Typography variant='body2'>Currency: {hubPrintDoc.currency}</Typography>
+                      {hubPrintDoc.orderedBy ? (
+                        <Typography variant='body2'>
+                          Ordered by: {hubPrintDoc.orderedBy.name}
+                          {hubPrintDoc.orderedBy.employeeCode ? ` (${hubPrintDoc.orderedBy.employeeCode})` : ''}
+                        </Typography>
+                      ) : null}
+                      {hubPrintDoc.orderedBy?.email ? (
+                        <Typography variant='body2' color='text.secondary'>
+                          {hubPrintDoc.orderedBy.email}
+                        </Typography>
+                      ) : null}
+                    </Stack>
                   }
                 />
+                <InvoiceParties
+                  companyTitle='Order From'
+                  customerTitle='Supplier'
+                  companyContent={<InvoicePartyBlock party={hubPrintDoc.company} logoPosition='right' />}
+                  customerContent={<InvoicePartyBlock party={hubPrintDoc.supplier} />}
+                />
                 <InvoiceItemsTable
-                  columns={['Product', 'Qty', 'Unit Price', 'Line Total']}
+                  columns={PO_PRINT_TABLE_COLUMNS}
+                  columnWidths={PO_PRINT_TABLE_WIDTHS}
+                  columnAlign={PO_PRINT_TABLE_ALIGN}
                   rows={hubPrintDoc.lines.map(row => [
                     row.name,
                     row.qty,
@@ -2831,35 +2982,72 @@ const ProcurementHubPage = () => {
                 <InvoiceTotals
                   rows={[
                     {
-                      label: 'Net Sales (Company)',
+                      label: 'Order Total',
                       value: formatPKR(hubPrintDoc.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0))
                     }
                   ]}
-                  highlightLabel='Net Sales (Company)'
+                  highlightLabel='Order Total'
                 />
+                {hubPrintDoc.notes ? (
+                  <Paper variant='outlined' sx={{ p: 2.5, borderRadius: 2, borderColor: 'divider' }}>
+                    <Typography variant='subtitle2' color='text.secondary' sx={{ mb: 0.75 }}>
+                      Notes
+                    </Typography>
+                    <Typography variant='body2' sx={{ whiteSpace: 'pre-wrap' }}>
+                      {hubPrintDoc.notes}
+                    </Typography>
+                  </Paper>
+                ) : null}
               </>
             ) : (
               <>
                 <InvoiceHeader
-                  title='Receive Goods Note'
+                  title='Goods Receipt'
                   documentId={hubPrintDoc.receiptNumber}
                   issuedDate={hubPrintDoc.receivedDate}
+                  dueDate='—'
                   left={
-                    <Box>
+                    <Stack spacing={0.5}>
+                      <Typography variant='h5' fontWeight={800}>
+                        Goods Receipt
+                      </Typography>
                       <Typography variant='body2' color='text.secondary'>
-                        Supplier
+                        {hubPrintDoc.company.name}
                       </Typography>
-                      <Typography variant='body1' fontWeight={700}>
-                        {hubPrintDoc.supplierName}
+                    </Stack>
+                  }
+                  rightContent={
+                    <Stack spacing={1} sx={{ minWidth: { sm: 240 }, textAlign: { xs: 'left', sm: 'right' } }}>
+                      <Typography variant='body2' color='text.secondary'>
+                        #{hubPrintDoc.receiptNumber}
                       </Typography>
-                      <Typography variant='body2' color='text.secondary' sx={{ mt: 1 }}>
-                        Supplier Order: {hubPrintDoc.supplierOrderNumber}
-                      </Typography>
-                    </Box>
+                      <Typography variant='body2'>Received: {hubPrintDoc.receivedDate}</Typography>
+                      <Typography variant='body2'>Supplier order: {hubPrintDoc.supplierOrderNumber}</Typography>
+                      <Typography variant='body2'>Currency: {hubPrintDoc.currency}</Typography>
+                      {hubPrintDoc.receivedBy ? (
+                        <Typography variant='body2'>
+                          Received by: {hubPrintDoc.receivedBy.name}
+                          {hubPrintDoc.receivedBy.employeeCode ? ` (${hubPrintDoc.receivedBy.employeeCode})` : ''}
+                        </Typography>
+                      ) : null}
+                      {hubPrintDoc.receivedBy?.email ? (
+                        <Typography variant='body2' color='text.secondary'>
+                          {hubPrintDoc.receivedBy.email}
+                        </Typography>
+                      ) : null}
+                    </Stack>
                   }
                 />
+                <InvoiceParties
+                  companyTitle='Received By'
+                  customerTitle='Supplier'
+                  companyContent={<InvoicePartyBlock party={hubPrintDoc.company} logoPosition='right' />}
+                  customerContent={<InvoicePartyBlock party={hubPrintDoc.supplier} />}
+                />
                 <InvoiceItemsTable
-                  columns={['Product', 'Qty', 'Unit Cost (Landed)', 'Line Total']}
+                  columns={GRN_PRINT_TABLE_COLUMNS}
+                  columnWidths={GRN_PRINT_TABLE_WIDTHS}
+                  columnAlign={GRN_PRINT_TABLE_ALIGN}
                   rows={hubPrintDoc.lines.map(row => [
                     row.name,
                     row.qty,
@@ -2870,12 +3058,22 @@ const ProcurementHubPage = () => {
                 <InvoiceTotals
                   rows={[
                     {
-                      label: 'Net Sales (Company)',
+                      label: 'Receipt Total',
                       value: formatPKR(hubPrintDoc.lines.reduce((s, l) => s + l.qty * l.unitCost, 0))
                     }
                   ]}
-                  highlightLabel='Net Sales (Company)'
+                  highlightLabel='Receipt Total'
                 />
+                {hubPrintDoc.notes ? (
+                  <Paper variant='outlined' sx={{ p: 2.5, borderRadius: 2, borderColor: 'divider' }}>
+                    <Typography variant='subtitle2' color='text.secondary' sx={{ mb: 0.75 }}>
+                      Notes
+                    </Typography>
+                    <Typography variant='body2' sx={{ whiteSpace: 'pre-wrap' }}>
+                      {hubPrintDoc.notes}
+                    </Typography>
+                  </Paper>
+                ) : null}
               </>
             )}
             <InvoiceFooter>Generated on {new Date().toLocaleDateString('en-GB')}</InvoiceFooter>
