@@ -86,6 +86,8 @@ export function DateRangePickerField({
       onCalendarClose={() => setCalendarOpen(false)}
       shouldCloseOnSelect={false}
       id={id}
+      // Escapes scrollable Dialog/Popover overflow without forcing overflow:visible on the host.
+      popperProps={{ strategy: 'fixed' }}
       onChange={dates => {
         if (!dates) {
           setDraftFrom('')
