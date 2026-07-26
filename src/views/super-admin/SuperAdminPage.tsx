@@ -92,6 +92,8 @@ type Company = {
   mobilePushEnabled?: boolean
   /** When true, each field-force rep is bound to one mobile device; switches require admin approval. */
   deviceControlEnabled?: boolean
+  /** When true, AI Copilot APIs and UI are enabled for this company. */
+  aiCopilotEnabled?: boolean
   /** When true, field rep expenses stay PENDING until a manager approves (mobile + web). */
   expenseApprovalRequired?: boolean
   geoFencingEnabled?: boolean
@@ -218,6 +220,7 @@ type CompanyFormState = {
   liveTrackingEnabled: boolean
   mobilePushEnabled: boolean
   deviceControlEnabled: boolean
+  aiCopilotEnabled: boolean
   expenseApprovalRequired: boolean
   geoFencingEnabled: boolean
   geoFenceRadiusMeters: number
@@ -259,6 +262,7 @@ const emptyForm: CompanyFormState = {
   liveTrackingEnabled: false,
   mobilePushEnabled: false,
   deviceControlEnabled: false,
+  aiCopilotEnabled: false,
   expenseApprovalRequired: false,
   geoFencingEnabled: false,
   geoFenceRadiusMeters: 150,
@@ -538,6 +542,7 @@ const SuperAdminPage = () => {
       liveTrackingEnabled: c.liveTrackingEnabled === true,
       mobilePushEnabled: c.mobilePushEnabled === true,
       deviceControlEnabled: c.deviceControlEnabled === true,
+      aiCopilotEnabled: c.aiCopilotEnabled === true,
       expenseApprovalRequired: c.expenseApprovalRequired === true,
       geoFencingEnabled: c.geoFencingEnabled === true,
       geoFenceRadiusMeters: c.geoFenceRadiusMeters ?? 150,
@@ -593,6 +598,7 @@ const SuperAdminPage = () => {
         liveTrackingEnabled: form.liveTrackingEnabled,
         mobilePushEnabled: form.mobilePushEnabled,
         deviceControlEnabled: form.deviceControlEnabled,
+        aiCopilotEnabled: form.aiCopilotEnabled,
         expenseApprovalRequired: form.expenseApprovalRequired,
         geoFencingEnabled: form.geoFencingEnabled,
         geoFenceRadiusMeters: form.geoFenceRadiusMeters,
@@ -640,6 +646,7 @@ const SuperAdminPage = () => {
         liveTrackingEnabled: form.liveTrackingEnabled,
         mobilePushEnabled: form.mobilePushEnabled,
         deviceControlEnabled: form.deviceControlEnabled,
+        aiCopilotEnabled: form.aiCopilotEnabled,
         expenseApprovalRequired: form.expenseApprovalRequired,
         geoFencingEnabled: form.geoFencingEnabled,
         geoFenceRadiusMeters: form.geoFenceRadiusMeters,
@@ -1139,6 +1146,26 @@ const SuperAdminPage = () => {
           <FormControlLabel
             control={
               <Switch
+                checked={form.aiCopilotEnabled}
+                onChange={e => setForm(f => ({ ...f, aiCopilotEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  AI Copilot
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When enabled, users with the Copilot permission can use the AI assistant on web and mobile.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
                 checked={form.expenseApprovalRequired}
                 onChange={e => setForm(f => ({ ...f, expenseApprovalRequired: e.target.checked }))}
                 color='primary'
@@ -1565,6 +1592,26 @@ const SuperAdminPage = () => {
                   When enabled, each field-force rep is locked to one mobile device. Logins from a different
                   device are blocked until an admin approves a device change (Device Control page). Web logins
                   are never affected.
+                </Typography>
+              </div>
+            }
+            sx={{ alignItems: 'flex-start', mr: 0, ml: 0, mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.aiCopilotEnabled}
+                onChange={e => setForm(f => ({ ...f, aiCopilotEnabled: e.target.checked }))}
+                color='primary'
+              />
+            }
+            label={
+              <div>
+                <Typography component='span' variant='body2'>
+                  AI Copilot
+                </Typography>
+                <Typography variant='caption' color='text.secondary' display='block'>
+                  When enabled, users with the Copilot permission can use the AI assistant on web and mobile.
                 </Typography>
               </div>
             }

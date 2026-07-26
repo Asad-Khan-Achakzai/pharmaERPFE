@@ -210,6 +210,7 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
       { label: 'Announcements', href: '/announcements', icon: 'tabler-speakerphone', permission: 'admin.access' },
       { label: 'Onboarding', href: '/onboarding', icon: 'tabler-rocket', permission: 'onboarding.view' },
       { label: 'Device Control', href: '/device-control', icon: 'tabler-devices', permission: 'deviceControl.manage' },
+      { label: 'AI Copilot', href: '/ai-copilot', icon: 'tabler-sparkles', permission: 'copilot.use' },
       { label: 'Audit Log', href: '/audit-log', icon: 'tabler-history', permission: 'users.view' }
     ]
   }

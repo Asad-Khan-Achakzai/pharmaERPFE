@@ -37,6 +37,7 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'vouchers.post': 'Post draft vouchers to the general ledger',
   'vouchers.reverse': 'Reverse posted transactions',
   'deviceControl.manage': 'Manage mobile device control (bindings, change requests, force revoke)',
+  'copilot.use': 'Use AI Copilot assistant',
   'brands.view': 'View product brands',
   'brands.create': 'Create product brands',
   'brands.edit': 'Edit product brands',
@@ -132,7 +133,8 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   users: ['users.view', 'users.create', 'users.edit', 'users.delete'],
   team: ['team.view', 'team.manage', 'team.viewAllReports'],
   territories: ['territories.view', 'territories.manage'],
-  deviceControl: ['deviceControl.manage']
+  deviceControl: ['deviceControl.manage'],
+  copilot: ['copilot.use']
 }
 
 export const ALL_PERMISSIONS: string[] = Object.values(PERMISSION_GROUPS).flat()

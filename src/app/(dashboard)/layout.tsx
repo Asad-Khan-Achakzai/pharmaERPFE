@@ -22,6 +22,7 @@ import { AuthProvider } from '@/contexts/AuthContext'
 import { GeoPlatformProvider } from '@/geo/GeoPlatformProvider'
 import { RealtimeProvider } from '@/realtime/RealtimeProvider'
 import AppReactToastify from '@/libs/styles/AppReactToastify'
+import AiCopilotShell from '@/components/ai-copilot/AiCopilotShell'
 
 // Util Imports
 import { getMode, getSystemMode } from '@core/utils/serverHelpers'
@@ -57,6 +58,7 @@ const Layout = async (props: ChildrenType) => {
               <i className='tabler-arrow-up' />
             </Button>
           </ScrollToTop>
+          <AiCopilotShell />
         </AuthGuard>
         </RealtimeProvider>
         </GeoPlatformProvider>

@@ -64,6 +64,7 @@ export interface User {
     mrepMultiTerritory?: boolean
     mrepOwnershipAudit?: boolean
     deviceControlEnabled?: boolean
+    aiCopilotEnabled?: boolean
   }
   /** When set, another user may act on this user’s attendance approvals until the given time. */
   attendanceApproveDelegateUserId?: string | null
