@@ -49,7 +49,7 @@ const horizontalMenuData = (): HorizontalMenuItemWithPermission[] => [
         label: 'Orders',
         icon: 'tabler-clipboard-list',
         children: [
-          { label: 'All Orders', href: '/orders/list', permission: 'orders.view' },
+          { label: 'All Orders', href: '/orders/list', exactMatch: false, activeUrl: '/orders', permission: 'orders.view' },
           { label: 'Create Order', href: '/orders/add', permission: 'orders.create' }
         ]
       },
@@ -102,6 +102,7 @@ const horizontalMenuData = (): HorizontalMenuItemWithPermission[] => [
         label: 'Collections',
         icon: 'tabler-cash',
         children: [
+          { label: 'Outstanding Collections', href: '/payments/outstanding', permission: 'payments.view' },
           { label: 'All Collections', href: '/payments/list', permission: 'payments.view' },
           { label: 'Record Collection', href: '/payments/add', permission: 'payments.create' }
         ]

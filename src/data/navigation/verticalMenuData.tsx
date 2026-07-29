@@ -55,7 +55,7 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
         label: 'Orders',
         icon: 'tabler-clipboard-list',
         children: [
-          { label: 'All Orders', href: '/orders/list', permission: 'orders.view' },
+          { label: 'All Orders', href: '/orders/list', exactMatch: false, activeUrl: '/orders', permission: 'orders.view' },
           { label: 'Create Order', href: '/orders/add', permission: 'orders.create' }
         ]
       },
@@ -106,11 +106,12 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
     children: [
       { label: 'Money Accounts', href: '/finance/money-accounts', icon: 'tabler-wallet', permission: 'payments.view' },
       {
-        label: 'Receive Payment',
+        label: 'Collections',
         icon: 'tabler-cash',
         children: [
-          { label: 'All Payments Received', href: '/payments/list', permission: 'payments.view' },
-          { label: 'Record Payment', href: '/payments/add', permission: 'payments.create' }
+          { label: 'Outstanding Collections', href: '/payments/outstanding', permission: 'payments.view' },
+          { label: 'All Collections', href: '/payments/list', permission: 'payments.view' },
+          { label: 'Record Collection', href: '/payments/add', permission: 'payments.create' }
         ]
       },
       {

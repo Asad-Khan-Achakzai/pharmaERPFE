@@ -24,7 +24,6 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import CustomTextField from '@core/components/mui/TextField'
-import api from '@/services/api'
 import { ordersService } from '@/services/orders.service'
 import { inventoryService } from '@/services/inventory.service'
 import { lineTotalQuantity } from '@/utils/bonus'
@@ -32,9 +31,24 @@ import { FinancialLayerSection } from '@/components/financial/FinancialLayerSect
 import { FinInfoTip } from '@/components/financial/FinInfoTip'
 import { FIN_LABELS, FIN_TOOLTIPS } from '@/constants/financialLabels'
 import { OrderVisitLinkPanel } from '@/components/orders/OrderVisitLinkPanel'
+import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
+import { usersService } from '@/services/users.service'
 
 const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'default'> = {
   PENDING: 'warning', PARTIALLY_DELIVERED: 'info', DELIVERED: 'success', PARTIALLY_RETURNED: 'warning', RETURNED: 'error', CANCELLED: 'default'
+}
+
+type DeliveryManOption = {
+  _id: string
+  name?: string
+  employeeCode?: string | null
+  role?: string
+}
+
+const deliveryManOptionLabel = (u: DeliveryManOption) => {
+  const code = u.employeeCode?.trim()
+  if (code) return `${code} · ${u.name ?? ''}`.trim()
+  return u.name ?? ''
 }
 
 const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string }> }) => {
@@ -44,20 +58,37 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   const [order, setOrder] = useState<any>(null)
   const [deliverOpen, setDeliverOpen] = useState(false)
   const [returnOpen, setReturnOpen] = useState(false)
+  const [amendOpen, setAmendOpen] = useState(false)
   const [deliverItems, setDeliverItems] = useState<any[]>([])
+  const [selectedDeliveryMan, setSelectedDeliveryMan] = useState<DeliveryManOption | null>(null)
   const [returnItems, setReturnItems] = useState<any[]>([])
+  const [amendItems, setAmendItems] = useState<any[]>([])
+  const [amendReason, setAmendReason] = useState('')
+  const [amendPreview, setAmendPreview] = useState<any>(null)
+  const [amending, setAmending] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [delivering, setDelivering] = useState(false)
   const [returning, setReturning] = useState(false)
   const [invAvgByProduct, setInvAvgByProduct] = useState<Record<string, number>>({})
   const [invAvgLoaded, setInvAvgLoaded] = useState(false)
   const [invoicePdfLoadingId, setInvoicePdfLoadingId] = useState<string | null>(null)
+  const [creditNotePdfLoadingId, setCreditNotePdfLoadingId] = useState<string | null>(null)
+  const [receiptPdfLoading, setReceiptPdfLoading] = useState(false)
   const { hasPermission } = useAuth()
   const hasDeliverPerm = hasPermission('orders.deliver')
   const hasReturnPerm = hasPermission('orders.return')
+  const hasAmendPerm = hasPermission('orders.amend')
   const hasEditPerm = hasPermission('orders.edit')
+  const hasViewPerm = hasPermission('orders.view')
   /** Order-level cost, profit, and company-side sales lines — same gate as company financials elsewhere */
   const canSeeOrderAdminFinancials = hasPermission('admin.access')
+
+  const openPdfBlob = (blobData: BlobPart, fallbackName: string) => {
+    const blob = new Blob([blobData], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener')
+    setTimeout(() => URL.revokeObjectURL(url), 120_000)
+  }
 
   const fetchOrder = async () => {
     try {
@@ -70,21 +101,41 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
     }
   }
 
+  const openOrderReceipt = async () => {
+    setReceiptPdfLoading(true)
+    try {
+      const res = await ordersService.openReceipt(params.id)
+      openPdfBlob(res.data, `order-receipt-${params.id}.pdf`)
+    } catch (err: unknown) {
+      showApiError(err, 'Could not open order receipt PDF')
+    } finally {
+      setReceiptPdfLoading(false)
+    }
+  }
+
   const openDeliveryInvoice = async (deliveryId: string) => {
     const id = String(deliveryId)
     setInvoicePdfLoadingId(id)
     try {
-      const res = await api.get(`/orders/${params.id}/deliveries/${deliveryId}/invoice`, {
-        responseType: 'blob'
-      })
-      const blob = new Blob([res.data], { type: 'application/pdf' })
-      const url = URL.createObjectURL(blob)
-      window.open(url, '_blank', 'noopener')
-      setTimeout(() => URL.revokeObjectURL(url), 120_000)
+      const res = await ordersService.openDeliveryInvoice(params.id, deliveryId)
+      openPdfBlob(res.data, `invoice-${deliveryId}.pdf`)
     } catch (err: unknown) {
       showApiError(err, 'Could not open invoice PDF')
     } finally {
       setInvoicePdfLoadingId(null)
+    }
+  }
+
+  const openAmendmentCreditNote = async (amendmentId: string) => {
+    const id = String(amendmentId)
+    setCreditNotePdfLoadingId(id)
+    try {
+      const res = await ordersService.openAmendmentCreditNote(params.id, amendmentId)
+      openPdfBlob(res.data, `credit-note-${amendmentId}.pdf`)
+    } catch (err: unknown) {
+      showApiError(err, 'Could not open credit note PDF')
+    } finally {
+      setCreditNotePdfLoadingId(null)
     }
   }
 
@@ -225,21 +276,113 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
         }
       })
     setDeliverItems(items)
+    const rep = order.medicalRepId
+    setSelectedDeliveryMan(
+      rep && typeof rep === 'object'
+        ? {
+            _id: String(rep._id),
+            name: rep.name,
+            employeeCode: rep.employeeCode ?? null
+          }
+        : rep
+          ? { _id: String(rep), name: 'Medical rep' }
+          : null
+    )
     setDeliverOpen(true)
   }
 
   const openReturn = () => {
-    const items = order.items.filter((i: any) => i.deliveredQty > i.returnedQty).map((i: any) => ({ productId: i.productId?._id || i.productId, productName: i.productName, maxQty: i.deliveredQty - i.returnedQty, quantity: 0, reason: '' }))
+    const items = order.items
+      .filter((i: any) => (i.remainingReturnableQty ?? i.deliveredQty - (i.returnedQty || 0) - (i.amendedQty || 0)) > 0)
+      .map((i: any) => {
+        const maxQty = i.remainingReturnableQty ?? Math.max(0, i.deliveredQty - (i.returnedQty || 0) - (i.amendedQty || 0))
+        return {
+          productId: i.productId?._id || i.productId,
+          productName: i.productName,
+          maxQty,
+          quantity: 0,
+          reason: ''
+        }
+      })
     setReturnItems(items)
     setReturnOpen(true)
+  }
+
+  const openAmend = () => {
+    const items = order.items
+      .filter((i: any) => (i.remainingAmendableQty ?? i.deliveredQty - (i.returnedQty || 0) - (i.amendedQty || 0)) > 0)
+      .map((i: any) => {
+        const remaining =
+          i.remainingAmendableQty ?? Math.max(0, i.deliveredQty - (i.returnedQty || 0) - (i.amendedQty || 0))
+        return {
+          productId: i.productId?._id || i.productId,
+          productName: i.productName,
+          remaining,
+          newQuantity: remaining
+        }
+      })
+    setAmendItems(items)
+    setAmendReason('')
+    setAmendPreview(null)
+    setAmendOpen(true)
+  }
+
+  const runAmendPreview = async () => {
+    const changed = amendItems.filter(i => i.newQuantity < i.remaining)
+    if (changed.length === 0) {
+      showApiError(null, 'Reduce at least one line quantity')
+      return
+    }
+    if (!amendReason.trim() || amendReason.trim().length < 3) {
+      showApiError(null, 'Enter a reason (at least 3 characters)')
+      return
+    }
+    try {
+      const { data: res } = await ordersService.previewAmendment(params.id, {
+        reason: amendReason.trim(),
+        items: changed.map(i => ({ productId: i.productId, newQuantity: i.newQuantity }))
+      })
+      setAmendPreview(res.data)
+    } catch (err) {
+      showApiError(err, 'Could not preview amendment')
+    }
+  }
+
+  const handleAmend = async () => {
+    const changed = amendItems.filter(i => i.newQuantity < i.remaining)
+    if (changed.length === 0) {
+      showApiError(null, 'Reduce at least one line quantity')
+      return
+    }
+    if (!amendReason.trim() || amendReason.trim().length < 3) {
+      showApiError(null, 'Enter a reason (at least 3 characters)')
+      return
+    }
+    setAmending(true)
+    try {
+      const { data: res } = await ordersService.createAmendment(params.id, {
+        reason: amendReason.trim(),
+        items: changed.map(i => ({ productId: i.productId, newQuantity: i.newQuantity }))
+      })
+      const cnNo = res.data?.creditNote?.creditNoteNumber
+      showSuccess(cnNo ? `Order amended · Credit note ${cnNo} issued` : 'Order amended')
+      if (res.data?.warning) showApiError(null, res.data.warning)
+      setAmendOpen(false)
+      fetchOrder()
+    } catch (err) {
+      showApiError(err, 'Amendment failed')
+    } finally {
+      setAmending(false)
+    }
   }
 
   const handleDeliver = async () => {
     const validItems = deliverItems.filter(i => i.quantity > 0).map(i => ({ productId: i.productId, quantity: i.quantity }))
     if (validItems.length === 0) { showApiError(null, 'Select items to deliver'); return }
+    if (!selectedDeliveryMan?._id) { showApiError(null, 'Select delivery man'); return }
     setDelivering(true)
     try {
-      await ordersService.deliver(params.id, { items: validItems })
+      await ordersService.deliver(params.id, { items: validItems, deliveredById: selectedDeliveryMan._id })
       showSuccess('Delivery recorded'); setDeliverOpen(false); fetchOrder()
     } catch (err) { showApiError(err, 'Delivery failed') }
     finally { setDelivering(false) }
@@ -272,7 +415,15 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
 
   const canDeliver = hasDeliverPerm && ['PENDING', 'PARTIALLY_DELIVERED'].includes(order.status)
   const canReturn = hasReturnPerm && ['DELIVERED', 'PARTIALLY_DELIVERED', 'PARTIALLY_RETURNED'].includes(order.status)
+  const hasAmendableQty = (order.items || []).some(
+    (i: any) => (i.remainingAmendableQty ?? i.deliveredQty - (i.returnedQty || 0) - (i.amendedQty || 0)) > 0
+  )
+  const canAmend =
+    hasAmendPerm &&
+    ['DELIVERED', 'PARTIALLY_DELIVERED', 'PARTIALLY_RETURNED'].includes(order.status) &&
+    hasAmendableQty
   const canEditPending = hasEditPerm && order.status === 'PENDING'
+  const isAmended = (order.amendments?.length || 0) > 0 || (order.items || []).some((i: any) => (i.amendedQty || 0) > 0)
 
   const pk = (n: number | null | undefined) =>
     n != null && !Number.isNaN(n)
@@ -325,12 +476,33 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
             }
             action={
               <div className='flex flex-wrap gap-2'>
+                {hasViewPerm && (
+                  <Button
+                    variant='outlined'
+                    disabled={receiptPdfLoading}
+                    startIcon={
+                      receiptPdfLoading ? (
+                        <CircularProgress color='inherit' size={16} thickness={5} />
+                      ) : (
+                        <i className='tabler-file-text' />
+                      )
+                    }
+                    onClick={() => void openOrderReceipt()}
+                  >
+                    {receiptPdfLoading ? 'Loading…' : 'Order Receipt'}
+                  </Button>
+                )}
                 {canEditPending && (
                   <Button component={Link} href={`/orders/${params.id}/edit`} variant='outlined'>
                     Edit order
                   </Button>
                 )}
                 {canDeliver && <Button variant='contained' color='success' onClick={openDeliver}>Deliver</Button>}
+                {canAmend && (
+                  <Button variant='outlined' color='warning' onClick={openAmend}>
+                    Amend Order
+                  </Button>
+                )}
                 {canReturn && <Button variant='outlined' color='error' onClick={openReturn}>Return</Button>}
               </div>
             }
@@ -338,6 +510,12 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
           <CardContent>
             <div className='flex flex-wrap gap-4 mbe-4 items-center'>
               <Chip label={order.status} color={statusColors[order.status] || 'default'} />
+              {isAmended && <Chip label='Amended' color='warning' size='small' variant='outlined' />}
+              {isAmended && (
+                <Typography variant='body2' color='text.secondary'>
+                  Outstanding reflects invoice(s) minus credit note(s) and payments.
+                </Typography>
+              )}
               <Typography>
                 Order date: {new Date(order.orderDate ?? order.createdAt).toLocaleDateString()}
               </Typography>
@@ -564,6 +742,8 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Total</th>
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Delivered</th>
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Returned</th>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Amended</th>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Remaining</th>
                   <th style={{ padding: 8, whiteSpace: 'nowrap' }}>TP</th>
                   {canSeeOrderAdminFinancials ? (
                     <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Std. cost (catalog)</th>
@@ -592,6 +772,11 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
                     <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{lineTotalQuantity(item.quantity, item.bonusQuantity ?? 0)}</td>
                     <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{item.deliveredQty}</td>
                     <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{item.returnedQty}</td>
+                    <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{item.amendedQty || 0}</td>
+                    <td style={{ padding: 8, whiteSpace: 'nowrap' }}>
+                      {item.remainingAmendableQty ??
+                        Math.max(0, (item.deliveredQty || 0) - (item.returnedQty || 0) - (item.amendedQty || 0))}
+                    </td>
                     <td style={{ padding: 8, whiteSpace: 'nowrap' }}>₨ {item.tpAtTime?.toFixed(2)}</td>
                     {canSeeOrderAdminFinancials ? (
                       <td style={{ padding: 8, whiteSpace: 'nowrap' }}>₨ {item.castingAtTime?.toFixed(2)}</td>
@@ -658,7 +843,7 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
           </Card>
         )}
         {order.returns?.length > 0 && (
-          <Card>
+          <Card className='mbe-4'>
             <CardHeader title='Return History' />
             <CardContent>
               {order.returns.map((r: any) => (
@@ -672,11 +857,67 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
             </CardContent>
           </Card>
         )}
+        {order.amendments?.length > 0 && (
+          <Card>
+            <CardHeader title='Amendment History' />
+            <CardContent>
+              {order.amendments.map((a: any) => (
+                <div key={a._id} className='mbe-3 pbe-3' style={{ borderBottom: '1px solid #eee' }}>
+                  <Typography fontWeight={500}>
+                    {a.amendmentNumber} · v{a.version}
+                    {a.creditNote?.creditNoteNumber ? ` · ${a.creditNote.creditNoteNumber}` : ''}
+                  </Typography>
+                  <Typography variant='body2'>
+                    Credit: {pk(a.totalAmount)} · {a.amendmentType}
+                  </Typography>
+                  <Typography variant='body2' color='text.secondary'>
+                    {a.reason}
+                  </Typography>
+                  <Typography variant='body2' color='text.secondary'>
+                    {new Date(a.amendedAt).toLocaleString()} by {a.amendedBy?.name}
+                  </Typography>
+                  <Button
+                    size='small'
+                    className='mts-1'
+                    disabled={creditNotePdfLoadingId !== null}
+                    startIcon={
+                      creditNotePdfLoadingId === String(a._id) ? (
+                        <CircularProgress color='inherit' size={14} thickness={5} />
+                      ) : (
+                        <i className='tabler-file-invoice' />
+                      )
+                    }
+                    onClick={() => void openAmendmentCreditNote(a._id)}
+                  >
+                    {creditNotePdfLoadingId === String(a._id) ? 'Loading…' : 'Download Credit Note'}
+                  </Button>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </Grid>
 
       <Dialog open={deliverOpen} onClose={() => setDeliverOpen(false)} maxWidth='sm' fullWidth>
         <DialogTitle>Deliver Items</DialogTitle>
         <DialogContent>
+          <Box className='mbe-4 pbs-2'>
+            <LookupAutocomplete<DeliveryManOption>
+              value={selectedDeliveryMan}
+              onChange={setSelectedDeliveryMan}
+              fetchOptions={search =>
+                usersService
+                  .assignable({ limit: 25, ...(search ? { search } : {}) })
+                  .then(r => r.data.data || [])
+              }
+              getOptionLabel={deliveryManOptionLabel}
+              label='Delivery man'
+              placeholder='Type to search'
+              required
+              helperText='Defaults to the order medical rep. Shown on invoice as D/MAN.CODE.'
+              fetchErrorMessage='Failed to load users'
+            />
+          </Box>
           {deliverItems.map((item, i) => (
             <div key={i} className='flex gap-4 items-center mbe-3 pbs-2'>
               <Typography className='flex-1'>{item.productName}</Typography>
@@ -702,6 +943,81 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
           ))}
         </DialogContent>
         <DialogActions><Button onClick={() => setReturnOpen(false)}>Cancel</Button><Button variant='contained' color='error' onClick={handleReturn} disabled={returning}>{returning ? 'Confirming...' : 'Confirm Return'}</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={amendOpen} onClose={() => setAmendOpen(false)} maxWidth='sm' fullWidth>
+        <DialogTitle>Amend Order (quantity reduction)</DialogTitle>
+        <DialogContent>
+          <Typography variant='body2' color='text.secondary' className='mbe-3 pbs-1'>
+            Set the new remaining quantity for each line. Original delivery invoice stays unchanged; a credit
+            amendment is posted.
+          </Typography>
+          <CustomTextField
+            label='Reason'
+            required
+            fullWidth
+            multiline
+            minRows={2}
+            value={amendReason}
+            onChange={e => setAmendReason(e.target.value)}
+            className='mbe-4'
+          />
+          {amendItems.map((item, i) => (
+            <div key={i} className='flex gap-4 items-center mbe-3'>
+              <Typography className='flex-1'>
+                {item.productName}
+                <Typography component='span' variant='caption' display='block' color='text.secondary'>
+                  Current remaining: {item.remaining}
+                </Typography>
+              </Typography>
+              <CustomTextField
+                label='New qty'
+                type='number'
+                value={item.newQuantity}
+                onChange={e =>
+                  setAmendItems(prev =>
+                    prev.map((it, idx) =>
+                      idx === i
+                        ? {
+                            ...it,
+                            newQuantity: Math.max(0, Math.min(+e.target.value || 0, it.remaining))
+                          }
+                        : it
+                    )
+                  )
+                }
+                style={{ width: 120 }}
+              />
+            </div>
+          ))}
+          {amendPreview?.impact && (
+            <Box className='mbs-2 p-3' sx={{ bgcolor: 'action.hover', borderRadius: 1 }}>
+              <Typography variant='subtitle2' className='mbe-1'>
+                Impact preview
+              </Typography>
+              <Typography variant='body2'>Inventory restock: +{amendPreview.impact.inventoryRestockPacks} packs</Typography>
+              <Typography variant='body2'>Sales packs: {amendPreview.impact.salesPacksDelta}</Typography>
+              <Typography variant='body2'>Invoice credit: {pk(amendPreview.impact.invoiceCreditAmount)}</Typography>
+              {amendPreview.impact.openArBefore != null && (
+                <Typography variant='body2'>
+                  Open AR: {pk(amendPreview.impact.openArBefore)} → {pk(amendPreview.impact.openArAfter)}
+                </Typography>
+              )}
+              {amendPreview.impact.warning && (
+                <Typography variant='body2' color='warning.main' className='mbs-1'>
+                  {amendPreview.impact.warning}
+                </Typography>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAmendOpen(false)}>Cancel</Button>
+          <Button onClick={() => void runAmendPreview()}>Preview impact</Button>
+          <Button variant='contained' color='warning' onClick={() => void handleAmend()} disabled={amending}>
+            {amending ? 'Applying…' : 'Apply amendment'}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Grid>
   )

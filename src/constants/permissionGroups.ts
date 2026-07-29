@@ -54,7 +54,8 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'kits.view': 'View product kits / bundles',
   'kits.create': 'Create product kits',
   'kits.edit': 'Edit product kits',
-  'kits.delete': 'Delete product kits'
+  'kits.delete': 'Delete product kits',
+  'orders.amend': 'Amend delivered orders (quantity reduction)'
 }
 
 export const PERMISSION_GROUPS: Record<string, string[]> = {
@@ -71,7 +72,7 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   pharmacies: ['pharmacies.view', 'pharmacies.create', 'pharmacies.edit', 'pharmacies.delete'],
   doctors: ['doctors.view', 'doctors.create', 'doctors.edit', 'doctors.delete', 'doctors.assign'],
   doctorLocations: ['doctorLocations.review'],
-  orders: ['orders.view', 'orders.create', 'orders.edit', 'orders.deliver', 'orders.return'],
+  orders: ['orders.view', 'orders.create', 'orders.edit', 'orders.deliver', 'orders.return', 'orders.amend'],
   /** Finance menu & accounting — mirrors web Finance navigation permissions. */
   finance: [
     'payments.view',

@@ -200,9 +200,12 @@ const CreateOrderPage = () => {
         items: payloadItems,
         notes
       }
-      await ordersService.create(payload)
+      const { data: res } = await ordersService.create(payload)
+      const created = res?.data
+      const createdId = created?._id ? String(created._id) : null
       showSuccess('Order created')
-      router.push('/orders/list')
+      if (createdId) router.push(`/orders/${createdId}`)
+      else router.push('/orders/list')
     } catch (err) {
       showApiError(err, 'Failed to create order')
     } finally {
