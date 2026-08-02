@@ -19,6 +19,7 @@ export type MediaKind =
   | 'PHARMACY_PHOTO'
   | 'SUPPLIER_PHOTO'
   | 'DISTRIBUTOR_PHOTO'
+  | 'TAX_REMITTANCE_RECEIPT'
   | 'OTHER'
 
 export type MediaResource =
@@ -33,6 +34,7 @@ export type MediaResource =
   | 'pharmacies'
   | 'suppliers'
   | 'distributors'
+  | 'tax-deposits'
 
 interface PresignResponse {
   assetId: string

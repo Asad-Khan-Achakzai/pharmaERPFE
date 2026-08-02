@@ -131,6 +131,16 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
       { label: 'Activity Ledger', href: '/finance/activity-ledger', icon: 'tabler-stethoscope', permission: 'doctors.view' },
       { label: 'Employee Ledger', href: '/finance/employee-ledger', icon: 'tabler-id', permission: 'ledger.view' },
       {
+        label: 'Tax Management',
+        icon: 'tabler-receipt-tax',
+        children: [
+          { label: 'Configuration', href: '/finance/tax', icon: 'tabler-settings', permission: 'tax.view' },
+          { label: 'Tax Register', href: '/finance/tax/register', icon: 'tabler-list-details', permission: 'tax.view' },
+          { label: 'Tax Remittances', href: '/finance/tax/remittances', icon: 'tabler-building-bank', permission: 'tax.view' },
+          { label: 'Tax Reports', href: '/finance/tax/reports', icon: 'tabler-chart-bar', permission: 'reports.tax' }
+        ]
+      },
+      {
         label: 'Advanced Accounting',
         icon: 'tabler-calculator',
         children: [

@@ -7,6 +7,10 @@ export const getApiErrorMessage = (error: unknown, fallback = 'Something went wr
 
   if (err.response?.data?.message) return err.response.data.message
   if (err.response?.data?.error) return err.response.data.error
+  // Blob error bodies (e.g. failed file downloads with responseType: 'blob')
+  if (typeof Blob !== 'undefined' && err.response?.data instanceof Blob) {
+    return fallback
+  }
   if (err.message === 'Network Error') return 'Unable to connect to server'
   if (err.message) return err.message
 

@@ -15,6 +15,9 @@ export const FINANCE_AREA_PERMISSIONS = [
   'vouchers.transfer',
   'vouchers.create',
   'reports.accounting',
+  'reports.tax',
+  'tax.view',
+  'tax.manage',
   'expenses.view'
 ] as const
 
@@ -45,6 +48,11 @@ export const routePermissions: Array<{ path: string; permission: string }> = [
   { path: '/finance/accounts/advanced', permission: 'accounts.view' },
   { path: '/finance/accounts', permission: 'accounts.view' },
   { path: '/finance/reports', permission: 'reports.accounting' },
+  { path: '/finance/tax/remittances', permission: 'tax.view' },
+  { path: '/finance/tax/deposits', permission: 'tax.view' },
+  { path: '/finance/tax/reports', permission: 'reports.tax' },
+  { path: '/finance/tax/register', permission: 'tax.view' },
+  { path: '/finance/tax', permission: 'tax.view' },
   { path: '/finance/client-ledger', permission: 'ledger.view' },
   { path: '/finance/supplier-ledger', permission: 'ledger.view' },
   { path: '/finance/employee-ledger', permission: 'ledger.view' },

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent } from 'react'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import Button from '@mui/material/Button'
@@ -54,6 +55,12 @@ type Pharmacy = {
   isActive: boolean
   latitude?: number | null
   longitude?: number | null
+  licenseNumber?: string
+  ntn?: string
+  strn?: string
+  taxStatus?: string
+  taxExempt?: boolean
+  taxExemptReason?: string
 }
 
 const mapsUrl = (lat: number, lng: number) => `https://www.google.com/maps?q=${lat},${lng}`
@@ -80,11 +87,16 @@ const coordsFromForm = (lat: string, lng: string) => {
 const columnHelper = createColumnHelper<Pharmacy>()
 
 const PharmacyListPage = () => {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const viewIdFromUrl = searchParams.get('view')
   const [data, setData] = useState<Pharmacy[]>([])
   const { searchInput, setSearchInput, debouncedSearch, clearSearch } = useDebouncedSearch()
   const [appliedFilters, setAppliedFilters] = useState<DateUserFilterState>(emptyDateUserFilters)
   const [filterAnchor, setFilterAnchor] = useState<null | HTMLElement>(null)
   const fetchSeq = useRef(0)
+  const openedViewFromUrl = useRef<string | null>(null)
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<Pharmacy | null>(null)
   const [form, setForm] = useState({
@@ -97,7 +109,13 @@ const PharmacyListPage = () => {
     discountOnTP: 0,
     bonusScheme: { buyQty: 0, getQty: 0 },
     latitude: '',
-    longitude: ''
+    longitude: '',
+    licenseNumber: '',
+    ntn: '',
+    strn: '',
+    taxStatus: 'UNKNOWN',
+    taxExempt: false,
+    taxExemptReason: ''
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -137,6 +155,43 @@ const PharmacyListPage = () => {
     void fetchData()
   }, [fetchData])
 
+  /** Deep-link from Tax Register / other pages: /pharmacies/list?view=<pharmacyId> */
+  useEffect(() => {
+    if (!viewIdFromUrl || loading) return
+    if (openedViewFromUrl.current === viewIdFromUrl) return
+
+    const openView = async () => {
+      const fromList = data.find(p => p._id === viewIdFromUrl)
+      if (fromList) {
+        openedViewFromUrl.current = viewIdFromUrl
+        setViewItem(fromList)
+        return
+      }
+      try {
+        const { data: res } = await pharmaciesService.getById(viewIdFromUrl)
+        const pharmacy = res?.data || res
+        if (pharmacy?._id) {
+          openedViewFromUrl.current = viewIdFromUrl
+          setViewItem(pharmacy as Pharmacy)
+        }
+      } catch (err) {
+        showApiError(err, 'Pharmacy not found')
+      }
+    }
+    void openView()
+  }, [viewIdFromUrl, data, loading])
+
+  const closeViewDialog = () => {
+    setViewItem(null)
+    if (viewIdFromUrl) {
+      const next = new URLSearchParams(searchParams.toString())
+      next.delete('view')
+      const qs = next.toString()
+      router.replace(qs ? `${pathname}?${qs}` : pathname)
+      openedViewFromUrl.current = null
+    }
+  }
+
   const handleOpen = (item?: Pharmacy) => {
     setAssetId(null)
     if (item) {
@@ -154,7 +209,13 @@ const PharmacyListPage = () => {
           getQty: item.bonusScheme?.getQty ?? 0
         },
         latitude: typeof item.latitude === 'number' ? String(item.latitude) : '',
-        longitude: typeof item.longitude === 'number' ? String(item.longitude) : ''
+        longitude: typeof item.longitude === 'number' ? String(item.longitude) : '',
+        licenseNumber: item.licenseNumber || '',
+        ntn: item.ntn || '',
+        strn: item.strn || '',
+        taxStatus: item.taxStatus || 'UNKNOWN',
+        taxExempt: Boolean(item.taxExempt),
+        taxExemptReason: item.taxExemptReason || ''
       })
     } else {
       setEditItem(null)
@@ -168,7 +229,13 @@ const PharmacyListPage = () => {
         discountOnTP: 0,
         bonusScheme: { buyQty: 0, getQty: 0 },
         latitude: '',
-        longitude: ''
+        longitude: '',
+        licenseNumber: '',
+        ntn: '',
+        strn: '',
+        taxStatus: 'UNKNOWN',
+        taxExempt: false,
+        taxExemptReason: ''
       })
     }
     setOpen(true)
@@ -216,6 +283,10 @@ const PharmacyListPage = () => {
     columnHelper.accessor('city', { header: 'City' }),
     columnHelper.accessor('phone', { header: 'Phone' }),
     columnHelper.accessor('discountOnTP', { header: 'Disc. on TP %', cell: ({ row }) => `${row.original.discountOnTP ?? 0}%` }),
+    columnHelper.accessor('taxStatus', {
+      header: 'Tax Status',
+      cell: ({ row }) => row.original.taxStatus || 'UNKNOWN'
+    }),
     columnHelper.display({ id: 'actions', header: 'Actions', cell: ({ row }) => (
       <div className='flex gap-1'>
         <IconButton size='small' onClick={() => setViewItem(row.original)}><i className='tabler-eye text-textSecondary' /></IconButton>
@@ -275,7 +346,7 @@ const PharmacyListPage = () => {
       </div>
       <TablePaginationComponent table={table as any} />
 
-      <Dialog open={!!viewItem} onClose={() => setViewItem(null)} maxWidth='sm' fullWidth>
+      <Dialog open={!!viewItem} onClose={closeViewDialog} maxWidth='sm' fullWidth>
         <DialogTitle>Pharmacy Details</DialogTitle>
         <DialogContent>
           {viewItem && (
@@ -331,7 +402,7 @@ const PharmacyListPage = () => {
             </Grid>
           )}
         </DialogContent>
-        <DialogActions><Button onClick={() => setViewItem(null)}>Close</Button></DialogActions>
+        <DialogActions><Button onClick={closeViewDialog}>Close</Button></DialogActions>
       </Dialog>
 
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth='md' fullWidth>
@@ -404,6 +475,51 @@ const PharmacyListPage = () => {
               </Grid>
             ) : null}
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Discount on TP %' type='number' value={form.discountOnTP} onChange={e => setForm(p => ({ ...p, discountOnTP: +e.target.value }))} helperText='Default pharmacy discount applied on trade price for new orders' /></Grid>
+            <Grid size={{ xs: 12 }}>
+              <Typography variant='subtitle2' className='mbe-2'>
+                Tax & license
+              </Typography>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='License number'
+                value={form.licenseNumber}
+                onChange={e => setForm(p => ({ ...p, licenseNumber: e.target.value }))}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                select
+                SelectProps={{ native: true }}
+                fullWidth
+                label='Tax status'
+                value={form.taxStatus}
+                onChange={e => setForm(p => ({ ...p, taxStatus: e.target.value }))}
+                helperText='Required for Advance Tax when taxation is enabled'
+              >
+                <option value='UNKNOWN'>Unknown</option>
+                <option value='FILER'>Filer</option>
+                <option value='NON_FILER'>Non-Filer</option>
+                <option value='NOT_APPLICABLE'>Not applicable</option>
+              </CustomTextField>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='NTN'
+                value={form.ntn}
+                onChange={e => setForm(p => ({ ...p, ntn: e.target.value }))}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <CustomTextField
+                fullWidth
+                label='STRN'
+                value={form.strn}
+                onChange={e => setForm(p => ({ ...p, strn: e.target.value }))}
+              />
+            </Grid>
             <Grid size={{ xs: 12 }}>
               <Typography variant='subtitle2' className='mbe-2'>
                 Bonus scheme (Buy X Get Y)

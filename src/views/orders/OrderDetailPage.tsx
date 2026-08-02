@@ -993,11 +993,24 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
           {amendPreview?.impact && (
             <Box className='mbs-2 p-3' sx={{ bgcolor: 'action.hover', borderRadius: 1 }}>
               <Typography variant='subtitle2' className='mbe-1'>
-                Impact preview
+                Impact preview (Bonus-First)
+              </Typography>
+              <Typography variant='caption' color='text.secondary' display='block' className='mbe-1'>
+                Bonus packs are reduced before paid. Financial credit applies to paid packs only.
               </Typography>
               <Typography variant='body2'>Inventory restock: +{amendPreview.impact.inventoryRestockPacks} packs</Typography>
+              <Typography variant='body2'>
+                Paid reversed: {amendPreview.impact.paidPacksReversed ?? 0} · Bonus reversed:{' '}
+                {amendPreview.impact.bonusPacksReversed ?? 0}
+              </Typography>
               <Typography variant='body2'>Sales packs: {amendPreview.impact.salesPacksDelta}</Typography>
               <Typography variant='body2'>Invoice credit: {pk(amendPreview.impact.invoiceCreditAmount)}</Typography>
+              {amendPreview.items?.map((it: any) => (
+                <Typography key={String(it.productId)} variant='caption' color='text.secondary' display='block'>
+                  {it.productName}: −{it.deltaQty} (paid −{it.paidDelta ?? 0}, bonus −{it.bonusDelta ?? 0}) ·{' '}
+                  {pk(it.lineCreditAmount)}
+                </Typography>
+              ))}
               {amendPreview.impact.openArBefore != null && (
                 <Typography variant='body2'>
                   Open AR: {pk(amendPreview.impact.openArBefore)} → {pk(amendPreview.impact.openArAfter)}

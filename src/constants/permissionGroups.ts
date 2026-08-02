@@ -26,6 +26,9 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'attendance.viewEscalations': "View today's attendance exception summaries (late / open checkout)",
   'attendance.override': 'Mark absent or set today status without full administrator role',
   'reports.accounting': 'Advanced accounting reports (trial balance, P&L, books)',
+  'reports.tax': 'Tax register and tax liability reports',
+  'tax.view': 'View company tax configuration and rules',
+  'tax.manage': 'Manage tax configuration, rules, seed packs, and remittances',
   'payments.view': 'View money accounts, collections & settlements',
   'payments.create': 'Record collections & settlements',
   'ledger.view': 'View client, supplier, employee & customer ledgers',
@@ -85,8 +88,12 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
     'vouchers.create',
     'vouchers.post',
     'vouchers.reverse',
-    'reports.accounting'
+    'reports.accounting',
+    'reports.tax',
+    'tax.view',
+    'tax.manage'
   ],
+  tax: ['tax.view', 'tax.manage'],
   targets: ['targets.view', 'targets.create', 'targets.edit'],
   weeklyPlans: [
     'weeklyPlans.view',
@@ -119,7 +126,7 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
     'attendance.matrix.manage',
     'attendance.governance.view'
   ],
-  reports: ['reports.view'],
+  reports: ['reports.view', 'reports.accounting', 'reports.tax'],
   suppliers: ['suppliers.view', 'suppliers.manage'],
   procurement: [
     'procurement.view',
