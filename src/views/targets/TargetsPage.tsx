@@ -88,6 +88,10 @@ type PackBreakdownPayload = {
   month: string
   medicalRepId: string
   wholePacksTarget?: number
+  storedAchievedPacks?: number
+  totalDeliveredPacks?: number
+  totalReturnedPacks?: number
+  totalAmendedPacks?: number
   totalNetPacks: number
   rows: Array<{
     productId: string
@@ -95,6 +99,7 @@ type PackBreakdownPayload = {
     composition?: string
     deliveredQuantity: number
     returnedQuantity: number
+    amendedQuantity?: number
     netQuantity: number
     packsTarget?: number
     progressPercent?: number | null
@@ -467,10 +472,22 @@ const TargetsPage = () => {
 
   const packsPrintTotals = packsBreakdown
     ? {
-        delivered: packsBreakdown.rows.reduce((s, x) => s + x.deliveredQuantity, 0),
-        returned: packsBreakdown.rows.reduce((s, x) => s + x.returnedQuantity, 0)
+        delivered:
+          packsBreakdown.totalDeliveredPacks ??
+          packsBreakdown.rows.reduce((s, x) => s + x.deliveredQuantity, 0),
+        returned:
+          packsBreakdown.totalReturnedPacks ??
+          packsBreakdown.rows.reduce((s, x) => s + x.returnedQuantity, 0),
+        amended:
+          packsBreakdown.totalAmendedPacks ??
+          packsBreakdown.rows.reduce((s, x) => s + (Number(x.amendedQuantity) || 0), 0)
       }
     : null
+
+  const storedAchievedPacks =
+    packsBreakdown?.storedAchievedPacks ?? packsDrawerRow?.achievedPacks ?? 0
+  const packsTotalsMismatch =
+    !!packsBreakdown && packsBreakdown.totalNetPacks !== storedAchievedPacks
 
   return (
     <>
@@ -791,7 +808,7 @@ const TargetsPage = () => {
                 {packsDrawerRow?.medicalRepId?.name ?? 'Rep'} · {packsDrawerRow?.month ?? ''}
               </Typography>
               <Typography variant='caption' color='text.secondary' display='block' sx={{ mt: 1, maxWidth: 440 }}>
-                Physical packs from deliveries in this month minus returns in this month (aligned with progress totals).
+                Physical packs from deliveries minus returns and amendments in this month (same formula as packs progress).
               </Typography>
             </Box>
             <Stack direction='row' spacing={0.5} sx={{ flexShrink: 0 }}>
@@ -845,21 +862,34 @@ const TargetsPage = () => {
                   />
                 ) : null}
                 <Chip
-                  label={`Net from breakdown: ${packsBreakdown.totalNetPacks}`}
+                  label={`Net: ${packsBreakdown.totalNetPacks}`}
                   color='secondary'
                   variant='outlined'
                   size='small'
                   sx={{ fontVariantNumeric: 'tabular-nums' }}
                 />
                 <Chip
-                  label={`On target row: ${packsDrawerRow.achievedPacks}`}
+                  label={`Stored progress: ${storedAchievedPacks}`}
                   variant='outlined'
                   size='small'
                   sx={{ fontVariantNumeric: 'tabular-nums' }}
                 />
-                {packsBreakdown.totalNetPacks !== packsDrawerRow.achievedPacks && (
-                  <Chip label='Differs from stored total — re-save or sync may be needed' color='warning' size='small' variant='outlined' />
-                )}
+                {(packsBreakdown.totalAmendedPacks ?? 0) > 0 ? (
+                  <Chip
+                    label={`Amended: ${packsBreakdown.totalAmendedPacks}`}
+                    variant='outlined'
+                    size='small'
+                    sx={{ fontVariantNumeric: 'tabular-nums' }}
+                  />
+                ) : null}
+                {packsTotalsMismatch ? (
+                  <Chip
+                    label='Differs from stored total — sync may still be pending'
+                    color='warning'
+                    size='small'
+                    variant='outlined'
+                  />
+                ) : null}
               </Stack>
 
               {packsBreakdown.rows.length === 0 ? (
@@ -874,7 +904,7 @@ const TargetsPage = () => {
                 >
                   <i className='tabler-package-off' style={{ fontSize: '2.5rem', opacity: 0.35 }} />
                   <Typography color='text.secondary' sx={{ mt: 2 }}>
-                    No delivery or return lines in this month for this rep.
+                    No delivery, return, or amendment lines in this month for this rep.
                   </Typography>
                 </Paper>
               ) : (
@@ -899,6 +929,7 @@ const TargetsPage = () => {
                         <TableCell align='right'>Target</TableCell>
                         <TableCell align='right'>Delivered</TableCell>
                         <TableCell align='right'>Returned</TableCell>
+                        <TableCell align='right'>Amended</TableCell>
                         <TableCell align='right'>Net</TableCell>
                         <TableCell sx={{ minWidth: 120 }}>Progress</TableCell>
                       </TableRow>
@@ -906,6 +937,7 @@ const TargetsPage = () => {
                     <TableBody>
                       {packsBreakdown.rows.map(r => {
                         const targetQty = Number(r.packsTarget) || 0
+                        const amendedQty = Number(r.amendedQuantity) || 0
                         const progress =
                           r.progressPercent != null
                             ? r.progressPercent
@@ -927,6 +959,7 @@ const TargetsPage = () => {
                           <TableCell align='right'>{targetQty > 0 ? targetQty : '—'}</TableCell>
                           <TableCell align='right'>{r.deliveredQuantity}</TableCell>
                           <TableCell align='right'>{r.returnedQuantity}</TableCell>
+                          <TableCell align='right'>{amendedQty}</TableCell>
                           <TableCell align='right'>
                             <Typography fontWeight={600} color={r.netQuantity >= 0 ? 'text.primary' : 'error.main'}>
                               {r.netQuantity}
@@ -954,10 +987,13 @@ const TargetsPage = () => {
                           {packsBreakdown.rows.reduce((s, x) => s + (Number(x.packsTarget) || 0), 0) || '—'}
                         </TableCell>
                         <TableCell align='right'>
-                          {packsBreakdown.rows.reduce((s, x) => s + x.deliveredQuantity, 0)}
+                          {packsPrintTotals?.delivered ?? 0}
                         </TableCell>
                         <TableCell align='right'>
-                          {packsBreakdown.rows.reduce((s, x) => s + x.returnedQuantity, 0)}
+                          {packsPrintTotals?.returned ?? 0}
+                        </TableCell>
+                        <TableCell align='right'>
+                          {packsPrintTotals?.amended ?? 0}
                         </TableCell>
                         <TableCell align='right'>{packsBreakdown.totalNetPacks}</TableCell>
                         <TableCell />
@@ -1002,7 +1038,7 @@ const TargetsPage = () => {
             {packsDrawerRow.medicalRepId?.name ?? 'Rep'} · {packsDrawerRow.month}
           </Typography>
           <Typography variant='caption' display='block' sx={{ mb: 2, color: 'text.secondary' }}>
-            Physical packs from deliveries in this month minus returns in this month.
+            Physical packs from deliveries minus returns and amendments in this month.
           </Typography>
           <Typography variant='body2' sx={{ mb: 2 }}>
             {packsBreakdown.wholePacksTarget ? (
@@ -1011,16 +1047,16 @@ const TargetsPage = () => {
                 {' · '}
               </>
             ) : null}
-            Net from breakdown: <strong>{packsBreakdown.totalNetPacks}</strong>
+            Net: <strong>{packsBreakdown.totalNetPacks}</strong>
             {' · '}
-            On target row: <strong>{packsDrawerRow.achievedPacks}</strong>
-            {packsBreakdown.totalNetPacks !== packsDrawerRow.achievedPacks ? (
+            Stored progress: <strong>{storedAchievedPacks}</strong>
+            {packsTotalsMismatch ? (
               <> · <strong>Note:</strong> differs from stored total</>
             ) : null}
           </Typography>
 
           {packsBreakdown.rows.length === 0 ? (
-            <Typography variant='body2'>No delivery or return lines in this month for this rep.</Typography>
+            <Typography variant='body2'>No delivery, return, or amendment lines in this month for this rep.</Typography>
           ) : (
             <Box
               component='table'
@@ -1051,6 +1087,9 @@ const TargetsPage = () => {
                     Returned
                   </Box>
                   <Box component='th' sx={{ textAlign: 'right' }}>
+                    Amended
+                  </Box>
+                  <Box component='th' sx={{ textAlign: 'right' }}>
                     Net
                   </Box>
                 </Box>
@@ -1076,6 +1115,9 @@ const TargetsPage = () => {
                       {r.returnedQuantity}
                     </Box>
                     <Box component='td' className='num'>
+                      {Number(r.amendedQuantity) || 0}
+                    </Box>
+                    <Box component='td' className='num'>
                       {r.netQuantity}
                     </Box>
                   </Box>
@@ -1092,6 +1134,9 @@ const TargetsPage = () => {
                   </Box>
                   <Box component='td' className='num'>
                     {packsPrintTotals?.returned ?? 0}
+                  </Box>
+                  <Box component='td' className='num'>
+                    {packsPrintTotals?.amended ?? 0}
                   </Box>
                   <Box component='td' className='num'>
                     {packsBreakdown.totalNetPacks}
