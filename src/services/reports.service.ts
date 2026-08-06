@@ -76,6 +76,32 @@ export const reportsService = {
       responseType: 'blob'
     }),
 
+  monthlySummaryTpEvents: (params: {
+    month: string
+    fiscalYearStart?: string
+    bucket?: string
+    medicalRepId?: string
+    pharmacyId?: string
+    productId?: string
+    orderNumber?: string
+    invoiceNumber?: string
+    eventDateFrom?: string
+    eventDateTo?: string
+    q?: string
+    page?: number
+    limit?: number
+  }) =>
+    api.get<{ data: import('@/types/monthlySummary').TpEventsResponse }>(
+      '/reports/monthly-summary/tp-events',
+      { params }
+    ),
+
+  monthlySummaryTpEventsExcel: (params: Record<string, string | number | undefined>) =>
+    api.get('/reports/monthly-summary/tp-events.xlsx', {
+      params,
+      responseType: 'blob'
+    }),
+
   visitSummary: (params: { weekStart: string; weekEnd: string; employeeId?: string }) =>
     api.get('/reports/visit-summary', { params }),
   visitByEmployee: (params: { weekStart: string; weekEnd: string }) =>
