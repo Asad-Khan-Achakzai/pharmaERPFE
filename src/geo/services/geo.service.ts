@@ -96,9 +96,36 @@ export type RouteHistoryStop = {
   startedAt?: string
   endedAt?: string
   durationMs?: number | null
-  /** e.g. visit | idle | lunch | unknown | home */
+  /** e.g. visit | idle | lunch | unknown | home (legacy) */
   class?: string
+  /** e.g. "Doctor Visit" | "Pharmacy Visit" | "Call Point" | "Idle Stop" | "Unknown Stop" */
+  classification?: string
+  /** doctor | pharmacy | callpoint | idle | unknown */
+  kind?: string
+  entityName?: string | null
+  /** Known entities within ~100m (same-plaza ambiguity indicator). */
+  nearbyEntityCount?: number
   label?: string
+}
+
+export type RouteHistoryTimeSegment = {
+  type: 'movement' | 'stop' | 'gap'
+  fromCapturedAt?: string
+  toCapturedAt?: string
+  durationMs?: number | null
+  /** movement */
+  distanceMeters?: number | null
+  path?: Array<{ lat: number; lng: number; capturedAt?: string; qualityLevel?: string | null }>
+  /** stop */
+  lat?: number | null
+  lng?: number | null
+  /** gap */
+  reason?: string
+  fromLat?: number | null
+  fromLng?: number | null
+  toLat?: number | null
+  toLng?: number | null
+  pointCount?: number
 }
 
 export type RouteHistoryGap = {
@@ -146,6 +173,9 @@ export type RouteHistorySummary = {
   drivingTimeMs?: number | null
   visitTimeMs?: number | null
   idleTimeMs?: number | null
+  stationaryTimeMs?: number | null
+  gapTimeMs?: number | null
+  stopCount?: number | null
   visitCount?: number | null
   visitsCompleted?: number | null
   visitsPlanned?: number | null
@@ -170,6 +200,10 @@ export type RouteHistoryQuality = {
   label?: string | null
   band?: string | null
   reasons?: string[]
+  rejectedOutliers?: number
+  excludedPoints?: number
+  removedDuplicates?: number
+  conflictingSources?: boolean
   completenessRatio?: number | null
   gapMinutes?: number | null
   medianAccuracy?: number | null
@@ -187,7 +221,17 @@ export type RouteHistoryQuality = {
 
 export type RouteHistoryPayload = {
   date: string
+  companyDate?: string
+  timeZone?: string
   path: RouteHistoryPathPoint[]
+  timeSegments?: RouteHistoryTimeSegment[]
+  pointStats?: {
+    rawPointCount?: number
+    cleanedPointCount?: number
+    excludedPoints?: number
+    removedDuplicates?: number
+    removedOutliers?: number
+  } | null
   segments?: RouteHistorySegment[]
   gpsEvents?: RouteHistoryEvent[]
   events?: RouteHistoryEvent[]
