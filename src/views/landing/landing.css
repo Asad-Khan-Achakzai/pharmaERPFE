@@ -326,6 +326,21 @@ body:has(.landing-root .lp-btn:hover) {
   box-shadow: 0 10px 24px rgb(0 0 0 / 0.3);
 }
 
+.lp-btn--ghost-on-dark {
+  background: transparent;
+  color: #fff;
+  border-color: rgb(255 255 255 / 0.24);
+  padding-inline: 20px;
+  font-size: 14.5px;
+  max-width: 100%;
+}
+
+.lp-btn--ghost-on-dark:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 0.08);
+  border-color: rgb(255 255 255 / 0.4);
+}
+
 /* ---------- Scroll-reveal system ----------
    Elements with [data-animate] start hidden and transition in when their
    nearest [data-inview="true"] ancestor is set by the useInView hook.
@@ -2611,9 +2626,14 @@ body:has(.landing-root .lp-btn:hover) {
 
 .lp-footer__grid {
   display: grid;
-  grid-template-columns: minmax(0, 4fr) repeat(3, minmax(0, 2fr));
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1.15fr);
   gap: 40px;
   margin-block-end: 48px;
+}
+
+.lp-footer__brand,
+.lp-footer__col {
+  min-width: 0;
 }
 
 .lp-footer__brand img {
@@ -2649,8 +2669,12 @@ body:has(.landing-root .lp-btn:hover) {
 }
 
 .lp-footer__col a {
+  display: inline-block;
+  max-width: 100%;
   font-size: 14.5px;
   color: #94a3b8;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   transition: color 0.18s var(--lp-ease);
 }
 
@@ -2975,6 +2999,10 @@ body:has(.landing-root .lp-btn:hover) {
   .lp-footer__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .lp-footer__brand {
+    grid-column: 1 / -1;
+  }
 }
 
 /* Desktop-only: inline panels hidden (sticky stage shows them) */
@@ -3179,6 +3207,15 @@ body:has(.landing-root .lp-btn:hover) {
 
   .lp-persona {
     padding: 24px;
+  }
+
+  .lp-persona .lp-btn--ghost-on-dark {
+    width: 100%;
+    white-space: normal;
+    height: auto;
+    min-height: 48px;
+    padding-block: 12px;
+    justify-content: center;
   }
 
   .lp-persona h3 {

@@ -3,8 +3,10 @@
 // Two experiences: manager web command center vs field rep mobile app.
 // Offline-first sync (mobile outbox + SQLite masters) is a verified
 // capability of pharERPMobile (src/data/outbox.ts, syncEngine.ts).
-import PhoneFrame from './PhoneFrame'
 import { useInView, useLoopPause } from '../hooks/useInView'
+import { PLAY_STORE_ARIA_LABEL, PLAY_STORE_LABEL, PLAY_STORE_URL } from '../playStore'
+import { IconArrowRight } from './icons'
+import PhoneFrame from './PhoneFrame'
 
 const MANAGER_POINTS = [
   'Live map of the whole team, with attendance status',
@@ -83,6 +85,16 @@ const PersonasSection = () => {
                 <li key={point}>{point}</li>
               ))}
             </ul>
+            <a
+              href={PLAY_STORE_URL}
+              className='lp-btn lp-btn--ghost-on-dark'
+              target='_blank'
+              rel='noopener noreferrer'
+              aria-label={PLAY_STORE_ARIA_LABEL}
+            >
+              {PLAY_STORE_LABEL}
+              <IconArrowRight width={16} height={16} />
+            </a>
             <div
               className='lp-persona__visual'
               aria-hidden='true'

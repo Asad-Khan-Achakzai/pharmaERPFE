@@ -1,5 +1,7 @@
 import Link from 'next/link'
 
+import { PLAY_STORE_ARIA_LABEL, PLAY_STORE_LABEL, PLAY_STORE_URL } from '../playStore'
+
 const LandingFooter = () => {
   return (
     <footer className='lp-footer'>
@@ -52,6 +54,17 @@ const LandingFooter = () => {
               </li>
             </ul>
           </div>
+
+          <nav className='lp-footer__col' aria-label='Mobile App'>
+            <h3>Mobile App</h3>
+            <ul>
+              <li>
+                <a href={PLAY_STORE_URL} target='_blank' rel='noopener noreferrer' aria-label={PLAY_STORE_ARIA_LABEL}>
+                  {PLAY_STORE_LABEL} →
+                </a>
+              </li>
+            </ul>
+          </nav>
         </div>
 
         <div className='lp-footer__bottom'>
