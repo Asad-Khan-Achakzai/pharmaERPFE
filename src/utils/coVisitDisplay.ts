@@ -10,12 +10,30 @@ export function participantDisplayName(p: {
   return null
 }
 
+export function isFieldDayObserverView(item: { isFieldDayView?: boolean }): boolean {
+  return item.isFieldDayView === true
+}
+
+export function fieldDayChipLabel(it: {
+  employeeId?: { name?: string | null } | string | null
+  owner?: { name?: string | null }
+}): string {
+  const emp = it.employeeId
+  const name =
+    emp && typeof emp === 'object' && emp.name?.trim()
+      ? emp.name.trim()
+      : it.owner?.name?.trim()
+  return name ? `Field day · ${name}` : 'Field day'
+}
+
 export function isCoVisitItem(it: {
   coVisit?: boolean
   coVisitRole?: string
   isCoVisitParticipantView?: boolean
+  isFieldDayView?: boolean
   participants?: unknown[]
 }): boolean {
+  if (isFieldDayObserverView(it)) return false
   return Boolean(
     it.coVisit ||
       it.coVisitRole === 'PARTICIPANT' ||
@@ -29,14 +47,25 @@ export function coVisitWithLabel(it: {
   coVisitRole?: string
   isCoVisitParticipantView?: boolean
   owner?: { name?: string | null }
-  participants?: { name?: string | null; employeeId?: { name?: string | null } | string | null }[]
+  participants?: {
+    name?: string | null
+    employeeId?: { name?: string | null } | string | null
+    source?: string | null
+  }[]
 }): string | null {
   const isParticipant = it.coVisitRole === 'PARTICIPANT' || it.isCoVisitParticipantView
   if (isParticipant) {
     const owner = it.owner?.name?.trim()
     return owner ? `with ${owner}` : null
   }
-  const partners = (it.participants ?? []).map(participantDisplayName).filter(Boolean) as string[]
+  const partners = (it.participants ?? [])
+    .map(p => {
+      const name = participantDisplayName(p)
+      if (!name) return null
+      // DAY-sourced partners are inherited from the weekly plan's day partner.
+      return p.source === 'DAY' ? `${name} (day partner)` : name
+    })
+    .filter(Boolean) as string[]
   if (partners.length) return `with ${partners.join(', ')}`
   if (it.coVisit) return null
   return null
@@ -53,11 +82,14 @@ export function planItemMatchesVisitTab(
     status?: string
     coVisitRole?: string
     isCoVisitParticipantView?: boolean
+    isFieldDayView?: boolean
     myLifecycleStatus?: string
   },
   tab: 'pending' | 'visited' | 'missed'
 ): boolean {
-  const isParticipant = item.coVisitRole === 'PARTICIPANT' || item.isCoVisitParticipantView === true
+  const isParticipant =
+    !isFieldDayObserverView(item) &&
+    (item.coVisitRole === 'PARTICIPANT' || item.isCoVisitParticipantView === true)
   if (isParticipant) {
     const ls = item.myLifecycleStatus
     if (tab === 'pending') {

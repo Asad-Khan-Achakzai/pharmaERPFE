@@ -123,6 +123,17 @@ a {
   text-decoration: none;
 }
 
+/* Landing CTAs: force the hand cursor on html/body while a control is hovered.
+   Cursor on the button itself can be ignored inside overflow/composited ancestors. */
+html:has(.landing-root a:hover),
+html:has(.landing-root button:hover),
+html:has(.landing-root .lp-btn:hover),
+body:has(.landing-root a:hover),
+body:has(.landing-root button:hover),
+body:has(.landing-root .lp-btn:hover) {
+  cursor: pointer !important;
+}
+
 ul:not([class]),
 ol:not([class]) {
   margin-block: 1rem;

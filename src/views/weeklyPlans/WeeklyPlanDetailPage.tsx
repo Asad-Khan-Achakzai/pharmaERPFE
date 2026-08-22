@@ -30,7 +30,14 @@ import { doctorsService } from '@/services/doctors.service'
 import { planItemsService } from '@/services/planItems.service'
 import WeeklyPlanWeekBoard from '@/views/weeklyPlans/WeeklyPlanWeekBoard'
 import { callPointsService, type CallPoint } from '@/services/callPoints.service'
-import { cpByDayToIds, dayKeyForDate, type CpByDay } from '@/views/weeklyPlans/planCpDays'
+import {
+  cpByDayToIds,
+  dayKeyForDate,
+  partnerByDayToRefs,
+  type CpByDay,
+  type DayPartnerRef
+} from '@/views/weeklyPlans/planCpDays'
+import DayPartnerField from '@/views/weeklyPlans/DayPartnerField'
 import tableStyles from '@core/styles/table.module.css'
 import { formatYyyyMmDd, parseYyyyMmDd } from '@/utils/dateLocal'
 import { coVisitChipLabel, isCoVisitItem } from '@/utils/coVisitDisplay'
@@ -219,6 +226,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
   const canApprove = hasPermission('weeklyPlans.approve')
   const [statusSavingId, setStatusSavingId] = useState<string | null>(null)
   const [cpSavingDate, setCpSavingDate] = useState<string | null>(null)
+  const [partnerSavingDate, setPartnerSavingDate] = useState<string | null>(null)
   const [copySaving, setCopySaving] = useState(false)
   const [approvalSaving, setApprovalSaving] = useState<'submit' | 'approve' | 'reject' | null>(null)
   const [rejectOpen, setRejectOpen] = useState(false)
@@ -282,6 +290,18 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       return raw && typeof raw === 'object' ? raw : null
     },
     [plan?.cpByDay]
+  )
+
+  /** Day-level accompanying partner saved for each weekday. */
+  const savedPartnerByDay = useMemo(() => partnerByDayToRefs(plan?.partnerByDay), [plan?.partnerByDay])
+
+  const partnerForDate = useCallback(
+    (ymd: string): DayPartnerRef | null => {
+      const d = parseYyyyMmDd(ymd)
+      if (!d) return null
+      return savedPartnerByDay[dayKeyForDate(d)] ?? null
+    },
+    [savedPartnerByDay]
   )
 
   const load = async () => {
@@ -598,6 +618,24 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
     }
   }
 
+  const handleDayPartnerChange = async (ymd: string, next: DayPartnerRef | null) => {
+    const d = parseYyyyMmDd(ymd)
+    if (!d) return
+    const key = dayKeyForDate(d)
+    setPartnerSavingDate(ymd)
+    try {
+      // Backend merges supplied days — only this weekday changes.
+      await weeklyPlansService.update(params.id, { partnerByDay: { [key]: next?._id ?? null } })
+      showSuccess(next ? 'Day partner updated' : 'Day partner removed')
+      const planRes = await weeklyPlansService.getById(params.id)
+      setPlan(planRes.data.data)
+    } catch (e) {
+      showApiError(e, 'Could not update day partner')
+    } finally {
+      setPartnerSavingDate(null)
+    }
+  }
+
   const handleStatusChange = async (planItemId: string, status: string) => {
     setStatusSavingId(planItemId)
     try {
@@ -643,6 +681,23 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
       setPlan(planRes.data.data)
     } catch (e) {
       showApiError(e, 'Failed to update co-visit partners')
+    } finally {
+      setPartnersSaving(false)
+    }
+  }
+
+  /** Drop the visit-level override and inherit the weekly plan's day partner again. */
+  const handleInheritDayPartner = async () => {
+    if (!partnersDialog) return
+    setPartnersSaving(true)
+    try {
+      await planItemsService.update(partnersDialog.planItemId, { inheritDayPartner: true })
+      showSuccess('Visit now inherits the day partner')
+      setPartnersDialog(null)
+      const planRes = await weeklyPlansService.getById(params.id)
+      setPlan(planRes.data.data)
+    } catch (e) {
+      showApiError(e, 'Could not reset to day partner')
     } finally {
       setPartnersSaving(false)
     }
@@ -930,6 +985,7 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                   const dayCp = cpForDate(date)
                   const dayCpId = cpIdForDate(date)
                   const dayCpMissing = !!dayCpId && !cps.some(cp => cp._id === dayCpId)
+                  const dayPartner = partnerForDate(date)
 
                   return (
                     <Paper key={date} variant='outlined' className='p-4'>
@@ -941,33 +997,53 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
                           </Typography>
                         </Typography>
                         {canEdit ? (
-                          <CustomTextField
-                            select
-                            size='small'
-                            label='Call point (CP)'
-                            value={dayCpId}
-                            onChange={e => handleCpChange(date, e.target.value)}
-                            disabled={cpSavingDate === date}
-                            sx={{ minWidth: 220 }}
-                          >
-                            <MenuItem value=''>No CP</MenuItem>
-                            {dayCpMissing ? (
-                              <MenuItem value={dayCpId}>{dayCp?.name ? `${dayCp.name} (inactive)` : 'Selected CP (inactive)'}</MenuItem>
-                            ) : null}
-                            {cps.map(cp => (
-                              <MenuItem key={cp._id} value={cp._id}>
-                                {cp.name}
-                              </MenuItem>
-                            ))}
-                          </CustomTextField>
+                          <Stack direction='row' spacing={2} alignItems='center' flexWrap='wrap'>
+                            <CustomTextField
+                              select
+                              size='small'
+                              label='Call point (CP)'
+                              value={dayCpId}
+                              onChange={e => handleCpChange(date, e.target.value)}
+                              disabled={cpSavingDate === date}
+                              sx={{ minWidth: 220 }}
+                            >
+                              <MenuItem value=''>No CP</MenuItem>
+                              {dayCpMissing ? (
+                                <MenuItem value={dayCpId}>{dayCp?.name ? `${dayCp.name} (inactive)` : 'Selected CP (inactive)'}</MenuItem>
+                              ) : null}
+                              {cps.map(cp => (
+                                <MenuItem key={cp._id} value={cp._id}>
+                                  {cp.name}
+                                </MenuItem>
+                              ))}
+                            </CustomTextField>
+                            <DayPartnerField
+                              value={dayPartner}
+                              onChange={next => void handleDayPartnerChange(date, next)}
+                              ownerUserId={planOwnerUserId}
+                              disabled={partnerSavingDate === date}
+                              label='Day partner (all visits)'
+                            />
+                          </Stack>
                         ) : (
-                          <Chip
-                            size='small'
-                            variant='tonal'
-                            color={dayCp?.name ? 'primary' : 'default'}
-                            icon={<i className='tabler-map-pin' />}
-                            label={dayCp?.name ? `CP: ${dayCp.name}` : 'No CP selected'}
-                          />
+                          <Stack direction='row' spacing={1} alignItems='center' flexWrap='wrap'>
+                            <Chip
+                              size='small'
+                              variant='tonal'
+                              color={dayCp?.name ? 'primary' : 'default'}
+                              icon={<i className='tabler-map-pin' />}
+                              label={dayCp?.name ? `CP: ${dayCp.name}` : 'No CP selected'}
+                            />
+                            {dayPartner ? (
+                              <Chip
+                                size='small'
+                                variant='tonal'
+                                color='info'
+                                icon={<i className='tabler-users' />}
+                                label={`Day partner: ${dayPartner.name ?? 'Assigned'}`}
+                              />
+                            ) : null}
+                          </Stack>
                         )}
                       </div>
                       <Divider className='mbe-3' />
@@ -1345,21 +1421,36 @@ const WeeklyPlanDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: 
         <DialogTitle>Co-Visit partners</DialogTitle>
         <DialogContent>
           {partnersDialog ? (
-            <CoVisitParticipantsField
-              value={partnersDialog.participants}
-              onChange={next =>
-                setPartnersDialog(prev => (prev ? { ...prev, participants: next } : prev))
-              }
-              date={partnersDialog.dateYmd}
-              doctorId={partnersDialog.doctorId}
-              doctorName={partnersDialog.doctorName}
-              plannedTime={partnersDialog.plannedTime}
-              ownerUserId={planOwnerUserId}
-              excludePlanItemId={partnersDialog.planItemId}
-            />
+            <>
+              <CoVisitParticipantsField
+                value={partnersDialog.participants}
+                onChange={next =>
+                  setPartnersDialog(prev => (prev ? { ...prev, participants: next } : prev))
+                }
+                date={partnersDialog.dateYmd}
+                doctorId={partnersDialog.doctorId}
+                doctorName={partnersDialog.doctorName}
+                plannedTime={partnersDialog.plannedTime}
+                ownerUserId={planOwnerUserId}
+                excludePlanItemId={partnersDialog.planItemId}
+              />
+              <Typography variant='caption' color='text.secondary' className='mbs-2' display='block'>
+                Saving here overrides the day partner for this visit only.
+              </Typography>
+            </>
           ) : null}
         </DialogContent>
         <DialogActions>
+          {partnersDialog && partnerForDate(partnersDialog.dateYmd) ? (
+            <Button
+              color='secondary'
+              onClick={() => void handleInheritDayPartner()}
+              disabled={partnersSaving}
+              sx={{ mr: 'auto' }}
+            >
+              Use day partner
+            </Button>
+          ) : null}
           <Button onClick={() => setPartnersDialog(null)} disabled={partnersSaving}>
             Cancel
           </Button>

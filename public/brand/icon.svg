@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">PharmaERP Icon</title>
+  <desc id="desc">Geometric letter P in Enterprise Blue and Healthcare Green</desc>
+  <path id="mark-blue" fill="#2563EB" d="M16 8h48v16H32v48H16V8z"/>
+  <path id="mark-green" fill="#10B981" d="M48 24h16v32H32v-16h16V24z"/>
+</svg>

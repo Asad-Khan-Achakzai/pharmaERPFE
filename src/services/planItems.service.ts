@@ -18,7 +18,10 @@ export const planItemsService = {
     api.get('/plan-items/team-visits', { params }),
   reorder: (body: { weeklyPlanId: string; date: string; orderedPlanItemIds: string[] }) =>
     api.put('/plan-items/reorder', body),
-  update: (planItemId: string, data: { status?: string; notes?: string; participantUserIds?: string[] }) =>
+  update: (
+    planItemId: string,
+    data: { status?: string; notes?: string; participantUserIds?: string[]; inheritDayPartner?: true }
+  ) =>
     api.put(`/plan-items/${planItemId}`, data),
   markVisit: (planItemId: string, data: Record<string, unknown>) =>
     api.post(`/plan-items/${planItemId}/mark-visit`, data),

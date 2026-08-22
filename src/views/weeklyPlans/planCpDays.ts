@@ -58,3 +58,19 @@ export const cpByDayToIds = (raw: any): CpByDay => {
   }
   return out
 }
+
+export type DayPartnerRef = { _id: string; name?: string }
+
+export type PartnerByDay = Partial<Record<CpDayKey, DayPartnerRef | null>>
+
+/** Normalize a populated/raw plan.partnerByDay into { dayKey: {_id, name} }. */
+export const partnerByDayToRefs = (raw: any): PartnerByDay => {
+  const out: PartnerByDay = {}
+  if (!raw) return out
+  for (const key of CP_DAY_KEYS) {
+    const val = raw[key]
+    if (!val) continue
+    out[key] = typeof val === 'object' ? { _id: String(val._id), name: val.name } : { _id: String(val) }
+  }
+  return out
+}

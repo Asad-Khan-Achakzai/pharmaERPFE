@@ -37,7 +37,7 @@ import { planItemsService } from '@/services/planItems.service'
 import { visitsService } from '@/services/visits.service'
 import { productsService } from '@/services/products.service'
 import { DoctorLookupAutocomplete, type DoctorLookupOption } from '@/components/lookup/DoctorLookupAutocomplete'
-import { coVisitChipLabel, isCoVisitItem, planItemMatchesVisitTab } from '@/utils/coVisitDisplay'
+import { coVisitChipLabel, fieldDayChipLabel, isCoVisitItem, isFieldDayObserverView, planItemMatchesVisitTab } from '@/utils/coVisitDisplay'
 import { activeVisitsClient, type ActiveVisitRecord } from '@/utils/activeVisitsClient'
 import { getLocalDateISO } from '@/utils/dateLocal'
 import {
@@ -591,12 +591,15 @@ const TodayVisitsPage = () => {
             ) : (
               <Stack spacing={2}>
                 {filteredItems.map((it: any) => {
-                  const isParticipant = it.coVisitRole === 'PARTICIPANT'
+                  const isFieldDay = isFieldDayObserverView(it)
+                  const isParticipant = !isFieldDay && it.coVisitRole === 'PARTICIPANT'
                   const canExecuteItem =
-                    isParticipant
-                      ? it.myLifecycleStatus !== 'COMPLETED' && it.myLifecycleStatus !== 'MISSED' && it.myLifecycleStatus !== 'DECLINED'
-                      : it.status === 'PENDING'
-                  const isNext = !isParticipant && nextPlanItemId != null && String(it._id) === nextPlanItemId && it.status === 'PENDING'
+                    isFieldDay
+                      ? false
+                      : isParticipant
+                        ? it.myLifecycleStatus !== 'COMPLETED' && it.myLifecycleStatus !== 'MISSED' && it.myLifecycleStatus !== 'DECLINED'
+                        : it.status === 'PENDING'
+                  const isNext = !isFieldDay && !isParticipant && nextPlanItemId != null && String(it._id) === nextPlanItemId && it.status === 'PENDING'
                   const activeDraft = draftByPlanItemId.get(String(it._id))
                   return (
                     <Paper
@@ -611,10 +614,12 @@ const TodayVisitsPage = () => {
                       <Stack spacing={1.5}>
                         <Stack direction='row' alignItems='center' justifyContent='space-between' flexWrap='wrap' gap={1}>
                           <Stack direction='row' alignItems='center' gap={1} flexWrap='wrap'>
-                            {!isParticipant ? (
+                            {!isParticipant && !isFieldDay ? (
                               <Typography variant='h5' component='span' fontWeight={800} color={isNext ? 'primary' : 'text.primary'}>
                                 #{it.sequenceOrder ?? '—'}
                               </Typography>
+                            ) : isFieldDay ? (
+                              <Chip size='small' color='info' variant='tonal' label={fieldDayChipLabel(it)} />
                             ) : (
                               <Chip size='small' color='info' variant='tonal' label='Co-visit' />
                             )}

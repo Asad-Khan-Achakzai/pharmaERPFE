@@ -8,6 +8,8 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'team.view': 'See "My Team" widget and direct reports',
   'team.manage': 'Set / change managerId, territoryId, employeeCode on users',
   'team.viewAllReports': 'See plans, visits, and sales for entire reporting subtree',
+  'managerFieldDays.view': 'View manager field days (who you will spend the day with)',
+  'managerFieldDays.edit': 'Record or update a field day with one or more reps',
   'territories.view': 'View Zones / Areas / Bricks',
   'territories.manage': 'Create / edit / delete Zones / Areas / Bricks',
   'weeklyPlans.review': 'Open submitted weekly plans of direct reports',
@@ -140,6 +142,7 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   ],
   users: ['users.view', 'users.create', 'users.edit', 'users.delete'],
   team: ['team.view', 'team.manage', 'team.viewAllReports'],
+  managerFieldDays: ['managerFieldDays.view', 'managerFieldDays.edit'],
   territories: ['territories.view', 'territories.manage'],
   deviceControl: ['deviceControl.manage'],
   copilot: ['copilot.use']

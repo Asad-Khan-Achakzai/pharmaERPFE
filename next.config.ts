@@ -19,17 +19,7 @@ const nextConfig: NextConfig = {
     }
     return config
   },
-  basePath: process.env.BASEPATH,
-  redirects: async () => {
-    return [
-      {
-        source: '/',
-        destination: '/home',
-        permanent: true,
-        locale: false
-      }
-    ]
-  }
+  basePath: process.env.BASEPATH
 }
 
 export default nextConfig
