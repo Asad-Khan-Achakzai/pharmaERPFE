@@ -10,9 +10,8 @@ import Grid from '@mui/material/Grid'
 import MenuItem from '@mui/material/MenuItem'
 import FormControl from '@mui/material/FormControl'
 import FormLabel from '@mui/material/FormLabel'
-import RadioGroup from '@mui/material/RadioGroup'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import Radio from '@mui/material/Radio'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
@@ -105,22 +104,28 @@ const RecordPaymentPage = () => {
       <CardContent>
         <Grid container spacing={4}>
           <Grid size={{ xs: 12 }}>
-            <FormControl>
+            <FormControl fullWidth>
               <FormLabel>Collected by</FormLabel>
-              <RadioGroup
-                row
+              <ToggleButtonGroup
+                exclusive
+                fullWidth
+                color='primary'
                 value={form.collectorType}
-                onChange={e =>
+                onChange={(_e, value: 'COMPANY' | 'DISTRIBUTOR' | null) => {
+                  if (!value) return
                   setForm(p => ({
                     ...p,
-                    collectorType: e.target.value as 'COMPANY' | 'DISTRIBUTOR',
-                    distributorId: e.target.value === 'COMPANY' ? '' : p.distributorId
+                    collectorType: value,
+                    distributorId: value === 'COMPANY' ? '' : p.distributorId,
+                    moneyAccountId: value === 'DISTRIBUTOR' ? '' : p.moneyAccountId
                   }))
-                }
+                  if (value === 'COMPANY') setSelectedDistributor(null)
+                }}
+                sx={{ mt: 1, flexWrap: 'wrap' }}
               >
-                <FormControlLabel value='COMPANY' control={<Radio />} label='Company' />
-                <FormControlLabel value='DISTRIBUTOR' control={<Radio />} label='Distributor' />
-              </RadioGroup>
+                <ToggleButton value='COMPANY'>Company</ToggleButton>
+                <ToggleButton value='DISTRIBUTOR'>Distributor</ToggleButton>
+              </ToggleButtonGroup>
             </FormControl>
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>
@@ -171,16 +176,16 @@ const RecordPaymentPage = () => {
               onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))}
             />
           </Grid>
-          {form.collectorType === 'COMPANY' && (
-          <Grid size={{ xs: 12, sm: 6 }}>
-            <MoneyAccountSelect
-              required
-              label='Deposit to (Cash/Bank account)'
-              helperText='Which account received this money'
-              value={form.moneyAccountId}
-              onChange={id => setForm(p => ({ ...p, moneyAccountId: id }))}
-            />
-          </Grid>
+          {!needsDistributor && (
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <MoneyAccountSelect
+                required
+                label='Deposit to (Cash/Bank account)'
+                helperText='Which account received this money'
+                value={form.moneyAccountId}
+                onChange={id => setForm(p => ({ ...p, moneyAccountId: id }))}
+              />
+            </Grid>
           )}
           {needsDistributor && (
             <Grid size={{ xs: 12 }}>
