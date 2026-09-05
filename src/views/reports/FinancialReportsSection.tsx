@@ -238,8 +238,8 @@ const FinancialReportsSection = () => {
   const isCollectionFormValid =
     Boolean(collectionPharmacy?.pharmacyId) &&
     collectionForm.amount > 0 &&
-    Boolean(collectionForm.moneyAccountId) &&
-    (!needsCollectionDistributor || collectionForm.distributorId !== '')
+    (!needsCollectionDistributor || collectionForm.distributorId !== '') &&
+    (needsCollectionDistributor || Boolean(collectionForm.moneyAccountId))
 
   const handleCollectionSubmit = async () => {
     if (!collectionPharmacy?.pharmacyId || collectionForm.amount <= 0) {
@@ -259,7 +259,9 @@ const FinancialReportsSection = () => {
         ...(collectionForm.collectorType === 'DISTRIBUTOR' ? { distributorId: collectionForm.distributorId } : {}),
         amount: collectionForm.amount,
         paymentMethod: collectionForm.paymentMethod,
-        moneyAccountId: collectionForm.moneyAccountId,
+        ...(collectionForm.collectorType === 'COMPANY' || collectionForm.moneyAccountId
+          ? { moneyAccountId: collectionForm.moneyAccountId }
+          : {}),
         referenceNumber: collectionForm.referenceNumber || undefined,
         notes: collectionForm.notes || undefined
       })
@@ -786,12 +788,16 @@ const FinancialReportsSection = () => {
                   <FormControlLabel value='DISTRIBUTOR' control={<Radio />} label='Distributor' />
                 </RadioGroup>
                 <Typography variant='caption' color='text.secondary'>
-                  Company means the company collected it. Distributor means the distributor collected it for the company.
+                  Company collector: cash is deposited now. Distributor collector: they keep their share; only the
+                  company share is remittance due.
                 </Typography>
               </FormControl>
             </Grid>
             {needsCollectionDistributor && (
               <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary' className='mbe-2'>
+                  Cash stays with the distributor until you record a remittance of the company share.
+                </Typography>
                 <LookupAutocomplete
                   value={selectedCollectionDistributor}
                   onChange={v => {
@@ -821,6 +827,7 @@ const FinancialReportsSection = () => {
                 onChange={e => setCollectionForm(p => ({ ...p, amount: +e.target.value }))}
               />
             </Grid>
+            {!needsCollectionDistributor && (
             <Grid size={{ xs: 12, sm: 6 }}>
               <MoneyAccountSelect
                 required
@@ -829,6 +836,7 @@ const FinancialReportsSection = () => {
                 onChange={id => setCollectionForm(p => ({ ...p, moneyAccountId: id }))}
               />
             </Grid>
+            )}
             <Grid size={{ xs: 12, sm: 6 }}>
               <CustomTextField
                 required

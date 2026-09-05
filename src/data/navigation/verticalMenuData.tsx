@@ -119,6 +119,8 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
         icon: 'tabler-arrows-transfer-down',
         children: [
           { label: 'All Settlements', href: '/settlements/list', permission: 'payments.view' },
+          { label: 'Remittances', href: '/settlements/remittances', permission: 'payments.view' },
+          { label: 'Receive Remittance', href: '/settlements/remittance', permission: 'payments.create' },
           { label: 'Record Settlement', href: '/settlements/add', permission: 'payments.create' }
         ]
       },

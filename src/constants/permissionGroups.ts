@@ -32,7 +32,7 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'tax.view': 'View company tax configuration and rules',
   'tax.manage': 'Manage tax configuration, rules, seed packs, and remittances',
   'payments.view': 'View money accounts, collections & settlements',
-  'payments.create': 'Record collections & settlements',
+  'payments.create': 'Record collections, remittances & settlements',
   'ledger.view': 'View client, supplier, employee & customer ledgers',
   'accounts.view': 'View chart of accounts / financial structure',
   'accounts.manage': 'Manage accounts and opening balances',

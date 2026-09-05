@@ -30,6 +30,8 @@ export const routePermissions: Array<{ path: string; permission: string }> = [
   { path: '/payments/add', permission: 'payments.create' },
   { path: '/payments/outstanding', permission: 'payments.view' },
   { path: '/payments', permission: 'payments.view' },
+  { path: '/settlements/remittance', permission: 'payments.create' },
+  { path: '/settlements/remittances', permission: 'payments.view' },
   { path: '/settlements/add', permission: 'payments.create' },
   { path: '/settlements', permission: 'payments.view' },
   { path: '/inventory', permission: 'inventory.view' },

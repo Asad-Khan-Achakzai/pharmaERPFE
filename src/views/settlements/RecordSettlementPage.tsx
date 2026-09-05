@@ -70,7 +70,7 @@ const RecordSettlementPage = () => {
     <Card>
       <CardHeader
         title='Record settlement'
-        subheader='Clears distributor clearing balance FIFO (per distributor, not netted across distributors)'
+        subheader='Direct clearing: FIFO remittance due or commission payable. To hand over pharmacy collections with a breakdown, use Receive remittance.'
       />
       <CardContent>
         <Grid container spacing={4}>

@@ -79,6 +79,7 @@ const PaymentListPage = () => {
   const fetchSeq = useRef(0)
   const [loading, setLoading] = useState(true)
   const [viewItem, setViewItem] = useState<CollectionRow | null>(null)
+  const [viewRemittance, setViewRemittance] = useState<any>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ date: '', notes: '', referenceNumber: '' })
@@ -197,7 +198,18 @@ const PaymentListPage = () => {
         header: 'Actions',
         cell: ({ row }) => (
           <>
-            <IconButton size='small' title='View' onClick={() => setViewItem(row.original)}>
+            <IconButton
+              size='small'
+              title='View'
+              onClick={() => {
+                setViewItem(row.original)
+                setViewRemittance(null)
+                void collectionsService
+                  .getById(row.original._id)
+                  .then(r => setViewRemittance(r.data.data?.remittance || null))
+                  .catch(() => setViewRemittance(null))
+              }}
+            >
               <i className='tabler-eye text-textSecondary' />
             </IconButton>
             {canManage && (
@@ -353,6 +365,22 @@ const PaymentListPage = () => {
                     Reference
                   </Typography>
                   <Typography>{viewItem.referenceNumber}</Typography>
+                </Grid>
+              ) : null}
+              {viewRemittance ? (
+                <Grid size={{ xs: 12 }}>
+                  <Typography variant='body2' color='text.secondary'>
+                    Remittance
+                  </Typography>
+                  <Typography>
+                    {viewRemittance.remittanceStatus === 'NOT_APPLICABLE'
+                      ? 'Not a distributor collection'
+                      : viewRemittance.remittanceStatus === 'REMITTED'
+                        ? 'Remitted (company share handed over)'
+                        : viewRemittance.remittanceStatus === 'PARTIALLY_REMITTED'
+                          ? `Partially remitted — still to remit ₨ ${Number(viewRemittance.remittanceOpen || 0).toFixed(2)}`
+                          : 'Held by distributor (company share not yet remitted)'}
+                  </Typography>
                 </Grid>
               ) : null}
               {viewItem.notes ? (

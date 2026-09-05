@@ -73,7 +73,7 @@ const chartMonthFullLabel = (ym: string) => {
 const NUM_COLS: { key: keyof MonthlySummaryRow; label: string; short?: string }[] = [
   { key: 'netSales', label: 'Net Sales', short: 'Pharmacy payable — not Trade Price' },
   { key: 'distribution', label: 'Distribution' },
-  { key: 'discount', label: 'Discount' },
+  { key: 'discount', label: 'Discount', short: 'Already in Net Sales — not deducted again in P/L' },
   { key: 'castingCost', label: 'Casting', short: 'Products sold (casting price)' },
   { key: 'expenses', label: 'Expenses', short: 'Payroll + operating' },
   { key: 'pl', label: 'P/L' },

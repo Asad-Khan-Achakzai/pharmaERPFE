@@ -53,6 +53,7 @@ type SettlementRow = {
   notes?: string
   referenceNumber?: string
   isNetSettlement?: boolean
+  remittanceId?: string
 }
 
 const columnHelper = createColumnHelper<SettlementRow>()
@@ -81,6 +82,7 @@ const SettlementListPage = () => {
   const fetchSeq = useRef(0)
   const [loading, setLoading] = useState(true)
   const [viewItem, setViewItem] = useState<SettlementRow | null>(null)
+  const [viewDetail, setViewDetail] = useState<any | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ date: '', notes: '', referenceNumber: '' })
@@ -199,7 +201,18 @@ const SettlementListPage = () => {
         header: 'Actions',
         cell: ({ row }) => (
           <>
-            <IconButton size='small' title='View' onClick={() => setViewItem(row.original)}>
+            <IconButton
+              size='small'
+              title='View'
+              onClick={() => {
+                setViewItem(row.original)
+                setViewDetail(null)
+                void settlementsService
+                  .getById(row.original._id)
+                  .then(r => setViewDetail(r.data.data || null))
+                  .catch(() => setViewDetail(null))
+              }}
+            >
               <i className='tabler-eye text-textSecondary' />
             </IconButton>
             {canManage && (
@@ -308,7 +321,7 @@ const SettlementListPage = () => {
       </div>
       <TablePaginationComponent table={table as any} />
 
-      <Dialog open={!!viewItem} onClose={() => setViewItem(null)} maxWidth='sm' fullWidth>
+      <Dialog open={!!viewItem} onClose={() => { setViewItem(null); setViewDetail(null) }} maxWidth='sm' fullWidth>
         <DialogTitle>Settlement details</DialogTitle>
         <DialogContent>
           {viewItem && (
@@ -365,11 +378,30 @@ const SettlementListPage = () => {
                   <Typography>{viewItem.notes}</Typography>
                 </Grid>
               ) : null}
+              {viewDetail?.remittanceId ? (
+                <Grid size={{ xs: 12 }}>
+                  <Typography variant='body2' color='text.secondary'>
+                    Remittance
+                  </Typography>
+                  <Typography>Posted as a distributor remittance (company share handover)</Typography>
+                </Grid>
+              ) : null}
+              {viewDetail?.allocations?.length ? (
+                <Grid size={{ xs: 12 }}>
+                  <Typography variant='body2' color='text.secondary'>
+                    Applied to {viewDetail.allocations.length} remittance-due line
+                    {viewDetail.allocations.length === 1 ? '' : 's'}
+                  </Typography>
+                  <Typography>
+                    ₨ {viewDetail.allocations.reduce((s: number, a: any) => s + (Number(a.amount) || 0), 0).toFixed(2)}
+                  </Typography>
+                </Grid>
+              ) : null}
             </Grid>
           )}
         </DialogContent>
         <DialogActions className='flex-wrap gap-2'>
-          <Button onClick={() => setViewItem(null)}>Close</Button>
+          <Button onClick={() => { setViewItem(null); setViewDetail(null) }}>Close</Button>
           {viewItem && canManage && (
             <>
               <Button

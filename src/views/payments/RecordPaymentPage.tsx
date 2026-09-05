@@ -13,6 +13,7 @@ import FormLabel from '@mui/material/FormLabel'
 import RadioGroup from '@mui/material/RadioGroup'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Radio from '@mui/material/Radio'
+import Typography from '@mui/material/Typography'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
@@ -64,8 +65,8 @@ const RecordPaymentPage = () => {
     form.pharmacyId !== '' &&
     form.amount > 0 &&
     form.paymentMethod !== '' &&
-    form.moneyAccountId !== '' &&
-    (!needsDistributor || form.distributorId !== '')
+    (!needsDistributor || form.distributorId !== '') &&
+    (needsDistributor || form.moneyAccountId !== '')
 
   const handleSubmit = async () => {
     if (!form.pharmacyId || form.amount <= 0) {
@@ -80,7 +81,9 @@ const RecordPaymentPage = () => {
         ...(form.collectorType === 'DISTRIBUTOR' ? { distributorId: form.distributorId } : {}),
         amount: form.amount,
         paymentMethod: form.paymentMethod,
-        moneyAccountId: form.moneyAccountId,
+        ...(form.collectorType === 'COMPANY' || form.moneyAccountId
+          ? { moneyAccountId: form.moneyAccountId }
+          : {}),
         referenceNumber: form.referenceNumber || undefined,
         notes: form.notes || undefined
       })
@@ -97,7 +100,7 @@ const RecordPaymentPage = () => {
     <Card>
       <CardHeader
         title='Record collection'
-        subheader='Money received from pharmacy. Company collector: FIFO across all distributors for this pharmacy. Distributor collector: choose which distributor collected — allocation runs only against that distributor’s deliveries.'
+        subheader='Money received from pharmacy. Company collector: cash is deposited now (FIFO across all distributors for this pharmacy). Distributor collector: the distributor keeps their share; only the company share is owed until you record a remittance. Allocation for a distributor collector runs only against that distributor’s deliveries.'
       />
       <CardContent>
         <Grid container spacing={4}>
@@ -168,6 +171,7 @@ const RecordPaymentPage = () => {
               onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))}
             />
           </Grid>
+          {form.collectorType === 'COMPANY' && (
           <Grid size={{ xs: 12, sm: 6 }}>
             <MoneyAccountSelect
               required
@@ -177,6 +181,14 @@ const RecordPaymentPage = () => {
               onChange={id => setForm(p => ({ ...p, moneyAccountId: id }))}
             />
           </Grid>
+          )}
+          {needsDistributor && (
+            <Grid size={{ xs: 12 }}>
+              <Typography variant='body2' color='text.secondary'>
+                Cash stays with the distributor. Record a remittance when they hand the company share to the company.
+              </Typography>
+            </Grid>
+          )}
           <Grid size={{ xs: 12, sm: 6 }}>
             <CustomTextField
               required
