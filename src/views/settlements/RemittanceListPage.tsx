@@ -226,7 +226,7 @@ const RemittanceListPage = () => {
           </tbody>
         </table>
       </div>
-      <TablePaginationComponent table={table} serverPagination={{ total }} />
+      <TablePaginationComponent table={table as any} serverPagination={{ total }} />
 
       <Dialog open={!!view} onClose={() => setView(null)} maxWidth='sm' fullWidth>
         <DialogTitle>Remittance</DialogTitle>
