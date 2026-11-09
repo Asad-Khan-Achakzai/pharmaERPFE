@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type Key } from 'react'
 import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -23,18 +23,36 @@ import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Paper from '@mui/material/Paper'
+import Box from '@mui/material/Box'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { LookupAutocomplete } from '@/components/lookup/LookupAutocomplete'
 import { MoneyAccountSelect } from '@/components/finance/MoneyAccountSelect'
 import { remittancesService } from '@/services/remittances.service'
-import { pharmaciesService } from '@/services/pharmacies.service'
 import { distributorsService } from '@/services/distributors.service'
 
 const formatPKR = (v: number) =>
   `PKR ${Number(v || 0).toLocaleString('en-PK', { maximumFractionDigits: 2 })}`
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
+
+type PharmacyDueOption = {
+  _id: string
+  name: string
+  city?: string
+  outstanding: number
+  estimatedCompanyShare?: number
+  estimatedDistributorShare?: number
+}
+
+const mapOutstandingRow = (row: any): PharmacyDueOption => ({
+  _id: String(row.pharmacyId || row._id),
+  name: row.pharmacyName || row.name || 'Pharmacy',
+  city: row.city || undefined,
+  outstanding: Number(row.outstanding) || 0,
+  estimatedCompanyShare: Number(row.estimatedCompanyShare) || 0,
+  estimatedDistributorShare: Number(row.estimatedDistributorShare) || 0
+})
 
 type Line = {
   key: string
@@ -52,7 +70,7 @@ type Line = {
 const RecordRemittancePage = () => {
   const router = useRouter()
   const [distributor, setDistributor] = useState<any | null>(null)
-  const [addPharmacy, setAddPharmacy] = useState<any | null>(null)
+  const [addPharmacy, setAddPharmacy] = useState<PharmacyDueOption | null>(null)
   const [addAmount, setAddAmount] = useState(0)
   const [addOutstanding, setAddOutstanding] = useState<any | null>(null)
   const [lines, setLines] = useState<Line[]>([])
@@ -76,15 +94,10 @@ const RecordRemittancePage = () => {
   const loadLists = useCallback(async (id: string) => {
     setLoadingLists(true)
     try {
-      const [outRes, unRes] = await Promise.all([
-        remittancesService.pharmacyOutstanding(id, { limit: 50 }),
-        remittancesService.unremittedCollections(id, { limit: 50 })
-      ])
+      const unRes = await remittancesService.unremittedCollections(id, { limit: 50 })
       setUnremitted(unRes.data.data || [])
-      return outRes.data.data || []
     } catch (err) {
       showApiError(err, 'Failed to load distributor collections')
-      return []
     } finally {
       setLoadingLists(false)
     }
@@ -94,11 +107,24 @@ const RecordRemittancePage = () => {
     if (!distributorId) {
       setUnremitted([])
       setLines([])
+      setAddPharmacy(null)
+      setAddAmount(0)
+      setAddOutstanding(null)
       setPreview(null)
       return
     }
     void loadLists(distributorId)
   }, [distributorId, loadLists])
+
+  const remainingDue = useCallback(
+    (row: PharmacyDueOption) => {
+      const taken = lines
+        .filter(l => l.source === 'new' && l.pharmacyId === row._id)
+        .reduce((s, l) => s + (Number(l.amount) || 0), 0)
+      return Math.round((Math.max(0, (Number(row.outstanding) || 0) - taken) + Number.EPSILON) * 100) / 100
+    },
+    [lines]
+  )
 
   const buildPayload = useCallback(
     (received?: number) => {
@@ -174,37 +200,44 @@ const RecordRemittancePage = () => {
     !isExcess &&
     !saving
 
+  const appendPharmacyLine = async (pharmacy: PharmacyDueOption, amount: number) => {
+    if (!distributorId || amount <= 0) {
+      showApiError(null, 'Select a pharmacy and enter the collected amount')
+      return false
+    }
+    try {
+      const r = await remittancesService.preview({
+        distributorId,
+        newCollections: [{ pharmacyId: String(pharmacy._id), amount }]
+      })
+      const outstanding = r.data.data?.newCollectionPreviews?.[0] || addOutstanding
+      setLines(p => [
+        ...p,
+        {
+          key: `new-${pharmacy._id}-${Date.now()}`,
+          source: 'new',
+          pharmacyId: String(pharmacy._id),
+          pharmacyName: pharmacy.name,
+          outstanding: outstanding?.outstanding ?? pharmacy.outstanding,
+          amount,
+          sliceCompany: outstanding?.sliceCompany ?? pharmacy.estimatedCompanyShare,
+          sliceDist: outstanding?.sliceDist ?? pharmacy.estimatedDistributorShare
+        }
+      ])
+      return true
+    } catch (err) {
+      showApiError(err, 'Cannot add this pharmacy')
+      return false
+    }
+  }
+
   const addNewLine = async () => {
     if (!addPharmacy || addAmount <= 0) {
       showApiError(null, 'Select a pharmacy and enter the collected amount')
       return
     }
-    let outstanding = addOutstanding
-    if (!outstanding && distributorId) {
-      try {
-        const r = await remittancesService.preview({
-          distributorId,
-          newCollections: [{ pharmacyId: String(addPharmacy._id), amount: addAmount }]
-        })
-        outstanding = r.data.data?.newCollectionPreviews?.[0] || null
-      } catch (err) {
-        showApiError(err, 'Cannot add this pharmacy')
-        return
-      }
-    }
-    setLines(p => [
-      ...p,
-      {
-        key: `new-${addPharmacy._id}-${Date.now()}`,
-        source: 'new',
-        pharmacyId: String(addPharmacy._id),
-        pharmacyName: addPharmacy.name,
-        outstanding: outstanding?.outstanding,
-        amount: addAmount,
-        sliceCompany: outstanding?.sliceCompany,
-        sliceDist: outstanding?.sliceDist
-      }
-    ])
+    const ok = await appendPharmacyLine(addPharmacy, addAmount)
+    if (!ok) return
     setAddPharmacy(null)
     setAddAmount(0)
     setAddOutstanding(null)
@@ -291,6 +324,9 @@ const RecordRemittancePage = () => {
               onChange={v => {
                 setDistributor(v)
                 setLines([])
+                setAddPharmacy(null)
+                setAddAmount(0)
+                setAddOutstanding(null)
                 setReceivedTouched(false)
               }}
               fetchOptions={search =>
@@ -312,17 +348,59 @@ const RecordRemittancePage = () => {
               </Typography>
               <Grid container spacing={2} className='mbe-3'>
                 <Grid size={{ xs: 12, sm: 5 }}>
-                  <LookupAutocomplete
+                  <LookupAutocomplete<PharmacyDueOption>
                     value={addPharmacy}
                     onChange={v => {
                       setAddPharmacy(v)
                       setAddOutstanding(null)
+                      if (v) setAddAmount(remainingDue(v) || Number(v.outstanding) || 0)
                     }}
-                    fetchOptions={search =>
-                      pharmaciesService.lookup({ limit: 25, ...(search ? { search } : {}) }).then(r => r.data.data || [])
-                    }
+                    fetchOptions={async search => {
+                      if (!distributorId) return []
+                      const r = await remittancesService.pharmacyOutstanding(distributorId, {
+                        limit: 25,
+                        ...(search ? { search } : {})
+                      })
+                      const rows: PharmacyDueOption[] = (r.data.data || []).map(mapOutstandingRow)
+                      return rows
+                        .map(row => ({ ...row, outstanding: remainingDue(row) }))
+                        .filter(row => row.outstanding > 0.001)
+                    }}
+                    getOptionLabel={o => o.name}
+                    renderOption={(props, option) => {
+                      const { key: _key, ...liProps } = props as typeof props & { key?: Key }
+                      return (
+                        <li key={option._id} {...liProps}>
+                          <Box className='flex items-center justify-between w-full gap-3'>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant='body2' fontWeight={600}>
+                                {option.name}
+                              </Typography>
+                              {option.city ? (
+                                <Typography variant='caption' color='text.secondary'>
+                                  {option.city}
+                                </Typography>
+                              ) : null}
+                            </Box>
+                            <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+                              <Typography variant='body2' color='primary' fontWeight={600}>
+                                {formatPKR(option.outstanding)}
+                              </Typography>
+                              <Typography variant='caption' color='text.secondary'>
+                                still to collect
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </li>
+                      )
+                    }}
                     label='Add pharmacy'
                     placeholder='Search pharmacy'
+                    helperText={
+                      addPharmacy
+                        ? `Still to collect from this pharmacy: ${formatPKR(remainingDue(addPharmacy) || addPharmacy.outstanding)}`
+                        : 'Only pharmacies that still owe this distributor are listed'
+                    }
                     fetchErrorMessage='Failed to load pharmacies'
                   />
                 </Grid>
@@ -333,6 +411,11 @@ const RecordRemittancePage = () => {
                     type='number'
                     value={addAmount || ''}
                     onChange={e => setAddAmount(+e.target.value)}
+                    helperText={
+                      addPharmacy
+                        ? `Due ${formatPKR(remainingDue(addPharmacy) || addPharmacy.outstanding)}`
+                        : 'Select a pharmacy to see how much is due'
+                    }
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 3 }} className='flex items-end'>
@@ -370,6 +453,7 @@ const RecordRemittancePage = () => {
                 <TableHead>
                   <TableRow>
                     <TableCell>Pharmacy</TableCell>
+                    <TableCell align='right'>Due from pharmacy</TableCell>
                     <TableCell align='right'>Collected</TableCell>
                     <TableCell align='right'>Company share</TableCell>
                     <TableCell align='right'>Distributor share</TableCell>
@@ -382,6 +466,9 @@ const RecordRemittancePage = () => {
                       <TableCell>
                         {l.pharmacyName}
                         {l.source === 'existing' ? ' (already recorded)' : ''}
+                      </TableCell>
+                      <TableCell align='right'>
+                        {l.source === 'new' && l.outstanding != null ? formatPKR(l.outstanding) : '—'}
                       </TableCell>
                       <TableCell align='right'>{formatPKR(l.amount)}</TableCell>
                       <TableCell align='right'>
@@ -397,7 +484,7 @@ const RecordRemittancePage = () => {
                   ))}
                   {lines.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5}>
+                      <TableCell colSpan={6}>
                         <Typography variant='body2' color='text.secondary'>
                           Add pharmacies or select already-recorded collections.
                         </Typography>
